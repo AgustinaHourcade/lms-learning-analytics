@@ -46,8 +46,13 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
   - Hay un "Recuperatorio: Evaluación Semanal Nº1".
 - **AED**: promedio de las autoevaluaciones (sobre 100). Regular desde 60, Promociona ≥ 90.
 
+## Decisiones TOMADAS
+1. Instrumento no rendido = 0 para la nota final y la condición. En los Excel no rendir no aparece como nota vacía: directamente no hay fila, así que hay que completar alumno × instrumento con 0.
+   Más adelante llegan archivos con las notas que faltan: se copian a `data/raw/` y se vuelve a correr el pipeline, que recalcula todo.
+   El KPI "promedio por instrumento" usa solo a quienes rindieron.
+
 ## Decisiones PENDIENTES (preguntar al usuario antes del paso 3)
-1. Instrumento no rendido: ¿cuenta como 0 o se excluye? Propuesta: 0 para la condición y excluido para el "promedio de quienes rindieron".
+1. ¿A quién se le completan los 0? Hay alumnos inscriptos (Aceptada) sin ninguna nota (AED 58, PyE 22, Álg 21) y alumnos con notas que no figuran en Matriculados (AED 39, PyE 52, Álg 52).
 2. Recuperatorio de PyE: ¿reemplaza la nota o se toma la mejor? Propuesta: la mejor nota, sin contarlo como un instrumento extra.
 3. Docentes, staff e invitados: propuesta excluirlos de los KPIs de alumnos y guardarlos en una tabla aparte.
 
