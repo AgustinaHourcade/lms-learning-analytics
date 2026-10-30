@@ -53,10 +53,11 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
 2. Base de alumnos por materia = inscriptos (último estado Aceptada) ∪ alumnos con al menos una nota. Sobre esa base se completan los 0.
    - Inscriptos sin ninguna nota (AED 58, PyE 22, Álg 21): todo en 0 → Libre. Alimentan la alerta "inscriptos sin actividad".
    - Con nota pero sin estar en Matriculados (AED 39, PyE 52, Álg 52): se incluyen, con una columna `inscripto = False`. Alimentan el KPI "activos no inscriptos".
+3. Recuperatorio (hoy solo PyE, "Recuperatorio: Evaluación Semanal Nº1"): si el alumno lo rindió, su nota REEMPLAZA a la original aunque sea más baja. Si no lo rindió, queda la original.
+   No cuenta como un instrumento extra en el promedio. Hoy afecta a 21 alumnos; 3 tienen 0 en el recuperatorio (ALU_1020, ALU_1035, ALU_1105, este último con 93,75 en la original).
 
 ## Decisiones PENDIENTES (preguntar al usuario antes del paso 3)
-1. Recuperatorio de PyE: ¿reemplaza la nota o se toma la mejor? Propuesta: la mejor nota, sin contarlo como un instrumento extra.
-2. Docentes, staff e invitados: propuesta excluirlos de los KPIs de alumnos y guardarlos en una tabla aparte.
+1. Docentes, staff e invitados: propuesta excluirlos de los KPIs de alumnos y guardarlos en una tabla aparte.
 
 ## Próximos pasos
 3. `src/limpieza.py`: parsear tipos, normalizar IDs y textos, deduplicar, tratar nulos y generar `reports/calidad_datos.md`.
