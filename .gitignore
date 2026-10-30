@@ -1,0 +1,15 @@
+# Entorno virtual y caché de Python
+.venv/
+__pycache__/
+*.pyc
+
+# Datos generados: cada uno los regenera corriendo el pipeline
+data/bronze/
+data/silver/
+data/gold/
+
+# VS Code / sistema
+.vscode/settings.json
+.DS_Store
+desktop.ini
+~$*.xlsx
