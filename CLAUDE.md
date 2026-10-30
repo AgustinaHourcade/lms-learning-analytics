@@ -50,11 +50,13 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
 1. Instrumento no rendido = 0 para la nota final y la condición. En los Excel no rendir no aparece como nota vacía: directamente no hay fila, así que hay que completar alumno × instrumento con 0.
    Más adelante llegan archivos con las notas que faltan: se copian a `data/raw/` y se vuelve a correr el pipeline, que recalcula todo.
    El KPI "promedio por instrumento" usa solo a quienes rindieron.
+2. Base de alumnos por materia = inscriptos (último estado Aceptada) ∪ alumnos con al menos una nota. Sobre esa base se completan los 0.
+   - Inscriptos sin ninguna nota (AED 58, PyE 22, Álg 21): todo en 0 → Libre. Alimentan la alerta "inscriptos sin actividad".
+   - Con nota pero sin estar en Matriculados (AED 39, PyE 52, Álg 52): se incluyen, con una columna `inscripto = False`. Alimentan el KPI "activos no inscriptos".
 
 ## Decisiones PENDIENTES (preguntar al usuario antes del paso 3)
-1. ¿A quién se le completan los 0? Hay alumnos inscriptos (Aceptada) sin ninguna nota (AED 58, PyE 22, Álg 21) y alumnos con notas que no figuran en Matriculados (AED 39, PyE 52, Álg 52).
-2. Recuperatorio de PyE: ¿reemplaza la nota o se toma la mejor? Propuesta: la mejor nota, sin contarlo como un instrumento extra.
-3. Docentes, staff e invitados: propuesta excluirlos de los KPIs de alumnos y guardarlos en una tabla aparte.
+1. Recuperatorio de PyE: ¿reemplaza la nota o se toma la mejor? Propuesta: la mejor nota, sin contarlo como un instrumento extra.
+2. Docentes, staff e invitados: propuesta excluirlos de los KPIs de alumnos y guardarlos en una tabla aparte.
 
 ## Próximos pasos
 3. `src/limpieza.py`: parsear tipos, normalizar IDs y textos, deduplicar, tratar nulos y generar `reports/calidad_datos.md`.
