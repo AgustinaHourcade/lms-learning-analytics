@@ -11,6 +11,7 @@ RAW = DATA / "raw"          # Excel originales (NUNCA se modifican)
 BRONZE = DATA / "bronze"    # Excel -> Parquet "tal cual" (todo como texto)
 SILVER = DATA / "silver"    # Datos limpios, tipados y unificados
 GOLD = DATA / "gold"        # Modelo estrella + tablas de KPIs para el dashboard
+REPORTS = ROOT / "reports"  # Reporte de calidad de datos, capturas, informe
 
 MATRICULADOS_DIR = RAW / "Matriculados"
 

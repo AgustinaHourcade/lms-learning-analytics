@@ -13,3 +13,6 @@ data/gold/
 .DS_Store
 desktop.ini
 ~$*.xlsx
+
+# Config local de Claude Code (levantar la app desde el editor)
+.claude/

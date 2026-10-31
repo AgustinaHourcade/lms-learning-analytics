@@ -10,7 +10,8 @@ lms-learning-analytics/
 │   └── gold/       Modelo estrella + KPIs                           <- src/modelo.py     (paso 4-6)
 ├── src/
 │   ├── config.py   Rutas, asignaturas y esquema académico
-│   └── ingesta.py  Paso 2
+│   ├── ingesta.py  Paso 2
+│   └── limpieza.py Paso 3
 ├── app/            Dashboard Streamlit                              (paso 7)
 └── reports/        Reporte de calidad de datos, capturas, informe
 ```
@@ -22,6 +23,9 @@ python -m venv .venv
 pip install -r requirements.txt
 
 python -m src.ingesta        # siempre desde la raíz del repo
+python -m src.limpieza       # bronze -> silver + reports/calidad_datos.md
+
+streamlit run app/Inicio.py  # dashboards (se abre en el navegador)
 ```
 
 Para agregar archivos nuevos (por ej., el 2° parcial de Álgebra) se copian a

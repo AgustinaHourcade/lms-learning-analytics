@@ -17,7 +17,9 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
 ## Arquitectura de datos (medallion)
 - `data/raw/` contiene los Excel originales. **Nunca se modifican.** Hay una carpeta por materia más `Matriculados/`.
 - `data/bronze/` tiene los Excel pasados a Parquet tal cual, todo como texto, con columnas `asignatura` y `archivo_origen`. Lo genera `src/ingesta.py` ✅.
-- `data/silver/` va a tener los datos limpios y tipados. Lo genera `src/limpieza.py` (PASO 3, pendiente).
+- `data/silver/` tiene los datos limpios y tipados. Lo genera `src/limpieza.py` ✅, que también escribe `reports/calidad_datos.md`.
+  - Las columnas mantienen el nombre del Excel. Si un valor necesita otra forma, se agrega una columna nueva al lado (por ej. `Nota obtenida`, `Nota máxima`, `Nota (%)` y `Tiempo estimado de uso (min)`).
+  - Silver no aplica reglas de negocio: el 0 por no rendido, el recuperatorio y el filtro por perfil van en el modelo.
 - `data/gold/` va a tener el modelo estrella y las tablas de KPIs. Lo generan `src/modelo.py` y `src/kpis.py` (pendiente).
 - `app/` va a tener la app de Streamlit, con una página por dashboard en `app/pages/` (pendiente).
 - bronze, silver y gold están en `.gitignore`: cada persona los regenera corriendo el pipeline.
