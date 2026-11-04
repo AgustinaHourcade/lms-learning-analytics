@@ -1,7 +1,12 @@
-pandas>=2.2
-pyarrow>=15
-openpyxl>=3.1
-numpy>=1.26
-plotly>=5.20
-streamlit>=1.35
-scipy>=1.12
+# Versiones fijas: todos (y Streamlit Cloud) instalan exactamente lo mismo.
+# Requiere Python 3.12 o superior (numpy y scipy no soportan versiones anteriores).
+pandas==3.1.0
+pyarrow==26.0.0
+openpyxl==3.1.5
+numpy==2.5.4
+plotly==7.1.0
+streamlit==1.66.1
+scipy==1.18.1
+duckdb==2.0.0
+scikit-learn==1.9.1
+joblib==1.6.0

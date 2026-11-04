@@ -17,6 +17,7 @@ lms-learning-analytics/
 ```
 
 ## Cómo correr
+Requiere **Python 3.12 o superior** (las versiones de `requirements.txt` no se instalan en versiones anteriores).
 ```bash
 python -m venv .venv
 # Windows: .venv\Scripts\activate    |  Mac/Linux: source .venv/bin/activate

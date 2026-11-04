@@ -10,18 +10,21 @@ Generado por `python -m src.limpieza`. No editar a mano.
 | matriculados | 516 | 513 | 10 |
 
 ## trazabilidad
+- `Usuario` normalizado (sin espacios, en mayúsculas): 0 valores corregidos. Todos respetan el formato ALU_####, DOC_## o STAFF_##.
 - 686 filas duplicadas exactas eliminadas (mismo usuario, segundo, acción).
 - 19 filas sin `Acción` (descargas de adjuntos en Foros). Se conservan con `Acción` vacía.
 - Rango de fechas: 2025-06-04 14:19:41 a 2025-10-24 11:53:27.
 - Eventos por perfil: Alumnos 149,458, Tutores 9,277, Coordinadores 383.
 
 ## participacion
+- `Usuario` normalizado (sin espacios, en mayúsculas): 0 valores corregidos. Todos respetan el formato ALU_####, DOC_## o STAFF_##.
 - `Avance` = 'no aplica' en 29 filas (solo perfiles no alumno: Invitados 15, Tutores 11, Coordinadores 3). Quedan vacías.
 - 156 usuarios sin ninguna interacción (sin `Primera/Última interacción`).
 - `Email` viene vacío en todas las filas (anonimizado). Se conserva la columna.
 - Usuarios por perfil: Alumnos 957, Invitados 15, Tutores 11, Coordinadores 3.
 
 ## calificaciones
+- `Usuario` normalizado (sin espacios, en mayúsculas): 0 valores corregidos. Todos respetan el formato ALU_####, DOC_## o STAFF_##.
 - `Nota` separada en `Nota obtenida`, `Nota máxima` y `Nota (%)`. Ninguna fuera de rango.
 - Usuarios desactivados (celda coloreada): 0.
 - `Detalle` viene vacío en todas las filas. Se conserva la columna.
@@ -29,5 +32,6 @@ Generado por `python -m src.limpieza`. No editar a mano.
 
 ## matriculados
 - 3 filas de pie de tabla ('Cantidad de filas:') eliminadas.
+- `Identificación` normalizado (sin espacios, en mayúsculas): 0 valores corregidos. Todos respetan el formato ALU_####, DOC_## o STAFF_##.
 - 11 alumnos con más de una fila (altas y bajas). Se conservan todas; el último estado se toma en el modelo.
 - Estados: Aceptada 492, Baja 21.

@@ -23,6 +23,12 @@ ASIGNATURAS = {
     "Probabilidad y Estadística": {"codigo": "2321", "sigla": "PYE"},
 }
 
+# --- Identificadores -------------------------------------------------------
+# Formato válido de `Usuario` / `Identificación` después de normalizar.
+# Alumnos ALU_####, Tutores DOC_##, Coordinadores e Invitados STAFF_##.
+FORMATO_ID = r"ALU_\d{4}|DOC_\d{2}|STAFF_\d{2}"
+PREFIJO_ALUMNO = "ALU_"
+
 # --- Esquema académico (sección 5 de la consigna) --------------------------
 # metodo:
 #   "acumulativo" -> se suman puntos. Como todavía no están todos los

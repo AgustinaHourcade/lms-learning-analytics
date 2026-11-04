@@ -19,7 +19,7 @@ import time
 
 import pandas as pd
 
-from src.config import BRONZE, REPORTS, SILVER
+from src.config import BRONZE, FORMATO_ID, PREFIJO_ALUMNO, REPORTS, SILVER
 
 # Cada limpiador anota acá lo que hizo; al final se vuelca al reporte.
 hallazgos: dict[str, list[str]] = {}
@@ -35,10 +35,31 @@ def fecha(serie: pd.Series, formato: str) -> pd.Series:
     return pd.to_datetime(serie, format=formato)
 
 
+def normalizar_ids(df: pd.DataFrame, columna: str, tabla: str) -> pd.DataFrame:
+    """Estandariza el ID de usuario (sin espacios, en mayúsculas) y valida el formato.
+    Si un ID no respeta FORMATO_ID, o un alumno no tiene prefijo ALU_, falla:
+    sin un ID confiable no se pueden cruzar las tablas."""
+    original = df[columna]
+    df[columna] = original.str.strip().str.upper()
+
+    invalidos = ~df[columna].str.fullmatch(FORMATO_ID, na=False)
+    if invalidos.any():
+        raise ValueError(f"IDs con formato inválido en {tabla}:\n{df.loc[invalidos, columna].unique()}")
+    if "Perfil" in df:
+        mal_perfil = df["Perfil"].eq("Alumnos") & ~df[columna].str.startswith(PREFIJO_ALUMNO)
+        if mal_perfil.any():
+            raise ValueError(f"Alumnos sin prefijo {PREFIJO_ALUMNO} en {tabla}:\n{df.loc[mal_perfil, columna].unique()}")
+
+    anotar(tabla, f"`{columna}` normalizado (sin espacios, en mayúsculas): {(df[columna] != original).sum()} valores corregidos. "
+           "Todos respetan el formato ALU_####, DOC_## o STAFF_##.")
+    return df
+
+
 # ---------------------------------------------------------------------------
 # Limpiadores (uno por tabla)
 # ---------------------------------------------------------------------------
 def limpiar_trazabilidad(df: pd.DataFrame) -> pd.DataFrame:
+    df = normalizar_ids(df, "Usuario", "trazabilidad")
     df["Fecha"] = fecha(df["Fecha"], "%Y-%m-%d %H:%M:%S")
 
     dup = df.duplicated()
@@ -53,6 +74,7 @@ def limpiar_trazabilidad(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def limpiar_participacion(df: pd.DataFrame) -> pd.DataFrame:
+    df = normalizar_ids(df, "Usuario", "participacion")
     df["Fecha alta"] = fecha(df["Fecha alta"], "%d/%m/%Y")
     for col in ["Primera interacción", "Última interacción"]:
         df[col] = fecha(df[col], "%d/%m/%Y %H:%M:%S")
@@ -78,6 +100,7 @@ def limpiar_participacion(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def limpiar_calificaciones(df: pd.DataFrame) -> pd.DataFrame:
+    df = normalizar_ids(df, "Usuario", "calificaciones")
     # '24.00/25.00' -> obtenida 24.0, máxima 25.0. 'Nota' original queda igual.
     partes = df["Nota"].str.split("/", expand=True).astype(float)
     df["Nota obtenida"], df["Nota máxima"] = partes[0], partes[1]
@@ -104,6 +127,7 @@ def limpiar_matriculados(df: pd.DataFrame) -> pd.DataFrame:
     pie = df["Identificación"].isna() & df["Alumno"].str.startswith("Cantidad de filas", na=False)
     anotar("matriculados", f"{pie.sum()} filas de pie de tabla ('Cantidad de filas:') eliminadas.")
     df = df[~pie].copy()
+    df = normalizar_ids(df, "Identificación", "matriculados")
 
     df["Fecha inscripción"] = fecha(df["Fecha inscripción"], "%d/%m/%Y %H:%M:%S")
     n = df.groupby(["asignatura", "Identificación"]).size()

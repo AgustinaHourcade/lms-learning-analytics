@@ -49,6 +49,8 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
 - **AED**: promedio de las autoevaluaciones (sobre 100). Regular desde 60, Promociona ≥ 90.
 
 ## Decisiones TOMADAS
+El registro completo, con justificación y estado, está en `docs/decisiones.md` (es la base del informe). Si se toma una decisión nueva, se agrega ahí.
+
 1. Instrumento no rendido = 0 para la nota final y la condición. En los Excel no rendir no aparece como nota vacía: directamente no hay fila, así que hay que completar alumno × instrumento con 0.
    Más adelante llegan archivos con las notas que faltan: se copian a `data/raw/` y se vuelve a correr el pipeline, que recalcula todo.
    El KPI "promedio por instrumento" usa solo a quienes rindieron.
@@ -60,6 +62,9 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
    Confirmado también para los recuperatorios con 0: vale el 0.
 4. Docentes, staff e invitados: los KPIs de alumnos usan solo `Perfil == "Alumnos"` (en trazabilidad y participación). El resto (Tutores, Coordinadores, Invitados) va a una tabla aparte.
    Ojo: participación lista 319 alumnos por materia (parece toda la cohorte), pero hay ~163 inscriptos por materia. La base sigue siendo la de la decisión 2.
+5. Recuperatorio de Álgebra (20 puntos): SUMA al total de 120, no reemplaza a ningún parcial (la regla de reemplazo de la decisión 3 es solo para PyE). Hoy no hay datos de ese instrumento.
+6. Normalización (indicación del profesor): nota final = Σ puntos obtenidos / Σ puntaje máximo de los instrumentos disponibles a la fecha de corte × 100. Álgebra se expresa sobre 120. Los instrumentos con pocas entregas (AED Unidad 5, PyE Semanal Nº2) se incluyen.
+7. Se usan todos los Excel. La ficha individual tiene buscador por nombre o ID y muestra al primero por defecto. Se tiene que poder agregar un archivo nuevo (por ej., notas de un parcial) y recalcular.
 
 ## Próximos pasos
 3. `src/limpieza.py`: parsear tipos, normalizar IDs y textos, deduplicar, tratar nulos y generar `reports/calidad_datos.md`.
