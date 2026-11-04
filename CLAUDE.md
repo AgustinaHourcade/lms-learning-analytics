@@ -86,4 +86,5 @@ Ojo: la lista de abajo está numerada 1-7 y NO son los números D del registro; 
 - Etapa 2 ✅: `src/modelo.py` (silver -> gold) con tests en `tests/test_modelo.py`.
 - Etapa 3 ✅: `src/metricas.py`: funciones que reciben fecha de corte, materia y umbral de inactividad (D29, D34-D38).
 - Etapa 4 ✅: base de la app (barra lateral global, componentes, página "Cargar archivo"). Falta el deploy de prueba en Streamlit Cloud (recomendado).
-- Etapas 5 y 6: los 7 dashboards. Etapa 7: ML (K-Means y predictor de abandono). Etapa 8: hosting. Etapa 9: informe y defensa.
+- Etapas 5 y 6: los 7 dashboards. Se trabaja una rama por dashboard (`dashboard/<nombre>`).
+  - Dashboard 1 General ✅ (rama `dashboard/general`): tarjetas con variación contra 7 días antes, pestañas Actividad / Notas / Por materia (CSV). Etapa 7: ML (K-Means y predictor de abandono). Etapa 8: hosting. Etapa 9: informe y defensa.
