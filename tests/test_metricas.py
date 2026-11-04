@@ -153,6 +153,15 @@ def test_alertas(chicos):
     assert antes["tipo"].tolist() == ["sin_actividad"]
 
 
+def test_alertas_por_alumno_y_prioridad(chicos):
+    p = m.alertas_por_alumno(chicos, "2025-10-10", umbral=7).set_index("id_alumno")
+    assert p.loc["A2", "prioridad"] == "Administrativa"    # solo cursa sin inscripción
+    assert p.loc["P1", "prioridad"] == "Media"             # una sola alerta académica (Libre)
+    assert p.loc["A1", "prioridad"] == "Alta"              # inactivo + Libre
+    assert p.loc["A1", "cantidad"] == 2 and p.index[0] == "A1"  # la más urgente primero
+    assert m.alertas_por_alumno(chicos, "2025-09-05", PYE)["prioridad"].tolist() == ["Alta"]  # sin actividad
+
+
 def test_buscar_sin_tildes(chicos):
     assert m.buscar_alumnos(chicos, "nunez")["id_alumno"].tolist() == ["A1"]
     assert m.buscar_alumnos(chicos, "a2")["id_alumno"].tolist() == ["A2"]
@@ -245,6 +254,26 @@ def test_matricula_y_alertas(d):
     al = m.alertas(d)
     assert al[al["tipo"] == "no_inscripto"].groupby("asignatura").size().to_dict() == \
         r["no_inscriptos_cursando"].to_dict()
+    p = m.alertas_por_alumno(d)
+    assert not p.duplicated(["asignatura", "id_alumno"]).any()
+    assert len(p) == len(al.drop_duplicates(["asignatura", "id_alumno"]))
+    assert p["cantidad"].sum() == len(al)
+    # quien entra pero no rinde (y por eso es Libre) no pasa a Alta solo por eso
+    solo = p[p["tipos"].map(lambda ts: set(ts) == {"sin_notas", "libre"})]
+    assert (solo["prioridad"] == "Media").all()
+
+
+@pytest.mark.parametrize("fecha", ["2025-08-10", FECHA_CORTE_DEFECTO])
+def test_evolucion_matricula(d, fecha):
+    e = m.evolucion_matricula(d, fecha)
+    assert e["fecha"].max() == pd.Timestamp(fecha)
+    assert (e.groupby(["asignatura", "serie"])["alumnos"].diff().dropna() >= 0).all()  # acumulado
+    if fecha == FECHA_CORTE_DEFECTO:
+        final = e[e["fecha"] == e["fecha"].max()].set_index(["asignatura", "serie"])["alumnos"]
+        r = m.resumen_matricula(d).set_index("asignatura")
+        assert final.xs("Inscriptos", level="serie").to_dict() == r["inscriptos"].to_dict()
+        assert final.xs("Ya entraron al aula", level="serie").to_dict() == r["con_actividad"].to_dict()
+    assert m.evolucion_matricula(d, "2025-07-01").empty
 
 
 def test_correlaciones_validas(d):

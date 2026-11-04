@@ -54,3 +54,19 @@ def test_cada_pagina_corre_y_conserva_los_filtros(app, pagina):
     app.switch_page(pagina).run()
     assert not app.exception, app.exception
     assert app.selectbox(key="materia").value == "Álgebra"
+
+
+def test_matricula_y_alertas(app):
+    """Dashboard de Matrícula y alertas: tarjetas, pestañas, filtros de la lista y una fecha temprana."""
+    app.switch_page("paginas/7_matricula_y_alertas.py").run()
+    assert not app.exception, app.exception
+    assert len(app.tabs) == 4
+    assert len(app.error) == 1 and "prioridad alta" in app.error[0].value
+    app.multiselect(key="alertas_prioridad").set_value(["Administrativa"]).run()
+    assert not app.exception, app.exception
+    app.text_input(key="alertas_buscar").set_value("ALU_1").run()
+    assert not app.exception, app.exception
+    app.selectbox(key="materia").set_value("Algoritmos y Estructuras de Datos").run()
+    assert not app.exception, app.exception
+    app.date_input(key="fecha_corte").set_value("2025-08-10").run()
+    assert not app.exception, app.exception

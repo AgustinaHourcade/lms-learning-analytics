@@ -523,6 +523,75 @@ def alertas(d: Datos, fecha_corte=None, asignatura=None, umbral: int = UMBRAL_IN
              .reset_index(drop=True)
 
 
+PRIORIDADES = ["Alta", "Media", "Administrativa"]
+ALERTAS_ACADEMICAS = {"inactivo", "libre", "sin_notas"}
+
+
+def alertas_por_alumno(d: Datos, fecha_corte=None, asignatura=None,
+                       umbral: int = UMBRAL_INACTIVIDAD_DIAS) -> pd.DataFrame:
+    """Una fila por alumno y materia con al menos una alerta, con su prioridad (D52):
+      Alta            inscripto sin actividad, o dos o más alertas académicas
+                      (inactivo, Libre, entra pero no rinde) a la vez. "Entra pero
+                      no rinde" + Libre cuentan como una (el 0 ya lo deja Libre).
+      Media           una sola alerta académica
+      Administrativa  solo cursa sin estar inscripto (lo resuelve la secretaría)
+    Ordenada de más a menos urgente, para que el tutor sepa a quién contactar primero."""
+    al = alertas(d, fecha_corte, asignatura, umbral)
+    t = tabla_alumnos(d, fecha_corte, asignatura, umbral)
+    claves = ["asignatura", "id_alumno"]
+    g = (al.groupby(claves)
+           .agg(tipos=("tipo", lambda s: sorted(set(s), key=list(TIPOS_ALERTA).index)), cantidad=("tipo", "size"))
+           .reset_index())
+    # Quien entra pero no rinde tiene 0 y por eso también es Libre: cuenta como una sola alerta.
+    academicas = g["tipos"].map(lambda ts: len(ALERTAS_ACADEMICAS.intersection(ts))
+                                - int({"sin_notas", "libre"} <= set(ts)))
+    g["prioridad"] = np.select(
+        [g["tipos"].map(lambda ts: "sin_actividad" in ts) | academicas.ge(2), academicas.eq(1)],
+        PRIORIDADES[:2], default=PRIORIDADES[2])
+    g["alertas"] = g["tipos"].map(lambda ts: " · ".join(TIPOS_ALERTA[x] for x in ts))
+    cols = ["nombre_completo", "inscripto", "condicion", "nota_final", "escala", "rendidos", "instrumentos",
+            "estado_actividad", "dias_sin_actividad", "ultima_interaccion", "eventos", "avance"]
+    df = g.merge(t[claves + cols], on=claves, how="left")
+    df["prioridad"] = pd.Categorical(df["prioridad"], PRIORIDADES, ordered=True)
+    df = df.sort_values(["prioridad", "cantidad", "asignatura", "nombre_completo"],
+                        ascending=[True, False, True, True])
+    return df[claves + ["nombre_completo", "prioridad", "cantidad", "alertas", "tipos", *cols[1:]]] \
+             .reset_index(drop=True)
+
+
+def evolucion_matricula(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
+    """Por materia y día hasta la fecha de corte, acumulado: alumnos con la
+    inscripción aceptada (por fecha de inscripción, último estado) y alumnos de
+    la base que ya habían entrado al aula (por su primera interacción).
+    Muestra si los alumnos empiezan a cursar antes de inscribirse."""
+    corte = fecha_de_corte(fecha_corte)
+    m = _filtrar(d.matricula, asignatura)
+    series = {
+        "Inscriptos": m.loc[m["inscripto"], ["asignatura", "fecha_inscripcion"]],
+        "Ya entraron al aula": m.loc[m["en_base"], ["asignatura", "primera_interaccion"]],
+    }
+    partes = []
+    for nombre, s in series.items():
+        s = s.set_axis(["asignatura", "fecha"], axis=1).dropna()
+        s = s.assign(fecha=s["fecha"].dt.normalize())
+        s = s[s["fecha"] <= corte]
+        if s.empty:
+            continue
+        diario = s.groupby(["asignatura", "fecha"]).size().rename("nuevos").reset_index()
+        partes.append(diario.assign(serie=nombre))
+    if not partes:
+        return pd.DataFrame(columns=["asignatura", "serie", "fecha", "nuevos", "alumnos"])
+    df = pd.concat(partes, ignore_index=True)
+    inicio = df["fecha"].min()
+    dias = pd.date_range(inicio, corte, freq="D")
+    completo = pd.MultiIndex.from_product([_materias(asignatura), list(series), dias],
+                                          names=["asignatura", "serie", "fecha"])
+    df = (df.set_index(["asignatura", "serie", "fecha"])["nuevos"].reindex(completo, fill_value=0)
+            .reset_index())
+    df["alumnos"] = df.groupby(["asignatura", "serie"])["nuevos"].cumsum()
+    return df
+
+
 # ---------------------------------------------------------------------------
 # KPIs generales y ficha individual
 # ---------------------------------------------------------------------------

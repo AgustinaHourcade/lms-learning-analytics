@@ -52,6 +52,8 @@ COLORES_CONDICION = {"Libre": CRITICO, "Regular": ATENCION, "Promociona": BIEN, 
 ICONOS_CONDICION = {"Libre": "🔴", "Regular": "🟡", "Promociona": "🟢", SIN_EVALUACIONES: "⚪"}
 COLORES_ACTIVIDAD = {ACTIVO: BIEN, INACTIVO: SERIO, SIN_ACTIVIDAD: NEUTRO}
 ICONOS_ACTIVIDAD = {ACTIVO: "🟢", INACTIVO: "🟠", SIN_ACTIVIDAD: "⚪"}
+COLORES_PRIORIDAD = {"Alta": CRITICO, "Media": SERIO, "Administrativa": NEUTRO}
+ICONOS_PRIORIDAD = {"Alta": "🔴", "Media": "🟠", "Administrativa": "⚪"}
 
 # Secuencial (mapas de calor): un solo tono, de claro a oscuro.
 SECUENCIAL = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
