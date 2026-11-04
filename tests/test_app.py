@@ -54,3 +54,18 @@ def test_cada_pagina_corre_y_conserva_los_filtros(app, pagina):
     app.switch_page(pagina).run()
     assert not app.exception, app.exception
     assert app.selectbox(key="materia").value == "Álgebra"
+
+
+def test_ficha_individual_buscador(app):
+    app.switch_page("paginas/6_ficha_individual.py").run()
+    assert not app.exception, app.exception
+    primero = app.selectbox(key="fi_alumno").value          # muestra al primero por defecto
+    assert primero.startswith("ALU_")
+    app.text_input(key="fi_buscar").set_value("ALU_1105").run()
+    assert not app.exception, app.exception
+    assert app.selectbox(key="fi_alumno").value == "ALU_1105"
+    assert any("ALU_1105" in s.value for s in app.subheader)
+    app.date_input(key="fecha_corte").set_value("2025-08-06").run()   # antes de cualquier evaluación
+    assert not app.exception, app.exception
+    app.text_input(key="fi_buscar").set_value("no existe nadie así").run()
+    assert not app.exception and app.warning
