@@ -1,7 +1,7 @@
 # Estado del proyecto y pendientes
 
 Última actualización: 30/10/2026. Este documento resume cómo correr el proyecto, qué está hecho, qué falta y qué preguntas hay que responder para seguir avanzando.
-Las reglas y decisiones detalladas están en [`CLAUDE.md`](../CLAUDE.md).
+Las reglas y decisiones detalladas, con su justificación, están en [`docs/decisiones.md`](decisiones.md).
 
 ---
 
@@ -95,14 +95,14 @@ git switch main
 git pull                          # traer lo último de los demás
 git switch -c dashboard-trazabilidad   # una rama por tarea
 # ... cambios, probar con streamlit run app/Inicio.py ...
-git add app/pages/3_Trazabilidad.py
+git add app/paginas/3_trazabilidad.py
 git commit -m "Trazabilidad: mapa de calor por día y hora"
 git push -u origin dashboard-trazabilidad
 ```
 Después se abre un **Pull Request** en GitHub, alguien del equipo lo mira y se hace merge a `main`.
 
 **Reglas para no pisarnos:**
-- **Cada integrante toma sus propias páginas** (`app/pages/N_*.py`). Si dos personas tocan el mismo archivo a la vez, hay conflictos.
+- **Cada integrante toma sus propias páginas** (`app/paginas/N_*.py`). Si dos personas tocan el mismo archivo a la vez, hay conflictos.
 - **Lo compartido se avisa antes de tocarlo:** `src/config.py`, `src/modelo.py`, `src/metricas.py`. Si cambiás una regla o una tabla de gold, las páginas de los demás pueden romperse.
 - **Las páginas no calculan: llaman a `src/metricas.py`.** Si te falta un KPI, se agrega ahí para que todos usen el mismo número.
 - **No subir datos generados** (bronze, silver y gold ya están en `.gitignore`).
@@ -163,12 +163,12 @@ Después se abre un **Pull Request** en GitHub, alguien del equipo lo mira y se 
 | 4 | Modelo estrella: `dim_alumno`, `dim_asignatura`, `dim_instrumento`, `dim_fecha`, `fact_interaccion`, `fact_calificacion`, `fact_participacion`, `fact_matricula`. Último estado de matrícula por alumno. Aplicar las decisiones 1 a 4. | `src/modelo.py` | Todos |
 | 5 | Nota final y condición (Libre / Regular / Promociona) según el esquema de cada materia. | `src/modelo.py` o `src/notas.py` | Rendimiento, Individual |
 | 6 | Tablas de KPIs: participación, trazabilidad, calificaciones, cruces (correlaciones) y matrícula. | `src/metricas.py` ✅ | General, Participación, Trazabilidad, Notas vs. Participación, Matrícula |
-| 7 | Completar las 7 páginas de Streamlit (con gráficos de plotly). | `app/pages/*.py` | — |
+| 7 | Completar las 7 páginas de Streamlit (con gráficos de plotly). | `app/paginas/*.py` | — |
 | 8 | Informe técnico: proceso de limpieza, justificación de los KPIs, explicación de los dashboards y conclusiones. | `reports/` | — |
 
 **Para regularizar** la consigna pide **al menos 3 dashboards funcionales** y un informe de avance con KPIs calculados. Los más rápidos de tener con lo que ya hay son **Trazabilidad**, **Participación** y **Matrícula y Alertas**, porque no dependen de la nota final (P1 a P3).
 
-**Cómo repartir el trabajo:** cada dashboard es un archivo aparte en `app/pages/`, así que cada integrante puede tomar uno sin pisarse con los demás, una vez que estén las tablas de gold del paso 6.
+**Cómo repartir el trabajo:** cada dashboard es un archivo aparte en `app/paginas/`, así que cada integrante puede tomar uno sin pisarse con los demás, una vez que estén las tablas de gold del paso 6.
 
 ---
 

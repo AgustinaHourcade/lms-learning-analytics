@@ -15,7 +15,7 @@ lms-learning-analytics/
 │   ├── validacion.py Controles de un Excel nuevo antes de usarlo
 │   └── pipeline.py   procesar() y agregar_archivo(): todo el pipeline en una llamada
 ├── tests/          python -m pytest
-├── app/            Dashboard Streamlit                              (paso 7)
+├── app/            App de Streamlit: Inicio.py (menú y filtros), componentes.py, paginas/
 └── reports/        Reporte de calidad de datos, capturas, informe
 ```
 
@@ -29,7 +29,7 @@ pip install -r requirements.txt
 python -m src.pipeline       # raw -> bronze -> silver + reports/calidad_datos.md (siempre desde la raíz)
 python -m pytest             # tests
 
-streamlit run app/Inicio.py  # dashboards (se abre en el navegador)
+streamlit run app/Inicio.py  # dashboards (se abre en el navegador; si no hay datos procesados, los genera)
 ```
 
 Para agregar un archivo nuevo (por ej., el 2° parcial de Álgebra):

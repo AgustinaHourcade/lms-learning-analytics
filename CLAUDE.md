@@ -31,7 +31,11 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
   - Centrales: `nota_final` (nota y condición a la fecha, D34), `actividad_alumnos` (Activo / Inactivo / Sin actividad, D35) y `tabla_alumnos` (una fila por alumno de la base con todo: la usan Notas vs. Participación, Ficha, Alertas y el ML).
   - Por dashboard: `kpis_generales`, `evolucion_actividad` (D/W/M), `resumen_participacion`, `reporte_participacion` (foto al 24/10, D36), `interacciones_por_categoria`, `mapa_calor`, `fechas_evaluaciones`, `promedio_por_instrumento`, `distribucion_condicion`, `correlaciones` (Spearman, D38), `cuadrante_riesgo` (D37), `resumen_matricula`, `alertas`, `situacion_academica`, `buscar_alumnos`, `ficha_alumno`.
   - Defaults en `config.py`: `FECHA_CORTE_DEFECTO` (24/10/2025) y `UMBRAL_INACTIVIDAD_DIAS` (7).
-- `app/` va a tener la app de Streamlit, con una página por dashboard en `app/pages/` (pendiente).
+- `app/` ✅ (Etapa 4) tiene la app de Streamlit: `streamlit run app/Inicio.py` (también es el archivo principal en Streamlit Cloud). Tests de humo en `tests/test_app.py` (AppTest).
+  - `app/Inicio.py` arma el menú con `st.navigation`, dibuja la barra lateral global (fecha de corte, materia, umbral; D46) y corre la página. Las páginas están en `app/paginas/` (no `pages/`): para sumar una, crear el archivo y agregarlo a `PAGINAS`.
+  - `app/componentes.py`: `metrica("nombre", ...)` llama a `src.metricas` con caché y completa fecha/materia/umbral desde la barra (D47); `filtros()`, `encabezado()`, `tarjetas()`, `semaforo()`, `boton_csv()`, `num()`/`pct()`/`fmt_fecha()` y la paleta (`COLORES_MATERIA`, `COLORES_CONDICION`, `COLORES_ACTIVIDAD`, `SECUENCIAL`; D48). Plotly usa la plantilla `plotly_white+tfi`. Las páginas no leen parquet ni llaman a `src.metricas` directo.
+  - Si gold no existe, la app corre el pipeline sola (D49). `LMS_GOLD` cambia la carpeta de gold (solo para tests).
+  - `paginas/cargar_archivo.py`: valida y muestra qué reconoció, y al confirmar llama a `agregar_archivo()` y limpia el caché (D50). Tema en `.streamlit/config.toml`.
 - bronze, silver y gold están en `.gitignore`: cada persona los regenera corriendo el pipeline.
 
 ## Estado actual de los datos (bronze)
@@ -59,7 +63,8 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
 - **AED**: promedio de las autoevaluaciones (sobre 100). Regular desde 60, Promociona ≥ 90.
 
 ## Decisiones TOMADAS
-El registro completo, con justificación y estado, está en `docs/decisiones.md` (es la base del informe). Si se toma una decisión nueva, se agrega ahí.
+El registro completo, con justificación y estado, está en `docs/decisiones.md` (es la base del informe). Si se toma una decisión nueva, se agrega ahí con el número siguiente (hoy, D51); los números no se reutilizan porque el código los cita.
+Ojo: la lista de abajo está numerada 1-7 y NO son los números D del registro; en el código se citan siempre los D (por ej., nota final = D16-D17, promedio por instrumento = D22).
 
 1. Instrumento no rendido = 0 para la nota final y la condición. En los Excel no rendir no aparece como nota vacía: directamente no hay fila, así que hay que completar alumno × instrumento con 0.
    Más adelante llegan archivos con las notas que faltan: se copian a `data/raw/` y se vuelve a correr el pipeline, que recalcula todo.
@@ -80,5 +85,5 @@ El registro completo, con justificación y estado, está en `docs/decisiones.md`
 - Etapa 1: ingesta preparada para archivos nuevos (`pipeline.py`, `validacion.py`, tests en `tests/`).
 - Etapa 2 ✅: `src/modelo.py` (silver -> gold) con tests en `tests/test_modelo.py`.
 - Etapa 3 ✅: `src/metricas.py`: funciones que reciben fecha de corte, materia y umbral de inactividad (D29, D34-D38).
-- Etapa 4: base de la app (barra lateral global, componentes, página "Cargar archivo" que llama a `agregar_archivo()`).
+- Etapa 4 ✅: base de la app (barra lateral global, componentes, página "Cargar archivo"). Falta el deploy de prueba en Streamlit Cloud (recomendado).
 - Etapas 5 y 6: los 7 dashboards. Etapa 7: ML (K-Means y predictor de abandono). Etapa 8: hosting. Etapa 9: informe y defensa.

@@ -1,15 +1,12 @@
-"""Mira las tablas que genera el pipeline (silver y, más adelante, gold)."""
-import sys
-from pathlib import Path
-
+"""Mira las tablas que genera el pipeline (silver y gold), con filtros y descarga en CSV."""
 import pandas as pd
 import streamlit as st
 
-# streamlit corre desde app/: se agrega la raíz para poder importar src.config
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from src.config import GOLD, SILVER  # noqa: E402
+import componentes as comp
+from src.config import GOLD, SILVER
 
 st.title("Explorar datos")
+st.caption("Las tablas tal como quedaron en el pipeline. Esta página no usa los filtros de la barra lateral.")
 
 capas = {"silver": SILVER, "gold": GOLD}
 disponibles = {f"{capa} / {p.stem}": p for capa, carpeta in capas.items() for p in sorted(carpeta.glob("*.parquet"))}
@@ -45,7 +42,8 @@ if "asignatura" in df:
     st.bar_chart(conteo.unstack(fill_value=0) if "Perfil" in df else conteo, horizontal=True)
 
 st.dataframe(df.head(1000), width="stretch")
-st.caption("Se muestran hasta 1.000 filas.")
+st.caption("Se muestran hasta 1.000 filas; la descarga tiene todas las filas filtradas.")
+comp.boton_csv(df, elegida.replace(" / ", "_"))
 
 with st.expander("Valores vacíos por columna"):
     st.dataframe(df.isna().sum().rename("vacíos").to_frame().query("vacíos > 0"))

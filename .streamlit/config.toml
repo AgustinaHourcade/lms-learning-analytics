@@ -1,0 +1,17 @@
+# Configuración de Streamlit (se lee desde la raíz del repo, también en Streamlit Cloud).
+
+[theme]
+base = "light"
+primaryColor = "#2a78d6"            # azul de la paleta (D48)
+backgroundColor = "#fcfcfb"
+secondaryBackgroundColor = "#f0efec"
+textColor = "#0b0b0b"
+font = "sans-serif"
+# Misma paleta categórica que app/componentes.py, para los gráficos nativos (st.bar_chart, etc.)
+chartCategoricalColors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
+
+[server]
+maxUploadSize = 50                  # MB; la trazabilidad completa pesa unos pocos MB
+
+[browser]
+gatherUsageStats = false

@@ -17,7 +17,7 @@ Reglas (ver docs/decisiones.md):
   * Población: la base de alumnos de cada materia (D11), solo perfil Alumnos (D10).
   * Un instrumento está disponible si su fecha (D18) es <= la fecha de corte.
     El recuperatorio que reemplaza se aplica solo si su fecha ya pasó (D34).
-  * Nota final = Σ puntos / Σ máximos de lo disponible × 100; Álgebra × 120 (D6).
+  * Nota final = Σ puntos / Σ máximos de lo disponible × 100; Álgebra × 120 (D17).
   * Activo = entró en los últimos `umbral` días; Inactivo = entró alguna vez,
     pero hace más; Sin actividad = nunca entró hasta la fecha de corte (D35).
   * El reporte de participación (avance, tiempo estimado, foros) es una foto
@@ -167,7 +167,7 @@ def notas_instrumento(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFra
 
 
 def nota_final(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
-    """Nota y condición de cada alumno de la base a la fecha de corte (D6).
+    """Nota y condición de cada alumno de la base a la fecha de corte (D16-D17).
       puntos / puntos_posibles  lo acumulado y el máximo de lo disponible
       nota_final                en la escala de la materia (Álgebra 120, resto 100)
       nota_pct                  la misma nota sobre 100, para comparar materias
@@ -193,7 +193,7 @@ def nota_final(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
 
 
 def promedio_por_instrumento(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
-    """Promedio de cada instrumento SOLO entre quienes lo rindieron (D15). La
+    """Promedio de cada instrumento SOLO entre quienes lo rindieron (D22). La
     nota es la original: el recuperatorio aparece como un instrumento aparte."""
     c = notas_instrumento(d, fecha_corte, asignatura)
     c = c.assign(pct=c["nota_obtenida"] / c["puntaje_maximo"] * 100,
