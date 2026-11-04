@@ -237,6 +237,29 @@ def test_promedio_por_instrumento_solo_quienes_rindieron(d):
     assert set(m.promedio_por_instrumento(d, "2025-09-15", AED)["id_instrumento"]) == {"AED-01", "AED-02"}
 
 
+@pytest.mark.parametrize("fecha", FECHAS)
+def test_notas_rendidas_cierran_con_el_promedio(d, fecha):
+    r = m.notas_rendidas(d, fecha)
+    assert r["nota_pct_instrumento"].between(0, 100).all()
+    p = m.promedio_por_instrumento(d, fecha).set_index("id_instrumento")
+    if len(r):
+        g = r.groupby("id_instrumento")["nota_pct_instrumento"]
+        assert (g.size() == p.loc[g.size().index, "rindieron"]).all()
+        assert (g.mean() - p.loc[g.size().index, "promedio_pct"]).abs().max() < 0.01
+
+
+def test_evolucion_condicion(d):
+    e = m.evolucion_condicion(d, asignatura=PYE)
+    # una fecha por evaluación tomada (el recuperatorio cuenta como fecha propia)
+    assert e["fecha"].nunique() == len(m.fechas_evaluaciones(d, asignatura=PYE)["fecha_instrumento"].unique())
+    assert e.groupby("fecha")["pct"].sum().round().eq(100).all()
+    # el último punto es la distribución a la fecha de la última evaluación
+    ultima = e[e["fecha"] == e["fecha"].max()].set_index("condicion")["alumnos"]
+    hoy = m.distribucion_condicion(d, asignatura=PYE).set_index("condicion")["alumnos"]
+    assert ultima.reindex(hoy.index).eq(hoy).all()
+    assert m.evolucion_condicion(d, "2025-08-01").empty
+
+
 def test_matricula_y_alertas(d):
     r = m.resumen_matricula(d).set_index("asignatura")
     assert r["no_inscriptos_cursando"].to_dict() == {ALG: 54, PYE: 52, AED: 39}

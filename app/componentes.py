@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import inspect
 import os
+import re
 import sys
 from dataclasses import dataclass
 from datetime import date
@@ -271,6 +272,12 @@ def mostrar_semaforo(condicion: str, detalle: str = "") -> None:
 def con_icono(serie: pd.Series, iconos: dict) -> pd.Series:
     """Para tablas: 'Libre' -> '🔴 Libre'."""
     return serie.map(lambda v: f"{iconos.get(v, '')} {v}".strip())
+
+
+def nombre_corto(instrumento: str) -> str:
+    """Para ejes y leyendas: saca los emojis y espacios del principio
+    ('👉  Actividad Rápida 1' -> 'Actividad Rápida 1')."""
+    return re.sub(r"^\W+", "", str(instrumento)).strip()
 
 
 def boton_csv(df: pd.DataFrame, nombre: str, etiqueta: str = "Descargar CSV") -> None:

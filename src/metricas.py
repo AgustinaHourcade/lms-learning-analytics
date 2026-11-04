@@ -215,6 +215,34 @@ def promedio_por_instrumento(d: Datos, fecha_corte=None, asignatura=None) -> pd.
     return df.sort_values(["asignatura", "orden"]).reset_index(drop=True)
 
 
+def notas_rendidas(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
+    """Una fila por alumno × instrumento que RINDIÓ (D22), con la nota original
+    sobre 100. Es el detalle de promedio_por_instrumento: sirve para los
+    boxplots del dashboard de Rendimiento (D51). El recuperatorio va aparte."""
+    c = notas_instrumento(d, fecha_corte, asignatura)
+    r = c[c["rindio"]].merge(d.instrumentos[["id_instrumento", "orden"]], on="id_instrumento")
+    r = r.assign(nota_pct_instrumento=(r["nota_obtenida"] / r["puntaje_maximo"] * 100).round(2))
+    columnas = ["asignatura", "id_alumno", "inscripto", "id_instrumento", "instrumento", "orden",
+                "es_recuperatorio", "fecha_instrumento", "nota_obtenida", "puntaje_maximo",
+                "nota_pct_instrumento", "observaciones"]
+    return r[columnas].sort_values(["asignatura", "orden", "id_alumno"]).reset_index(drop=True)
+
+
+def evolucion_condicion(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
+    """Distribución por condición de cada materia el día de cada evaluación ya
+    tomada a la fecha de corte (D51): muestra cómo se mueve el reparto Libre /
+    Regular / Promociona a medida que se suman instrumentos (incluido el
+    recuperatorio, que cambia notas sin sumar un instrumento)."""
+    partes = []
+    for (materia, fecha), ev in fechas_evaluaciones(d, fecha_corte, asignatura).groupby(
+            ["asignatura", "fecha_instrumento"]):
+        dist = distribucion_condicion(d, fecha, materia)
+        partes.append(dist.assign(fecha=fecha, instrumentos=" + ".join(ev["instrumento"])))
+    if not partes:
+        return pd.DataFrame(columns=["asignatura", "condicion", "alumnos", "pct", "fecha", "instrumentos"])
+    return pd.concat(partes, ignore_index=True).sort_values(["asignatura", "fecha"]).reset_index(drop=True)
+
+
 def distribucion_condicion(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
     """Cantidad y % de alumnos por condición y materia (las tres condiciones
     aparecen siempre, aunque tengan 0)."""

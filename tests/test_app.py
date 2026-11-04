@@ -54,3 +54,16 @@ def test_cada_pagina_corre_y_conserva_los_filtros(app, pagina):
     app.switch_page(pagina).run()
     assert not app.exception, app.exception
     assert app.selectbox(key="materia").value == "Álgebra"
+
+
+def test_rendimiento(app):
+    """Dashboard de Rendimiento: con todas las materias, sin evaluaciones a la fecha y con el toggle."""
+    app.switch_page("paginas/4_rendimiento.py").run()
+    assert not app.exception, app.exception
+    assert len(app.metric) == 5
+    assert len(app.tabs) == 4
+    app.toggle[0].set_value(False).run()
+    assert not app.exception, app.exception
+    app.date_input(key="fecha_corte").set_value("2025-08-10").run()
+    assert not app.exception, app.exception
+    assert "todavía no se tomó ninguna evaluación" in app.info[0].value
