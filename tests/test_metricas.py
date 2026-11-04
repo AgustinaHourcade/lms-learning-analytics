@@ -253,6 +253,38 @@ def test_correlaciones_validas(d):
     assert c["rho"].between(-1, 1).all() and (c["n"] > 100).all()
 
 
+def test_correlaciones_solo_rindieron(d):
+    todas = m.correlaciones(d)
+    solo = m.correlaciones(d, solo_rindieron=True)
+    t = m.tabla_alumnos(d)
+    esperado = t[t["rendidos"] > 0].groupby("asignatura").size()
+    n = solo.groupby("asignatura")["n"].max()
+    assert n.to_dict() == esperado.to_dict()
+    assert (solo["n"] <= todas["n"]).all()
+
+
+@pytest.mark.parametrize("fecha", FECHAS)
+def test_nota_por_nivel_actividad(d, fecha):
+    niveles = m.nota_por_nivel_actividad(d, fecha)
+    base = m.base(d).groupby("asignatura").size()
+    # cinco grupos parejos por materia, que suman toda la base y van de menos a más actividad
+    assert niveles.groupby("asignatura")["alumnos"].sum().to_dict() == base.to_dict()
+    assert (niveles.groupby("asignatura").size() == 5).all()
+    assert (niveles.groupby("asignatura")["alumnos"].agg(lambda s: s.max() - s.min()) <= 1).all()
+    for _, g in niveles.groupby("asignatura"):
+        assert list(g["nivel"]) == m.NIVELES_ACTIVIDAD
+        assert g["mediana_actividad"].is_monotonic_increasing
+    pcts = niveles.filter(like="pct_").sum(axis=1)
+    assert pcts.round(1).eq(100).all()
+
+
+def test_nota_por_nivel_actividad_sube_con_la_actividad(d):
+    # hallazgo de D55: el grupo que más entra tiene mejor nota que el que menos
+    niveles = m.nota_por_nivel_actividad(d, variable="avance", solo_rindieron=True)
+    for _, g in niveles.groupby("asignatura"):
+        assert g["nota_pct"].iloc[-1] > g["nota_pct"].iloc[0]
+
+
 def test_ficha_individual(d):
     primero = m.buscar_alumnos(d)["id_alumno"].iloc[0]
     f = m.ficha_alumno(d, primero)

@@ -54,3 +54,21 @@ def test_cada_pagina_corre_y_conserva_los_filtros(app, pagina):
     app.switch_page(pagina).run()
     assert not app.exception, app.exception
     assert app.selectbox(key="materia").value == "Álgebra"
+
+
+def test_notas_vs_participacion_controles(app):
+    app.switch_page("paginas/5_notas_vs_participacion.py").run()
+    assert not app.exception, app.exception
+    assert [m.label for m in app.metric] == ["ρ ALG", "ρ AED", "ρ PYE", "🔴 En riesgo"]
+    rho_antes = app.metric[0].value
+    app.selectbox(key="nvp_variable").set_value("avance").run()
+    app.toggle(key="nvp_solo_rindieron").set_value(True).run()
+    app.toggle(key="nvp_log").set_value(True).run()
+    assert not app.exception, app.exception
+    assert app.metric[0].value != rho_antes
+
+
+def test_notas_vs_participacion_sin_evaluaciones(app):
+    app.date_input(key="fecha_corte").set_value("2025-08-06").run()
+    app.switch_page("paginas/5_notas_vs_participacion.py").run()
+    assert not app.exception, app.exception
