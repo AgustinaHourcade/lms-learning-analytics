@@ -1,0 +1,75 @@
+seccion,accion,categoria
+,Acceder,Navegación
+,Acceder actividad,Navegación
+,Navegar sitio,Navegación
+,Buscar,Navegación
+,Buscar término,Navegación
+,Ver perfil,Navegación
+,Visualizar perfiles,Navegación
+,Visualizar grupos de trabajo,Navegación
+,Ver listado de categorias,Navegación
+,Ver categoría,Navegación
+,Visualizar categorias,Navegación
+,Visualizar lista,Navegación
+,Ver texto,Contenido
+,Ver archivo,Contenido
+,Descargar,Contenido
+,Previsualizar,Contenido
+,Ver tema,Contenido
+,Ver listado de temas,Contenido
+,Ver participacion,Contenido
+,Ver unidades,Contenido
+,Ver unidad,Contenido
+,Ver tópico,Contenido
+,Acceso a la edición de unidades,Contenido
+,Agregar archivo,Contenido
+,Eliminar archivo,Contenido
+,Configurar tema,Contenido
+,Ver realización,Evaluación
+,Ver realizaciones,Evaluación
+,Visualizar evaluación,Evaluación
+,Previsualizar evaluación,Evaluación
+,Realizar evaluación,Evaluación
+,Finalizar realizaci\x{F3}n,Evaluación
+,Realizar encuesta,Evaluación
+,Previsualizar encuesta,Evaluación
+,Previsualizar actividad,Evaluación
+,Ver noticia,Comunicación
+,Agregar noticia,Comunicación
+,Ver mensaje,Comunicación
+,Ver recibidos,Comunicación
+,Ver enviados,Comunicación
+,Redactar mensaje,Comunicación
+,Enviar mensaje,Comunicación
+,Responder,Comunicación
+,Responder mensaje,Comunicación
+,Responder mensaje a todos,Comunicación
+,Enviar respuesta a todos,Comunicación
+,Reenviar mensaje,Comunicación
+,Ver papelera,Comunicación
+,Mover a papelera,Comunicación
+,Restaurar mensajes,Comunicación
+,Administrar etiquetas,Comunicación
+,Agregar intervencion,Comunicación
+,Dar de alta un tema,Comunicación
+,Descargar adjunto,Comunicación
+,(sin acción),Comunicación
+Foros,Ver tema,Comunicación
+,Ver calificaciones,Notas
+,Ver notas,Notas
+,Editar calificación,Notas
+,Exportar calificaciones (todas),Notas
+,Exportar calificaciones (categoría),Notas
+,Exportar notas,Notas
+,Avances usuario,Notas
+,Avances usuarios,Notas
+,Avances usuarios por unidad,Notas
+,Exportar avances usuarios,Notas
+,Visualizar diario,Agenda
+,Visualizar semanal,Agenda
+,Visualizar mensual,Agenda
+,Visualizar anual,Agenda
+,Visualizar evento,Agenda
+,Agregar evento,Agenda
+,Eliminar evento,Agenda
+,Exportar eventos,Agenda

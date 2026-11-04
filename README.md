@@ -7,7 +7,7 @@ lms-learning-analytics/
 │   ├── raw/        Excel originales (no se tocan)
 │   ├── bronze/     Excel -> Parquet tal cual (todo texto)          <- src/ingesta.py
 │   ├── silver/     Datos limpios y tipados                          <- src/limpieza.py   (paso 3)
-│   └── gold/       Modelo estrella + KPIs                           <- src/modelo.py     (paso 4-6)
+│   └── gold/       Modelo estrella                                  <- src/modelo.py     (Etapa 2)
 ├── src/
 │   ├── config.py     Rutas, asignaturas, tipos de archivo y esquema académico
 │   ├── ingesta.py    raw -> bronze (reconoce cada Excel por su contenido)

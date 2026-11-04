@@ -12,6 +12,8 @@ BRONZE = DATA / "bronze"    # Excel -> Parquet "tal cual" (todo como texto)
 SILVER = DATA / "silver"    # Datos limpios, tipados y unificados
 GOLD = DATA / "gold"        # Modelo estrella + tablas de KPIs para el dashboard
 REPORTS = ROOT / "reports"  # Reporte de calidad de datos, capturas, informe
+REFERENCIA = DATA / "referencia"  # Tablas armadas a mano (sí van a GitHub)
+CATEGORIAS_ACCIONES = REFERENCIA / "categorias_acciones.csv"
 
 MATRICULADOS_DIR = RAW / "Matriculados"
 
@@ -62,25 +64,41 @@ TIPOS_ARCHIVO = {
 FORMATO_ID = r"ALU_\d{4}|DOC_\d{2}|STAFF_\d{2}"
 PREFIJO_ALUMNO = "ALU_"
 
+# --- Modelo (silver -> gold) ----------------------------------------------
+SESION_MINUTOS = 30          # D25: más de 30 min sin eventos -> sesión nueva
+PERFIL_ALUMNO = "Alumnos"    # D10: los KPIs de alumnos usan solo este perfil
+ESTADO_INSCRIPTO = "Aceptada"
+CATEGORIA_SIN_MAPEO = "Otros"  # acciones nuevas que no están en el CSV
+
 # --- Esquema académico (sección 5 de la consigna) --------------------------
 # metodo:
 #   "acumulativo" -> se suman puntos. Como todavía no están todos los
 #                    instrumentos, se proyecta: (puntos / max_rendido) * total_max
 #   "promedio"    -> promedio de instrumentos (cada uno sobre 100)
+# recuperatorio:
+#   "reemplaza"   -> si el alumno lo rindió, su nota reemplaza a la del
+#                    instrumento que recupera, aunque sea más baja (D20)
+#   "suma"        -> es un instrumento más que suma puntos al total (D21)
+# Un instrumento es recuperatorio si su nombre contiene "Recuperatorio"; el
+# instrumento que recupera es el que tiene el mismo nombre sin esa palabra.
+PALABRA_RECUPERATORIO = "recuperatorio"
 ESQUEMA = {
     "Álgebra": {
         "metodo": "acumulativo",
         "total_max": 120,
         "cortes": {"Regular": 60, "Promociona": 85},
+        "recuperatorio": "suma",
     },
     "Probabilidad y Estadística": {
         "metodo": "promedio",
         "total_max": 100,
         "cortes": {"Regular": 60, "Promociona": 85},
+        "recuperatorio": "reemplaza",
     },
     "Algoritmos y Estructuras de Datos": {
         "metodo": "promedio",
         "total_max": 100,
         "cortes": {"Regular": 60, "Promociona": 90},
+        "recuperatorio": "reemplaza",
     },
 }

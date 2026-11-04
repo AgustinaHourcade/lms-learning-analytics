@@ -1,7 +1,7 @@
 """
 Pipeline completo como funciones que la app puede llamar.
 
-  procesar()          raw -> bronze -> silver (y, cuando estén, gold y KPIs).
+  procesar()          raw -> bronze -> silver -> gold (modelo estrella).
   agregar_archivo()   valida un Excel nuevo, lo copia a data/raw/ y reprocesa.
                       Si algo falla, data/raw/ y los datos quedan como estaban.
 
@@ -19,16 +19,18 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from src.config import BRONZE, MATRICULADOS_DIR, RAW, REPORTS, ROOT, SILVER
+from src.config import BRONZE, GOLD, MATRICULADOS_DIR, RAW, REPORTS, ROOT, SILVER
 from src.ingesta import InfoArchivo, ingestar, nfc
 from src.limpieza import limpiar
+from src.modelo import modelar
 from src.validacion import validar_archivo
 
 
 def procesar(raw: Path = RAW, bronze: Path = BRONZE, silver: Path = SILVER,
-             reportes: Path = REPORTS, verbose: bool = True) -> dict:
+             reportes: Path = REPORTS, gold: Path = GOLD, verbose: bool = True) -> dict:
     """Corre el pipeline entero y devuelve un resumen:
-    {"ingesta": {...}, "silver": {tabla: filas}, "segundos": float}.
+    {"ingesta": {...}, "silver": {tabla: filas}, "gold": {tabla: filas},
+     "avisos_modelo": [...], "segundos": float}.
     Lanza ArchivoInvalido (o el error de limpieza) si los datos no se pueden procesar."""
     t0 = time.time()
     log = print if verbose else (lambda *a, **k: None)
@@ -36,10 +38,12 @@ def procesar(raw: Path = RAW, bronze: Path = BRONZE, silver: Path = SILVER,
     resumen_ingesta = ingestar(raw, bronze, verbose=verbose)
     log("\nLimpieza (bronze -> silver)")
     filas_silver = limpiar(bronze, silver, reportes, ingesta=resumen_ingesta, verbose=verbose)
-    # TODO Etapa 2: modelo (silver -> gold).
+    log("\nModelo (silver -> gold)")
+    modelo = modelar(silver, gold, reportes, verbose=verbose)
     segundos = time.time() - t0
     log(f"\nPipeline listo en {segundos:.1f} s")
-    return {"ingesta": resumen_ingesta, "silver": filas_silver, "segundos": segundos}
+    return {"ingesta": resumen_ingesta, "silver": filas_silver, "gold": modelo["filas"],
+            "avisos_modelo": modelo["avisos"], "segundos": segundos}
 
 
 @dataclass
@@ -73,7 +77,8 @@ def _nombre_libre(carpeta: Path, nombre: str) -> Path:
 
 
 def agregar_archivo(contenido: bytes, nombre: str, raw: Path = RAW, bronze: Path = BRONZE,
-                    silver: Path = SILVER, reportes: Path = REPORTS, verbose: bool = False) -> ResultadoCarga:
+                    silver: Path = SILVER, reportes: Path = REPORTS, gold: Path = GOLD,
+                    verbose: bool = False) -> ResultadoCarga:
     """Suma un Excel nuevo al pipeline. Pensada para st.file_uploader:
         r = agregar_archivo(archivo.getvalue(), archivo.name)
     Nunca lanza excepciones: si algo falla devuelve ok=False con los motivos
@@ -93,11 +98,11 @@ def agregar_archivo(contenido: bytes, nombre: str, raw: Path = RAW, bronze: Path
     info.path = destino
 
     try:
-        resumen = procesar(raw, bronze, silver, reportes, verbose=verbose)
+        resumen = procesar(raw, bronze, silver, reportes, gold, verbose=verbose)
     except Exception as e:
         # Vuelta atrás: se saca el archivo y se regeneran los datos anteriores.
         destino.unlink(missing_ok=True)
-        procesar(raw, bronze, silver, reportes, verbose=False)
+        procesar(raw, bronze, silver, reportes, gold, verbose=False)
         return ResultadoCarga(False, f"El archivo «{nombre}» pasó la validación pero el pipeline falló; "
                               "se descartó y los datos quedaron como estaban.", info,
                               errores=[f"{type(e).__name__}: {e}"], avisos=info.avisos)
@@ -108,7 +113,7 @@ def agregar_archivo(contenido: bytes, nombre: str, raw: Path = RAW, bronze: Path
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Pipeline del TFI (raw -> bronze -> silver).")
+    parser = argparse.ArgumentParser(description="Pipeline del TFI (raw -> bronze -> silver -> gold).")
     sub = parser.add_subparsers(dest="comando")
     p_agregar = sub.add_parser("agregar", help="Valida un Excel nuevo, lo copia a data/raw/ y reprocesa.")
     p_agregar.add_argument("archivo", type=Path)

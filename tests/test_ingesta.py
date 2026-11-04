@@ -142,7 +142,8 @@ def test_reexportacion_reemplaza_a_la_anterior(tmp_path, raw_chico):
 # Carga de punta a punta (agregar_archivo + procesar)
 # ---------------------------------------------------------------------------
 def test_agregar_archivo_y_vuelta_atras(tmp_path, raw_chico):
-    salidas = dict(bronze=tmp_path / "bronze", silver=tmp_path / "silver", reportes=tmp_path / "reports")
+    salidas = dict(bronze=tmp_path / "bronze", silver=tmp_path / "silver", reportes=tmp_path / "reports",
+                   gold=tmp_path / "gold")
     antes = procesar(raw_chico, verbose=False, **salidas)
 
     # 1) Un archivo inválido no toca raw ni los datos
@@ -165,7 +166,8 @@ def test_agregar_archivo_y_vuelta_atras(tmp_path, raw_chico):
 def test_si_el_pipeline_falla_se_descarta_el_archivo(tmp_path, raw_chico, monkeypatch):
     """Pasa la validación pero el pipeline falla: el archivo se saca de raw y se regeneran los datos."""
     import src.pipeline as pipeline
-    salidas = dict(bronze=tmp_path / "bronze", silver=tmp_path / "silver", reportes=tmp_path / "reports")
+    salidas = dict(bronze=tmp_path / "bronze", silver=tmp_path / "silver", reportes=tmp_path / "reports",
+                   gold=tmp_path / "gold")
     llamadas = []
     original = pipeline.procesar
 

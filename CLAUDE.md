@@ -23,7 +23,10 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
 - `data/silver/` tiene los datos limpios y tipados. Lo genera `src/limpieza.py` ✅, que también escribe `reports/calidad_datos.md`.
   - Las columnas mantienen el nombre del Excel. Si un valor necesita otra forma, se agrega una columna nueva al lado (por ej. `Nota obtenida`, `Nota máxima`, `Nota (%)` y `Tiempo estimado de uso (min)`).
   - Silver no aplica reglas de negocio: el 0 por no rendido, el recuperatorio y el filtro por perfil van en el modelo.
-- `data/gold/` va a tener el modelo estrella y las tablas de KPIs. Lo generan `src/modelo.py` y `src/kpis.py` (pendiente).
+- `data/gold/` tiene el modelo estrella. Lo genera `src/modelo.py` ✅ (Etapa 2), enganchado en `procesar()`, que también escribe `reports/modelo.md`.
+  - Dimensiones: `dim_alumno`, `dim_asignatura`, `dim_instrumento` (con `fecha_instrumento` = mediana de "Realizar evaluación", `recupera_a`, `cuenta_en_final`), `dim_accion` (categorías en `data/referencia/categorias_acciones.csv`), `dim_fecha`.
+  - Hechos: `fact_interaccion` (con `id_sesion`), `fact_sesion`, `fact_calificacion` (base × instrumento, 0 si no rindió; `puntos` con recuperatorio y `puntos_sin_recuperatorio`), `fact_participacion`, `fact_matricula` (último estado, `inscripto`, `en_base`). No alumnos: `otros_perfiles_interaccion` y `otros_perfiles_participacion`.
+  - Gold no depende de la fecha de corte: lo que depende de ella va en `src/metricas.py` (D29). Columnas en minúsculas y sin tildes.
 - `app/` va a tener la app de Streamlit, con una página por dashboard en `app/pages/` (pendiente).
 - bronze, silver y gold están en `.gitignore`: cada persona los regenera corriendo el pipeline.
 
@@ -71,7 +74,7 @@ El registro completo, con justificación y estado, está en `docs/decisiones.md`
 
 ## Próximos pasos (plan por etapas)
 - Etapa 1: ingesta preparada para archivos nuevos (`pipeline.py`, `validacion.py`, tests en `tests/`).
-- Etapa 2: `src/modelo.py` (silver -> gold): `dim_alumno`, `dim_asignatura`, `dim_instrumento`, `dim_accion`, `dim_fecha`; `fact_interaccion` (con `session_id`, corte a 30 min), `fact_calificacion` (0 por no rendido, recuperatorios), `fact_participacion`, `fact_matricula` y tabla aparte de no alumnos. Engancharlo en `procesar()` (hay un TODO).
+- Etapa 2 ✅: `src/modelo.py` (silver -> gold) con tests en `tests/test_modelo.py`.
 - Etapa 3: `src/metricas.py`: funciones que reciben fecha de corte, materia y umbral de inactividad (D29).
 - Etapa 4: base de la app (barra lateral global, componentes, página "Cargar archivo" que llama a `agregar_archivo()`).
 - Etapas 5 y 6: los 7 dashboards. Etapa 7: ML (K-Means y predictor de abandono). Etapa 8: hosting. Etapa 9: informe y defensa.
