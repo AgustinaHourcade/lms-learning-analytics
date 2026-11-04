@@ -70,6 +70,12 @@ PERFIL_ALUMNO = "Alumnos"    # D10: los KPIs de alumnos usan solo este perfil
 ESTADO_INSCRIPTO = "Aceptada"
 CATEGORIA_SIN_MAPEO = "Otros"  # acciones nuevas que no están en el CSV
 
+# --- Métricas (gold -> KPIs, dependen de la fecha de corte) -----------------
+FECHA_CORTE_DEFECTO = "2025-10-24"   # fecha de exportación de los Excel
+UMBRAL_INACTIVIDAD_DIAS = 7          # D35: más de 7 días sin entrar -> inactivo
+CONDICIONES = ["Libre", "Regular", "Promociona"]
+SIN_EVALUACIONES = "Sin evaluaciones"  # todavía no hay instrumentos a la fecha de corte
+
 # --- Esquema académico (sección 5 de la consigna) --------------------------
 # metodo:
 #   "acumulativo" -> se suman puntos. Como todavía no están todos los

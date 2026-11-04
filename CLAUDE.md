@@ -27,6 +27,10 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
   - Dimensiones: `dim_alumno`, `dim_asignatura`, `dim_instrumento` (con `fecha_instrumento` = mediana de "Realizar evaluación", `recupera_a`, `cuenta_en_final`), `dim_accion` (categorías en `data/referencia/categorias_acciones.csv`), `dim_fecha`.
   - Hechos: `fact_interaccion` (con `id_sesion`), `fact_sesion`, `fact_calificacion` (base × instrumento, 0 si no rindió; `puntos` con recuperatorio y `puntos_sin_recuperatorio`), `fact_participacion`, `fact_matricula` (último estado, `inscripto`, `en_base`). No alumnos: `otros_perfiles_interaccion` y `otros_perfiles_participacion`.
   - Gold no depende de la fecha de corte: lo que depende de ella va en `src/metricas.py` (D29). Columnas en minúsculas y sin tildes.
+- `src/metricas.py` ✅ (Etapa 3): gold -> KPIs. `d = cargar()` una vez y después funciones `f(d, fecha_corte, asignatura, umbral)`; `asignatura=None` = todas. Tests en `tests/test_metricas.py` (el pipeline de los tests corre una vez, en `tests/conftest.py`).
+  - Centrales: `nota_final` (nota y condición a la fecha, D34), `actividad_alumnos` (Activo / Inactivo / Sin actividad, D35) y `tabla_alumnos` (una fila por alumno de la base con todo: la usan Notas vs. Participación, Ficha, Alertas y el ML).
+  - Por dashboard: `kpis_generales`, `evolucion_actividad` (D/W/M), `resumen_participacion`, `reporte_participacion` (foto al 24/10, D36), `interacciones_por_categoria`, `mapa_calor`, `fechas_evaluaciones`, `promedio_por_instrumento`, `distribucion_condicion`, `correlaciones` (Spearman, D38), `cuadrante_riesgo` (D37), `resumen_matricula`, `alertas`, `situacion_academica`, `buscar_alumnos`, `ficha_alumno`.
+  - Defaults en `config.py`: `FECHA_CORTE_DEFECTO` (24/10/2025) y `UMBRAL_INACTIVIDAD_DIAS` (7).
 - `app/` va a tener la app de Streamlit, con una página por dashboard en `app/pages/` (pendiente).
 - bronze, silver y gold están en `.gitignore`: cada persona los regenera corriendo el pipeline.
 
@@ -75,6 +79,6 @@ El registro completo, con justificación y estado, está en `docs/decisiones.md`
 ## Próximos pasos (plan por etapas)
 - Etapa 1: ingesta preparada para archivos nuevos (`pipeline.py`, `validacion.py`, tests en `tests/`).
 - Etapa 2 ✅: `src/modelo.py` (silver -> gold) con tests en `tests/test_modelo.py`.
-- Etapa 3: `src/metricas.py`: funciones que reciben fecha de corte, materia y umbral de inactividad (D29).
+- Etapa 3 ✅: `src/metricas.py`: funciones que reciben fecha de corte, materia y umbral de inactividad (D29, D34-D38).
 - Etapa 4: base de la app (barra lateral global, componentes, página "Cargar archivo" que llama a `agregar_archivo()`).
 - Etapas 5 y 6: los 7 dashboards. Etapa 7: ML (K-Means y predictor de abandono). Etapa 8: hosting. Etapa 9: informe y defensa.

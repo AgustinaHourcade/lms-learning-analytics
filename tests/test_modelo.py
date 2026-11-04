@@ -2,7 +2,7 @@
 Tests de la Etapa 2: modelo (silver -> gold).
 
 Correr desde la raíz:  python -m pytest
-El pipeline se corre una sola vez sobre data/raw/ y escribe en una carpeta
+El pipeline se corre una sola vez (conftest.py) sobre data/raw/ y escribe en una carpeta
 temporal: data/ no se toca.
 """
 from __future__ import annotations
@@ -12,20 +12,9 @@ import pytest
 
 from src.config import ESQUEMA
 from src.modelo import clave_instrumento, dim_instrumento, sesionizar
-from src.pipeline import procesar
 
 CATEGORIAS = {"Navegación", "Contenido", "Evaluación", "Comunicación", "Notas", "Agenda"}
-
-
-@pytest.fixture(scope="module")
-def capas(tmp_path_factory):
-    tmp = tmp_path_factory.mktemp("pipeline")
-    procesar(bronze=tmp / "bronze", silver=tmp / "silver", reportes=tmp / "reports", gold=tmp / "gold",
-             verbose=False)
-
-    def leer(capa: str, tabla: str) -> pd.DataFrame:
-        return pd.read_parquet(tmp / capa / f"{tabla}.parquet")
-    return leer
+# La fixture `capas` (pipeline completo en una carpeta temporal) está en conftest.py.
 
 
 # ---------------------------------------------------------------------------

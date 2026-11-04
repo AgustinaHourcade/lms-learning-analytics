@@ -14,7 +14,7 @@ Los datos pasan por 4 capas. Cada capa es una carpeta dentro de `data/` y la gen
 | **raw** | Los Excel originales, **sin tocar nunca**. | Celda `"24.00/25.00"` en el Excel, con filas de título arriba. | Nadie: los entrega la cátedra. | Sí |
 | **bronze** | Lo mismo que los Excel pero en Parquet: sin filas de título, con encabezados planos, **todo como texto** y con la materia y el archivo de origen de cada fila. | `Nota = "24.00/25.00"` (texto). | `src/ingesta.py` | No |
 | **silver** | Datos **limpios y tipados**: fechas como fechas, números como números, sin duplicados ni filas basura. Mismas columnas que el Excel. | `Nota = "24.00/25.00"`, `Nota obtenida = 24`, `Nota máxima = 25`, `Nota (%) = 96`. | `src/limpieza.py` | No |
-| **gold** | Datos **listos para el dashboard**: modelo estrella, reglas académicas aplicadas (0 por no rendido, recuperatorio, solo alumnos), nota final, condición y KPIs. | Alumno ALU_1004 en Álgebra: nota final 78, condición **Regular**. | `src/modelo.py`, `src/kpis.py` | No |
+| **gold** | Datos **listos para el dashboard**: modelo estrella, reglas académicas aplicadas (0 por no rendido, recuperatorio, solo alumnos), nota final, condición y KPIs. | Alumno ALU_1004 en Álgebra: nota final 78, condición **Regular**. | `src/modelo.py` (y `src/metricas.py` calcula los KPIs a la fecha de corte) | No |
 
 **Por qué separar en capas y no hacer todo en un solo script:**
 - **Si algo sale mal, se rehace solo esa parte.** Leer los Excel es lo lento (unos 25 s). Si cambiamos una regla de negocio, por ejemplo la del recuperatorio, se vuelve a correr gold y tarda un segundo.
@@ -103,8 +103,8 @@ Después se abre un **Pull Request** en GitHub, alguien del equipo lo mira y se 
 
 **Reglas para no pisarnos:**
 - **Cada integrante toma sus propias páginas** (`app/pages/N_*.py`). Si dos personas tocan el mismo archivo a la vez, hay conflictos.
-- **Lo compartido se avisa antes de tocarlo:** `src/config.py`, `src/modelo.py`, `src/kpis.py`. Si cambiás una regla o una tabla de gold, las páginas de los demás pueden romperse.
-- **Las páginas leen de gold, no calculan.** Si te falta un KPI, se agrega en `src/kpis.py` para que todos usen el mismo número.
+- **Lo compartido se avisa antes de tocarlo:** `src/config.py`, `src/modelo.py`, `src/metricas.py`. Si cambiás una regla o una tabla de gold, las páginas de los demás pueden romperse.
+- **Las páginas no calculan: llaman a `src/metricas.py`.** Si te falta un KPI, se agrega ahí para que todos usen el mismo número.
 - **No subir datos generados** (bronze, silver y gold ya están en `.gitignore`).
 - **Antes del merge, correr el pipeline completo y abrir la app** para comprobar que nada se rompió.
 
@@ -162,7 +162,7 @@ Después se abre un **Pull Request** en GitHub, alguien del equipo lo mira y se 
 |---|---|---|---|
 | 4 | Modelo estrella: `dim_alumno`, `dim_asignatura`, `dim_instrumento`, `dim_fecha`, `fact_interaccion`, `fact_calificacion`, `fact_participacion`, `fact_matricula`. Último estado de matrícula por alumno. Aplicar las decisiones 1 a 4. | `src/modelo.py` | Todos |
 | 5 | Nota final y condición (Libre / Regular / Promociona) según el esquema de cada materia. | `src/modelo.py` o `src/notas.py` | Rendimiento, Individual |
-| 6 | Tablas de KPIs: participación, trazabilidad, calificaciones, cruces (correlaciones) y matrícula. | `src/kpis.py` | General, Participación, Trazabilidad, Notas vs. Participación, Matrícula |
+| 6 | Tablas de KPIs: participación, trazabilidad, calificaciones, cruces (correlaciones) y matrícula. | `src/metricas.py` ✅ | General, Participación, Trazabilidad, Notas vs. Participación, Matrícula |
 | 7 | Completar las 7 páginas de Streamlit (con gráficos de plotly). | `app/pages/*.py` | — |
 | 8 | Informe técnico: proceso de limpieza, justificación de los KPIs, explicación de los dashboards y conclusiones. | `reports/` | — |
 
