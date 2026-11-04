@@ -43,8 +43,7 @@ pip install -r requirements.txt
 Los Excel originales ya vienen en el repo (`data/raw/`). Las capas bronze y silver **no** se suben a git: cada uno las genera en su compu con estos comandos, siempre desde la raíz del repo:
 
 ```bash
-python -m src.ingesta     # Excel -> data/bronze/  (~25 s)
-python -m src.limpieza    # bronze -> data/silver/ + reports/calidad_datos.md  (~1 s)
+python -m src.pipeline    # Excel -> data/bronze/ -> data/silver/ + reports/calidad_datos.md  (~20 s)
 ```
 
 Si sale un error, leé el mensaje: el pipeline está hecho para **frenar** cuando encuentra un formato inesperado (una fecha rara, un texto donde va un número), en vez de seguir con datos mal leídos.
@@ -60,7 +59,7 @@ Se abre en http://localhost:8501. En el menú de la izquierda:
 Para cortar la app: `Ctrl + C` en la terminal. Si volvés a correr el pipeline con la app abierta, alcanza con refrescar la página.
 
 ### Ver el reporte de calidad
-[`reports/calidad_datos.md`](../reports/calidad_datos.md) lista qué se encontró y qué se corrigió en cada tabla: duplicados, nulos, filas basura. Se regenera solo cada vez que corrés `src.limpieza`.
+[`reports/calidad_datos.md`](../reports/calidad_datos.md) lista qué se encontró y qué se corrigió en cada tabla: duplicados, nulos, filas basura. Se regenera solo cada vez que corrés el pipeline. También lista los archivos usados y los avisos de la ingesta (por ejemplo, si una exportación reemplazó a otra).
 
 ### Mirar los datos desde Python (opcional)
 ```python
@@ -70,8 +69,11 @@ df.head()
 ```
 
 ### Cuando lleguen Excel nuevos
-1. Copiarlos en `data/raw/<Asignatura>/` sin cambiarles el nombre ni el formato.
-2. Volver a correr `python -m src.ingesta` y `python -m src.limpieza`.
+Opción A (recomendada): `python -m src.pipeline agregar ruta/al/archivo.xlsx`. Valida el archivo, lo copia a la carpeta que corresponde y recalcula todo. Si tiene un problema (una nota fuera de rango, una materia que no se reconoce, un archivo ya cargado), muestra el motivo y no toca nada.
+
+Opción B: copiarlos a mano en `data/raw/` (en cualquier carpeta, con cualquier nombre: cada Excel se reconoce por su contenido) y correr `python -m src.pipeline`.
+
+Si se exporta de nuevo algo que ya estaba (el mismo instrumento o el reporte de participación), vale la exportación más reciente (D32).
 
 No hay que tocar código: las notas y las condiciones se recalculan solas.
 

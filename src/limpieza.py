@@ -16,6 +16,7 @@ Ejecutar desde la raíz del proyecto:
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 import pandas as pd
 
@@ -62,7 +63,9 @@ def limpiar_trazabilidad(df: pd.DataFrame) -> pd.DataFrame:
     df = normalizar_ids(df, "Usuario", "trazabilidad")
     df["Fecha"] = fecha(df["Fecha"], "%Y-%m-%d %H:%M:%S")
 
-    dup = df.duplicated()
+    # Sin `archivo_origen`: si dos exportaciones se superponen, el mismo evento
+    # aparece en las dos y tiene que contarse una sola vez.
+    dup = df.duplicated(subset=[c for c in df.columns if c != "archivo_origen"])
     anotar("trazabilidad", f"{dup.sum():,} filas duplicadas exactas eliminadas (mismo usuario, segundo, acción).")
     df = df[~dup]
 
@@ -129,6 +132,12 @@ def limpiar_matriculados(df: pd.DataFrame) -> pd.DataFrame:
     df = df[~pie].copy()
     df = normalizar_ids(df, "Identificación", "matriculados")
 
+    # Si se carga un listado nuevo de matriculados, las filas que ya estaban se repiten.
+    dup = df.duplicated(subset=[c for c in df.columns if c != "archivo_origen"])
+    if dup.any():
+        anotar("matriculados", f"{dup.sum()} filas repetidas entre archivos de matriculados eliminadas.")
+        df = df[~dup]
+
     df["Fecha inscripción"] = fecha(df["Fecha inscripción"], "%d/%m/%Y %H:%M:%S")
     n = df.groupby(["asignatura", "Identificación"]).size()
     anotar("matriculados", f"{(n > 1).sum()} alumnos con más de una fila (altas y bajas). Se conservan todas; el último estado se toma en el modelo.")
@@ -147,26 +156,45 @@ LIMPIADORES = {
 }
 
 
-def main() -> None:
-    SILVER.mkdir(parents=True, exist_ok=True)
-    REPORTS.mkdir(parents=True, exist_ok=True)
-    t0 = time.time()
-    resumen = []
+def limpiar(origen: Path = BRONZE, destino: Path = SILVER, reportes: Path = REPORTS,
+            ingesta: dict | None = None, verbose: bool = True) -> dict:
+    """Limpia las cuatro tablas de bronze, escribe silver y el reporte de calidad.
+    `ingesta` es el resumen que devuelve `ingestar()`: si viene, el reporte lista
+    los archivos usados y los avisos. Devuelve {tabla: filas en silver}."""
+    log = print if verbose else (lambda *a, **k: None)
+    hallazgos.clear()  # la app puede llamar a limpiar() varias veces en el mismo proceso
+    destino.mkdir(parents=True, exist_ok=True)
+    reportes.mkdir(parents=True, exist_ok=True)
+    resumen, filas = [], {}
 
-    for nombre, limpiar in LIMPIADORES.items():
-        bronze = pd.read_parquet(BRONZE / f"{nombre}.parquet")
-        silver = limpiar(bronze.copy())
-        silver.to_parquet(SILVER / f"{nombre}.parquet", index=False)
+    for nombre, limpiador in LIMPIADORES.items():
+        bronze = pd.read_parquet(origen / f"{nombre}.parquet")
+        silver = limpiador(bronze.copy())
+        silver.to_parquet(destino / f"{nombre}.parquet", index=False)
+        filas[nombre] = len(silver)
         resumen.append(f"| {nombre} | {len(bronze):,} | {len(silver):,} | {silver.shape[1]} |")
-        print(f"  {nombre:<15} {len(bronze):>8,} -> {len(silver):>8,} filas")
+        log(f"  {nombre:<15} {len(bronze):>8,} -> {len(silver):>8,} filas")
 
     lineas = ["# Calidad de datos (bronze -> silver)", "",
-              "Generado por `python -m src.limpieza`. No editar a mano.", "",
+              "Generado por el pipeline (`python -m src.pipeline`). No editar a mano.", "",
               "| Tabla | Filas bronze | Filas silver | Columnas |", "|---|---|---|---|", *resumen, ""]
+    if ingesta:
+        lineas += [f"## Archivos usados ({len(ingesta['archivos'])})", "",
+                   "Cada Excel se reconoce por su contenido (tipo y materia), no por el nombre.", "",
+                   *[f"- {a}" for a in ingesta["archivos"]], ""]
+        if ingesta["avisos"]:
+            lineas += ["### Avisos de la ingesta", *[f"- {a}" for a in ingesta["avisos"]], ""]
     for tabla, items in hallazgos.items():
         lineas += [f"## {tabla}", *[f"- {i}" for i in items], ""]
-    (REPORTS / "calidad_datos.md").write_text("\n".join(lineas), encoding="utf-8")
-    print(f"\n  Reporte -> reports/calidad_datos.md\nListo en {time.time() - t0:.1f} s")
+    (reportes / "calidad_datos.md").write_text("\n".join(lineas), encoding="utf-8")
+    log(f"\n  Reporte -> {reportes.name}/calidad_datos.md")
+    return filas
+
+
+def main() -> None:
+    t0 = time.time()
+    limpiar()
+    print(f"Listo en {time.time() - t0:.1f} s")
 
 
 if __name__ == "__main__":

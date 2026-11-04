@@ -14,7 +14,7 @@ st.title("Explorar datos")
 capas = {"silver": SILVER, "gold": GOLD}
 disponibles = {f"{capa} / {p.stem}": p for capa, carpeta in capas.items() for p in sorted(carpeta.glob("*.parquet"))}
 if not disponibles:
-    st.warning("No hay tablas todavía. Corré `python -m src.ingesta` y `python -m src.limpieza`.")
+    st.warning("No hay tablas todavía. Corré `python -m src.pipeline` desde la raíz del repo.")
     st.stop()
 
 

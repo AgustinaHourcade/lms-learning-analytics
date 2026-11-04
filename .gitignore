@@ -1,6 +1,7 @@
 # Entorno virtual y caché de Python
 .venv/
 __pycache__/
+.pytest_cache/
 *.pyc
 
 # Datos generados: cada uno los regenera corriendo el pipeline

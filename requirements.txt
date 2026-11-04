@@ -10,3 +10,4 @@ scipy==1.18.1
 duckdb==2.0.0
 scikit-learn==1.9.1
 joblib==1.6.0
+pytest==8.4.2

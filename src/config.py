@@ -23,6 +23,39 @@ ASIGNATURAS = {
     "Probabilidad y Estadística": {"codigo": "2321", "sigla": "PYE"},
 }
 
+# --- Tipos de archivo (ingesta) --------------------------------------------
+# Cada Excel se reconoce por su CONTENIDO, no por el nombre del archivo:
+#   "firma"       -> texto que aparece en las primeras filas (título o celda A3)
+#   "encabezado"  -> columnas que tiene que tener la fila de encabezado. La
+#                    ingesta busca la primera fila que las contiene todas, en
+#                    vez de usar un número de fila fijo.
+#   "requeridas"  -> columnas mínimas para que el archivo sea válido.
+FILAS_A_INSPECCIONAR = 15   # hasta qué fila se buscan la firma y el encabezado
+
+TIPOS_ARCHIVO = {
+    "calificaciones": {
+        "firma": "Calificación:",
+        "encabezado": ["Usuario", "Nota"],
+        "requeridas": ["Usuario", "Apellido", "Nombre", "Nota", "Observaciones"],
+    },
+    "trazabilidad": {
+        "firma": "Reporte de Trazabilidad",
+        "encabezado": ["Fecha", "Usuario", "Acción"],
+        "requeridas": ["Fecha", "Usuario", "Perfil", "Sección", "Acción"],
+    },
+    "participacion": {
+        "firma": "Reporte de lectura y participación",
+        "encabezado": ["Usuario", "Avance", "Interacciones"],
+        "requeridas": ["Usuario", "Perfil", "Avance", "Interacciones", "Tiempo estimado de uso",
+                       "Primera interacción", "Última interacción"],
+    },
+    "matriculados": {
+        "firma": None,  # el título es '(2319) Álgebra': se reconoce por el encabezado
+        "encabezado": ["Identificación", "Estado Insc."],
+        "requeridas": ["Alumno", "Identificación", "Estado Insc.", "Fecha inscripción"],
+    },
+}
+
 # --- Identificadores -------------------------------------------------------
 # Formato válido de `Usuario` / `Identificación` después de normalizar.
 # Alumnos ALU_####, Tutores DOC_##, Coordinadores e Invitados STAFF_##.

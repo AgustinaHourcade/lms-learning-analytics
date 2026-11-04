@@ -1,6 +1,6 @@
 # Calidad de datos (bronze -> silver)
 
-Generado por `python -m src.limpieza`. No editar a mano.
+Generado por el pipeline (`python -m src.pipeline`). No editar a mano.
 
 | Tabla | Filas bronze | Filas silver | Columnas |
 |---|---|---|---|
@@ -8,6 +8,37 @@ Generado por `python -m src.limpieza`. No editar a mano.
 | participacion | 986 | 986 | 33 |
 | calificaciones | 1,793 | 1,793 | 17 |
 | matriculados | 516 | 513 | 10 |
+
+## Archivos usados (26)
+
+Cada Excel se reconoce por su contenido (tipo y materia), no por el nombre.
+
+- calificaciones_alumnos_20251024_115518.xlsx
+- calificaciones_alumnos_20251024_115523.xlsx
+- calificaciones_alumnos_20251024_115528.xlsx
+- calificaciones_alumnos_20251024_115533.xlsx
+- calificaciones_alumnos_20251024_115538.xlsx
+- calificaciones_alumnos_20251024_115041.xlsx
+- calificaciones_alumnos_20251024_115045.xlsx
+- calificaciones_alumnos_20251024_115049.xlsx
+- calificaciones_alumnos_20251024_115055.xlsx
+- calificaciones_alumnos_20251024_115059.xlsx
+- calificaciones_alumnos_20251024_115102.xlsx
+- calificaciones_alumnos_20251024_115105.xlsx
+- calificaciones_alumnos_20251024_115127.xlsx
+- calificaciones_alumnos_20251024_115130.xlsx
+- calificaciones_alumnos_20251024_114929.xlsx
+- calificaciones_alumnos_20251024_114941.xlsx
+- calificaciones_alumnos_20251024_114944.xlsx
+- Algoritmos y Estructuras de Datos.xlsx
+- Probabilidad y Estadística.xlsx
+- Álgebra.xlsx
+- reporte_participacion_20251024_115446.xlsx
+- reporte_participacion_20251024_115203.xlsx
+- reporte_participacion_20251024_115228.xlsx
+- reporte_trazabilidad_20251024_115443.xlsx
+- reporte_trazabilidad_20251024_115157.xlsx
+- reporte_trazabilidad_20251024_115226.xlsx
 
 ## trazabilidad
 - `Usuario` normalizado (sin espacios, en mayúsculas): 0 valores corregidos. Todos respetan el formato ALU_####, DOC_## o STAFF_##.

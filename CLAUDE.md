@@ -11,12 +11,15 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
 ## Forma de trabajo
 - Responder en español rioplatense.
 - Avanzar paso a paso: escribir el código, probarlo sobre los datos reales y explicarlo para que el usuario pueda contárselo al equipo.
-- Se ejecuta siempre desde la raíz con `python -m src.<modulo>`.
+- Se ejecuta siempre desde la raíz con `python -m src.<modulo>`. El pipeline completo: `python -m src.pipeline` (o `procesar()` desde la app). Tests: `python -m pytest`.
 - Las rutas y las reglas de negocio están en `src/config.py`: no se escriben a mano en otros archivos.
 
 ## Arquitectura de datos (medallion)
 - `data/raw/` contiene los Excel originales. **Nunca se modifican.** Hay una carpeta por materia más `Matriculados/`.
 - `data/bronze/` tiene los Excel pasados a Parquet tal cual, todo como texto, con columnas `asignatura` y `archivo_origen`. Lo genera `src/ingesta.py` ✅.
+  - Cada Excel se reconoce por su contenido (tipo y materia), no por el nombre ni la carpeta; la fila de encabezado se busca. Reglas en `TIPOS_ARCHIVO` de `config.py` (D31).
+  - Participación y calificaciones son "fotos": si hay dos del mismo instrumento o materia, vale la exportación más reciente (D32). Trazabilidad y matriculados se acumulan (D33).
+- Archivos nuevos: `src/pipeline.py` tiene `procesar()` y `agregar_archivo(bytes, nombre)` (valida con `src/validacion.py`, copia a raw, reprocesa y, si falla, vuelve atrás) ✅ Etapa 1. Por terminal: `python -m src.pipeline agregar <archivo.xlsx>`.
 - `data/silver/` tiene los datos limpios y tipados. Lo genera `src/limpieza.py` ✅, que también escribe `reports/calidad_datos.md`.
   - Las columnas mantienen el nombre del Excel. Si un valor necesita otra forma, se agrega una columna nueva al lado (por ej. `Nota obtenida`, `Nota máxima`, `Nota (%)` y `Tiempo estimado de uso (min)`).
   - Silver no aplica reglas de negocio: el 0 por no rendido, el recuperatorio y el filtro por perfil van en el modelo.
@@ -66,10 +69,9 @@ El registro completo, con justificación y estado, está en `docs/decisiones.md`
 6. Normalización (indicación del profesor): nota final = Σ puntos obtenidos / Σ puntaje máximo de los instrumentos disponibles a la fecha de corte × 100. Álgebra se expresa sobre 120. Los instrumentos con pocas entregas (AED Unidad 5, PyE Semanal Nº2) se incluyen.
 7. Se usan todos los Excel. La ficha individual tiene buscador por nombre o ID y muestra al primero por defecto. Se tiene que poder agregar un archivo nuevo (por ej., notas de un parcial) y recalcular.
 
-## Próximos pasos
-3. `src/limpieza.py`: parsear tipos, normalizar IDs y textos, deduplicar, tratar nulos y generar `reports/calidad_datos.md`.
-4. `src/modelo.py`: dimensiones `dim_alumno`, `dim_asignatura`, `dim_instrumento`, `dim_fecha`; hechos `fact_interaccion`, `fact_calificacion`, `fact_participacion`, `fact_matricula`.
-5. Nota final y condición según el ESQUEMA.
-6. `src/kpis.py`: KPIs de participación, trazabilidad, calificaciones, cruces (correlaciones) y matrícula (activos no inscriptos, inscriptos sin actividad).
-7. Streamlit, 7 páginas: General, Participación, Trazabilidad, Rendimiento, Notas vs. Participación, Individual (semáforo) y Matrícula/Alertas.
-8. Informe técnico.
+## Próximos pasos (plan por etapas)
+- Etapa 1: ingesta preparada para archivos nuevos (`pipeline.py`, `validacion.py`, tests en `tests/`).
+- Etapa 2: `src/modelo.py` (silver -> gold): `dim_alumno`, `dim_asignatura`, `dim_instrumento`, `dim_accion`, `dim_fecha`; `fact_interaccion` (con `session_id`, corte a 30 min), `fact_calificacion` (0 por no rendido, recuperatorios), `fact_participacion`, `fact_matricula` y tabla aparte de no alumnos. Engancharlo en `procesar()` (hay un TODO).
+- Etapa 3: `src/metricas.py`: funciones que reciben fecha de corte, materia y umbral de inactividad (D29).
+- Etapa 4: base de la app (barra lateral global, componentes, página "Cargar archivo" que llama a `agregar_archivo()`).
+- Etapas 5 y 6: los 7 dashboards. Etapa 7: ML (K-Means y predictor de abandono). Etapa 8: hosting. Etapa 9: informe y defensa.
