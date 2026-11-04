@@ -260,3 +260,40 @@ def test_ficha_individual(d):
     assert (f["instrumentos"]["id_alumno"] == primero).all()
     with pytest.raises(KeyError):
         m.ficha_alumno(d, "ALU_9999")
+
+
+# ---------------------------------------------------------------------------
+# Dashboard de Participación (D53)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("desde", [None, "2025-10-01"])
+def test_participacion_alumnos_respeta_el_rango(d, desde):
+    p = m.participacion_alumnos(d, desde=desde)
+    assert len(p) == len(d.matricula[d.matricula["en_base"]])
+    assert not p.duplicated(["asignatura", "id_alumno"]).any()
+    ev = d.interacciones[d.interacciones["en_base"] & (d.interacciones["fecha"] <= FECHA_CORTE_DEFECTO)]
+    if desde:
+        ev = ev[ev["fecha"] >= desde]
+    assert p["eventos"].sum() == len(ev)
+    assert p["avance"].between(0, 100).all()
+
+
+def test_evolucion_participacion_relativa_a_la_base(d):
+    e = m.evolucion_participacion(d, frecuencia="W")
+    n = m.base(d).groupby("asignatura").size()
+    fila = e.iloc[3]
+    assert fila["pct_base_activa"] == pytest.approx(fila["alumnos_activos"] / n[fila["asignatura"]] * 100, abs=0.01)
+    assert e["pct_base_activa"].between(0, 100).all()
+    assert e["eventos"].sum() == d.interacciones["en_base"].sum()
+
+
+def test_uso_herramientas(d):
+    h = m.uso_herramientas(d)
+    assert len(h) == 3 * len(m.HERRAMIENTAS)
+    assert h["pct_alumnos"].between(0, 100).all() and (h["alumnos"] <= h["base_reporte"]).all()
+    foros = h[h["herramienta"] == "Foros"].set_index("asignatura")
+    assert foros.loc[ALG, "recursos"] == 5 and foros.loc[AED, "alumnos"] == 0
+
+
+def test_concordancia_tiempo(d):
+    c = m.concordancia_tiempo(d)
+    assert len(c) == 3 and (c["rho"] > 0.9).all()

@@ -363,6 +363,74 @@ def reporte_participacion(d: Datos, asignatura=None) -> pd.DataFrame:
                           .reset_index(drop=True)
 
 
+def evolucion_participacion(d: Datos, fecha_corte=None, asignatura=None, frecuencia: str = "W",
+                            desde=None) -> pd.DataFrame:
+    """evolucion_actividad() más las mismas series relativas al tamaño de la base
+    de cada materia (D53): % de la base que entró en el período e interacciones,
+    sesiones y minutos por alumno. Sirve para comparar materias de distinto tamaño."""
+    df = evolucion_actividad(d, fecha_corte, asignatura, frecuencia, desde)
+    n = df["asignatura"].map(base(d, asignatura).groupby("asignatura").size())
+    df["pct_base_activa"] = (df["alumnos_activos"] / n * 100).round(2)
+    for col in ["eventos", "sesiones", "minutos"]:
+        df[f"{col}_por_alumno"] = (df[col] / n).round(2)
+    return df
+
+
+def participacion_alumnos(d: Datos, fecha_corte=None, asignatura=None, umbral: int = UMBRAL_INACTIVIDAD_DIAS,
+                          desde=None) -> pd.DataFrame:
+    """Una fila por alumno de la base: actividad entre `desde` y la fecha de corte
+    (trazabilidad) y el reporte de participación (foto, D36). Es tabla_alumnos()
+    sin las notas, pero respetando el rango de fechas del dashboard (D53)."""
+    act = actividad_alumnos(d, fecha_corte, asignatura, umbral, desde)
+    rep = d.participacion[["asignatura", "id_alumno", *COLUMNAS_REPORTE]].rename(columns=COLUMNAS_REPORTE)
+    nombres = d.alumnos[["id_alumno", "apellido", "nombre", "nombre_completo"]]
+    df = act.merge(nombres, on="id_alumno", how="left").merge(rep, how="left")
+    return df.sort_values(["asignatura", "apellido", "nombre"]).reset_index(drop=True)
+
+
+# Herramientas del reporte de participación: (uso del alumno, recursos que ofrece el aula).
+HERRAMIENTAS = {
+    "Foros": ("foros_cantidad_de_intervenciones_del_usuario", "foros_cantidad_temas_de_debate"),
+    "Encuestas": ("encuestas_cargados", "encuestas_cantidad"),
+    "Correo interno": ("emails_enviados", None),
+    "Archivos": ("archivos_cargados", "archivos_cantidad"),
+    "Wikis": ("wikis_cargados", "wikis_cantidad"),
+}
+
+
+def uso_herramientas(d: Datos, asignatura=None) -> pd.DataFrame:
+    """Por materia y herramienta (foto al 24/10, D36): cuántos recursos ofrece el
+    aula (temas de foro, encuestas...), cuántos alumnos de la base la usaron al
+    menos una vez, qué % son y cuántos usos hubo en total (D53)."""
+    p = reporte_participacion(d, asignatura)
+    filas = []
+    for asig, g in p.groupby("asignatura"):
+        for herramienta, (uso, recursos) in HERRAMIENTAS.items():
+            usos = g[uso].fillna(0)
+            filas.append({"asignatura": asig, "herramienta": herramienta,
+                          "recursos": int(g[recursos].max()) if recursos else pd.NA,
+                          "alumnos": int((usos > 0).sum()), "pct_alumnos": round((usos > 0).mean() * 100, 2),
+                          "usos": int(usos.sum()), "base_reporte": len(g)})
+    df = pd.DataFrame(filas, columns=["asignatura", "herramienta", "recursos", "alumnos", "pct_alumnos", "usos",
+                                      "base_reporte"])
+    df["recursos"] = df["recursos"].astype("Int64")
+    return df
+
+
+def concordancia_tiempo(d: Datos, asignatura=None) -> pd.DataFrame:
+    """Control de las sesiones (D25): por materia, Spearman entre los minutos que
+    salen de la trazabilidad (sesiones cortadas a los 30 min) y el tiempo estimado
+    de uso del reporte de participación. Se compara a la fecha del reporte
+    (FECHA_CORTE_DEFECTO), porque el reporte es una foto (D36)."""
+    t = participacion_alumnos(d, FECHA_CORTE_DEFECTO, asignatura).dropna(subset=["tiempo_uso_min"])
+    filas = []
+    for asig, g in t.groupby("asignatura"):
+        rho, p = stats.spearmanr(g["minutos"], g["tiempo_uso_min"]) if len(g) > 2 else (np.nan, np.nan)
+        filas.append({"asignatura": asig, "rho": round(float(rho), 3), "p_valor": float(p), "n": len(g),
+                      "minutos_total": round(g["minutos"].sum(), 1), "tiempo_uso_total": g["tiempo_uso_min"].sum()})
+    return pd.DataFrame(filas)
+
+
 # ---------------------------------------------------------------------------
 # Trazabilidad
 # ---------------------------------------------------------------------------

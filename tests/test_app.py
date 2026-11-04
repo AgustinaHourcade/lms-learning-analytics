@@ -54,3 +54,23 @@ def test_cada_pagina_corre_y_conserva_los_filtros(app, pagina):
     app.switch_page(pagina).run()
     assert not app.exception, app.exception
     assert app.selectbox(key="materia").value == "Álgebra"
+
+
+def test_participacion(app):
+    """Dashboard de Participación: tarjetas, pestañas, período, frecuencia y medida."""
+    app.switch_page("paginas/2_participacion.py").run()
+    assert not app.exception, app.exception
+    assert len(app.tabs) == 3
+    antes = _valores_metricas(app)
+    app.button_group(key="part_periodo").set_value("Últimas 2 semanas").run()
+    assert not app.exception, app.exception
+    assert _valores_metricas(app)["Sesiones por alumno"] != antes["Sesiones por alumno"]
+    app.button_group(key="part_periodo").set_value("Desde una fecha").run()
+    app.date_input(key="part_desde").set_value("2025-09-01").run()
+    assert not app.exception, app.exception
+    app.button_group(key="part_frecuencia").set_value("Día").run()
+    app.selectbox(key="part_medida").set_value("Minutos por alumno").run()
+    app.text_input(key="part_buscar").set_value("zzzz-nadie").run()
+    assert not app.exception, app.exception
+    app.date_input(key="fecha_corte").set_value("2025-08-06").run()
+    assert not app.exception, app.exception
