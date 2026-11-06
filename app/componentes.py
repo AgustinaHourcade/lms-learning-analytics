@@ -179,6 +179,11 @@ def _rango_fechas(d: metricas.Datos) -> tuple[date, date]:
     return inicio, fin
 
 
+def rango_fechas() -> tuple[date, date]:
+    """Primer y último día que se puede elegir (para filtros de fechas de una página)."""
+    return _rango_fechas(datos())
+
+
 def _restablecer() -> None:
     for clave, valor in DEFECTOS.items():
         st.session_state[clave] = valor

@@ -63,7 +63,7 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
 - **AED**: promedio de las autoevaluaciones (sobre 100). Regular desde 60, Promociona ≥ 90.
 
 ## Decisiones TOMADAS
-El registro completo, con justificación y estado, está en `docs/decisiones.md` (es la base del informe). Si se toma una decisión nueva, se agrega ahí con el número siguiente (hoy, D51); los números no se reutilizan porque el código los cita.
+El registro completo, con justificación y estado, está en `docs/decisiones.md` (es la base del informe). Si se toma una decisión nueva, se agrega ahí con el número siguiente (hoy, D55); los números no se reutilizan porque el código los cita.
 Ojo: la lista de abajo está numerada 1-7 y NO son los números D del registro; en el código se citan siempre los D (por ej., nota final = D16-D17, promedio por instrumento = D22).
 
 1. Instrumento no rendido = 0 para la nota final y la condición. En los Excel no rendir no aparece como nota vacía: directamente no hay fila, así que hay que completar alumno × instrumento con 0.
@@ -86,4 +86,6 @@ Ojo: la lista de abajo está numerada 1-7 y NO son los números D del registro; 
 - Etapa 2 ✅: `src/modelo.py` (silver -> gold) con tests en `tests/test_modelo.py`.
 - Etapa 3 ✅: `src/metricas.py`: funciones que reciben fecha de corte, materia y umbral de inactividad (D29, D34-D38).
 - Etapa 4 ✅: base de la app (barra lateral global, componentes, página "Cargar archivo"). Falta el deploy de prueba en Streamlit Cloud (recomendado).
-- Etapas 5 y 6: los 7 dashboards. Etapa 7: ML (K-Means y predictor de abandono). Etapa 8: hosting. Etapa 9: informe y defensa.
+- Etapas 5 y 6: los 7 dashboards. Se trabaja una rama por dashboard (`dashboard/<nombre>`).
+  - Dashboard Trazabilidad ✅ (rama `dashboard/trazabilidad`, `app/paginas/3_trazabilidad.py`, D54): mismo filtro de período que Participación, tarjetas y pestañas Línea de tiempo (por materia y por tipo, con evaluaciones marcadas) / Tipos de interacción (mezcla por materia, mapa de árbol tipo > sección > acción, tabla con CSV) / Días y horarios (mapa de calor y perfiles por materia) / Alrededor de las evaluaciones (actividad relativa a un día típico, de -7 a +3 días). Métricas nuevas: `evolucion_interacciones`, `interacciones_por_accion`, `actividad_alrededor_evaluaciones`, `CATEGORIAS`; `comp.rango_fechas()` (igual que en Participación).
+- Etapa 7: ML (K-Means y predictor de abandono). Etapa 8: hosting. Etapa 9: informe y defensa.

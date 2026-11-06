@@ -54,3 +54,23 @@ def test_cada_pagina_corre_y_conserva_los_filtros(app, pagina):
     app.switch_page(pagina).run()
     assert not app.exception, app.exception
     assert app.selectbox(key="materia").value == "Álgebra"
+
+
+def test_trazabilidad(app):
+    """Dashboard de Trazabilidad: tarjetas, pestañas, período, frecuencia y evaluaciones."""
+    app.switch_page("paginas/3_trazabilidad.py").run()
+    assert not app.exception, app.exception
+    assert len(app.tabs) == 4
+    antes = _valores_metricas(app)
+    app.button_group(key="traz_periodo").set_value("Últimas 2 semanas").run()
+    assert not app.exception, app.exception
+    assert _valores_metricas(app)["Interacciones"] != antes["Interacciones"]
+    app.button_group(key="traz_frecuencia").set_value("Día").run()
+    app.button_group(key="traz_medida").set_value("Por alumno").run()
+    app.toggle(key="traz_pct").set_value(True).run()
+    app.toggle(key="traz_calor_pct").set_value(True).run()
+    app.multiselect(key="traz_categorias").set_value(["Evaluación"]).run()
+    app.selectbox(key="traz_eval_medida").set_value("Interacciones por alumno").run()
+    assert not app.exception, app.exception
+    app.date_input(key="fecha_corte").set_value("2025-08-06").run()
+    assert not app.exception, app.exception

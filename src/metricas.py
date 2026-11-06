@@ -412,6 +412,108 @@ def fechas_evaluaciones(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataF
             .reset_index(drop=True)
 
 
+# Orden fijo de las categorías de dim_accion (de la más a la menos frecuente):
+# así cada tipo de interacción conserva su color en todos los gráficos (D54).
+CATEGORIAS = ["Contenido", "Navegación", "Evaluación", "Comunicación", "Notas", "Agenda"]
+
+
+def categorias_presentes(d: Datos) -> list[str]:
+    """CATEGORIAS más las que aparezcan en los datos y no estén en la lista."""
+    extra = sorted(set(d.interacciones["categoria"].dropna()) - set(CATEGORIAS))
+    return CATEGORIAS + extra
+
+
+def _periodo(f: pd.Series, frecuencia: str) -> pd.Series:
+    """Fecha -> inicio de su día, semana (lunes) o mes."""
+    if frecuencia == "D":
+        return f.dt.normalize()
+    if frecuencia == "W":
+        return f.dt.normalize() - pd.to_timedelta(f.dt.day_of_week, unit="D")
+    if frecuencia == "M":
+        return f.dt.to_period("M").dt.to_timestamp()
+    raise ValueError("frecuencia tiene que ser 'D', 'W' o 'M'")
+
+
+def evolucion_interacciones(d: Datos, fecha_corte=None, asignatura=None, frecuencia: str = "W",
+                            desde=None, por: str = "asignatura") -> pd.DataFrame:
+    """Interacciones por período ('D', 'W' o 'M'), separadas por materia
+    (`por="asignatura"`) o por tipo de interacción (`por="categoria"`, sumando
+    las materias elegidas). Grilla completa: los períodos sin eventos van con 0.
+      eventos_por_alumno   eventos / tamaño de la base (de la materia o de las elegidas)
+      pct_periodo          % de los eventos del período que son de ese grupo (D54)."""
+    if por not in {"asignatura", "categoria"}:
+        raise ValueError("por tiene que ser 'asignatura' o 'categoria'")
+    corte = fecha_de_corte(fecha_corte)
+    ev = _eventos(d, corte, asignatura, desde)
+    ev = ev.assign(periodo=_periodo(ev["fecha_hora"], frecuencia), par=ev["asignatura"] + "|" + ev["id_alumno"])
+    df = ev.groupby([por, "periodo"]).agg(eventos=("id_evento", "size"), alumnos=("par", "nunique"))
+    inicio = pd.Timestamp(desde).normalize() if desde is not None else d.interacciones["fecha"].min()
+    periodos = _periodo(pd.Series(pd.date_range(inicio, corte, freq="D")), frecuencia).unique()
+    grupos = _materias(asignatura) if por == "asignatura" else categorias_presentes(d)
+    grilla = pd.MultiIndex.from_product([grupos, periodos], names=[por, "periodo"])
+    df = df.reindex(grilla, fill_value=0).astype(int).reset_index()
+    tam = base(d, asignatura).groupby("asignatura").size()
+    n = df["asignatura"].map(tam) if por == "asignatura" else tam.sum()
+    df["eventos_por_alumno"] = (df["eventos"] / n).round(2)
+    total = df.groupby("periodo")["eventos"].transform("sum")
+    df["pct_periodo"] = (df["eventos"] / total.where(total > 0) * 100).round(2).fillna(0)
+    return df
+
+
+def interacciones_por_accion(d: Datos, fecha_corte=None, asignatura=None, desde=None) -> pd.DataFrame:
+    """Interacciones por categoría, sección y acción, sumando las materias
+    elegidas. 'Acceder' a Inicio y 'Acceder' a Programa son filas distintas:
+    la acción sola no dice dónde pasó (D54).
+      alumnos       alumnos (de la base, por materia) que la hicieron al menos una vez
+      pct           % de todas las interacciones del período
+      pct_alumnos   % de la base que la hizo al menos una vez"""
+    ev = _eventos(d, fecha_corte, asignatura, desde)
+    ev = ev.assign(par=ev["asignatura"] + "|" + ev["id_alumno"])
+    df = (ev.groupby(["categoria", "seccion", "accion"])
+            .agg(eventos=("id_evento", "size"), alumnos=("par", "nunique")).reset_index())
+    df["pct"] = (df["eventos"] / max(len(ev), 1) * 100).round(2)
+    df["pct_alumnos"] = (df["alumnos"] / max(len(base(d, asignatura)), 1) * 100).round(2)
+    return df.sort_values("eventos", ascending=False).reset_index(drop=True)
+
+
+def actividad_alrededor_evaluaciones(d: Datos, fecha_corte=None, asignatura=None, dias_antes: int = 7,
+                                     dias_despues: int = 3) -> pd.DataFrame:
+    """Para cada evaluación ya tomada a la fecha de corte (sin recuperatorios),
+    la actividad de su materia en cada día desde `dias_antes` antes hasta
+    `dias_despues` después. Día 0 = fecha del instrumento (D18). Los días fuera
+    de los datos (antes del primer evento o después del corte) no aparecen.
+      eventos_por_alumno       interacciones del día / base de la materia
+      evaluacion_por_alumno    lo mismo, solo la categoría Evaluación
+      relativo                 eventos del día / promedio diario de la materia en
+                               toda la cursada hasta el corte (1 = un día típico, D54)"""
+    corte = fecha_de_corte(fecha_corte)
+    ev = _eventos(d, corte, asignatura)
+    dias = pd.date_range(d.interacciones["fecha"].min(), corte, freq="D")
+    grilla = pd.MultiIndex.from_product([_materias(asignatura), dias], names=["asignatura", "fecha"])
+    diario = pd.DataFrame({
+        "eventos": ev.groupby(["asignatura", "fecha"]).size(),
+        "eventos_evaluacion": ev[ev["categoria"] == "Evaluación"].groupby(["asignatura", "fecha"]).size(),
+    }).reindex(grilla, fill_value=0).fillna(0).astype(int).reset_index()
+    tam = base(d, asignatura).groupby("asignatura").size()
+    promedio = diario.groupby("asignatura")["eventos"].mean()
+
+    ins = fechas_evaluaciones(d, corte, asignatura)
+    ins = ins[~ins["es_recuperatorio"]]
+    ventana = pd.DataFrame({"dia_relativo": range(-dias_antes, dias_despues + 1)})
+    df = ins.merge(ventana, how="cross")
+    df["fecha"] = df["fecha_instrumento"].dt.normalize() + pd.to_timedelta(df["dia_relativo"], unit="D")
+    df = df.merge(diario, on=["asignatura", "fecha"], how="inner")
+    columnas = ["asignatura", "id_instrumento", "instrumento", "fecha_instrumento", "dia_relativo", "fecha",
+                "eventos", "eventos_evaluacion", "eventos_por_alumno", "evaluacion_por_alumno", "relativo"]
+    if df.empty:  # todavía no hay evaluaciones tomadas a la fecha de corte
+        return df.reindex(columns=columnas)
+    n = df["asignatura"].map(tam).astype(float)
+    df["eventos_por_alumno"] = (df["eventos"] / n).round(3)
+    df["evaluacion_por_alumno"] = (df["eventos_evaluacion"] / n).round(3)
+    df["relativo"] = (df["eventos"] / df["asignatura"].map(promedio).astype(float)).round(3)
+    return df[columnas].sort_values(["asignatura", "fecha_instrumento", "dia_relativo"]).reset_index(drop=True)
+
+
 # ---------------------------------------------------------------------------
 # Cruces: notas vs. participación
 # ---------------------------------------------------------------------------

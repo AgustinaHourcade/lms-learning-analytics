@@ -228,6 +228,38 @@ def test_rango_de_fechas(d):
     assert rango == (ev["en_base"] & ev["fecha"].between("2025-09-01", "2025-09-30")).sum()
 
 
+@pytest.mark.parametrize("frecuencia", ["D", "W", "M"])
+def test_evolucion_interacciones_cierra_con_el_total(d, frecuencia):
+    """Dashboard de Trazabilidad (D54): por materia y por tipo suman lo mismo."""
+    total = (d.interacciones["en_base"] & (d.interacciones["fecha"] <= T("2025-09-30"))).sum()
+    por_materia = m.evolucion_interacciones(d, "2025-09-30", frecuencia=frecuencia)
+    por_tipo = m.evolucion_interacciones(d, "2025-09-30", frecuencia=frecuencia, por="categoria")
+    assert por_materia["eventos"].sum() == por_tipo["eventos"].sum() == total
+    assert set(por_tipo["categoria"]) == set(m.categorias_presentes(d))
+    pct = por_tipo.groupby("periodo")["pct_periodo"].sum()
+    assert ((pct - 100).abs() < 0.1).all()
+
+
+def test_interacciones_por_accion(d):
+    a = m.interacciones_por_accion(d, asignatura=ALG)
+    assert a["eventos"].sum() == m.interacciones_por_categoria(d, asignatura=ALG)["eventos"].sum()
+    assert a["pct"].sum() == pytest.approx(100, abs=0.1)
+    assert not a.duplicated(["categoria", "seccion", "accion"]).any()
+    assert (a["pct_alumnos"] <= 100).all()
+
+
+def test_actividad_alrededor_evaluaciones(d):
+    x = m.actividad_alrededor_evaluaciones(d, "2025-09-30", dias_antes=3, dias_despues=2)
+    assert x["dia_relativo"].between(-3, 2).all()
+    assert x["fecha"].max() <= T("2025-09-30")
+    assert "PYE-06" not in set(x["id_instrumento"])  # el recuperatorio no se cuenta
+    assert set(x["id_instrumento"]) <= set(m.fechas_evaluaciones(d, "2025-09-30")["id_instrumento"])
+    fila = x[(x["id_instrumento"] == "ALG-01") & (x["dia_relativo"] == 0)].iloc[0]
+    ev = d.interacciones
+    assert fila["eventos"] == (ev["en_base"] & (ev["asignatura"] == ALG) & (ev["fecha"] == fila["fecha"])).sum()
+    assert (x["eventos_evaluacion"] <= x["eventos"]).all()
+
+
 def test_promedio_por_instrumento_solo_quienes_rindieron(d):
     p = m.promedio_por_instrumento(d).set_index("id_instrumento")
     assert p.loc["AED-05", "rindieron"] == 24
