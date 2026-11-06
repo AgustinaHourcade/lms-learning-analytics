@@ -11,7 +11,9 @@ from streamlit.testing.v1 import AppTest
 INICIO = str(Path(__file__).resolve().parents[1] / "app" / "Inicio.py")
 PAGINAS = ["paginas/1_general.py", "paginas/2_participacion.py", "paginas/3_trazabilidad.py",
            "paginas/4_rendimiento.py", "paginas/5_notas_vs_participacion.py", "paginas/6_ficha_individual.py",
-           "paginas/7_matricula_y_alertas.py", "paginas/cargar_archivo.py", "paginas/explorar_datos.py"]
+           "paginas/7_matricula_y_alertas.py", "paginas/ml_grupos.py", "paginas/ml_abandono.py",
+           "paginas/cargar_archivo.py",
+           "paginas/explorar_datos.py"]
 
 
 @pytest.fixture
@@ -54,3 +56,28 @@ def test_cada_pagina_corre_y_conserva_los_filtros(app, pagina):
     app.switch_page(pagina).run()
     assert not app.exception, app.exception
     assert app.selectbox(key="materia").value == "Álgebra"
+
+
+def test_grupos_antes_de_la_primera_evaluacion(app):
+    """Con una fecha de corte sin evaluaciones, la página de grupos avisa en vez de romperse."""
+    app.date_input(key="fecha_corte").set_value("2025-08-06").run()
+    app.switch_page("paginas/ml_grupos.py").run()
+    assert not app.exception, app.exception
+    assert any("evaluaciones" in i.value for i in app.info)
+
+
+def test_bloque_de_riesgo_para_la_ficha(carpeta_pipeline, monkeypatch):
+    """El bloque del predictor de abandono que va en la Ficha individual corre solo (D58)."""
+    monkeypatch.setenv("LMS_GOLD", str(carpeta_pipeline / "gold"))
+
+    def ficha():
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.cwd() / "app"))
+        import componentes as comp
+        alumno = comp.metrica("riesgo_abandono", asignatura=None)["id_alumno"].iloc[0]
+        comp.riesgo_abandono_alumno(alumno)
+
+    at = AppTest.from_function(ficha, default_timeout=120).run()
+    assert not at.exception, at.exception
+    assert any("riesgo de abandono" in m.value for m in at.markdown)

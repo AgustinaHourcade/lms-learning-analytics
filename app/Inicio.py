@@ -31,6 +31,10 @@ PAGINAS = {
         st.Page("paginas/7_matricula_y_alertas.py", title="Matrícula y alertas",
                 icon=":material/notification_important:"),
     ],
+    "Machine learning": [
+        st.Page("paginas/ml_grupos.py", title="Grupos de alumnos", icon=":material/bubble_chart:"),
+        st.Page("paginas/ml_abandono.py", title="Predictor de abandono", icon=":material/trending_down:"),
+    ],
     "Datos": [
         st.Page("paginas/cargar_archivo.py", title="Cargar archivo", icon=":material/upload_file:"),
         st.Page("paginas/explorar_datos.py", title="Explorar datos", icon=":material/table_view:"),

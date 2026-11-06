@@ -76,6 +76,31 @@ UMBRAL_INACTIVIDAD_DIAS = 7          # D35: más de 7 días sin entrar -> inacti
 CONDICIONES = ["Libre", "Regular", "Promociona"]
 SIN_EVALUACIONES = "Sin evaluaciones"  # todavía no hay instrumentos a la fecha de corte
 
+# --- ML: grupos de alumnos con K-Means (Etapa 7, D57) -----------------------
+# Variables de `tabla_alumnos` que usa el K-Means. Las de GRUPOS_LOG pasan por
+# log(1 + x) antes de estandarizar: son muy asimétricas (pocos alumnos con
+# muchísimas sesiones dominarían las distancias).
+GRUPOS_VARIABLES = ["sesiones", "minutos", "semanas_activas", "avance", "nota_pct"]
+GRUPOS_LOG = ["sesiones", "minutos"]
+GRUPOS_K = range(3, 7)       # k candidatos; se elige el de mayor silhouette
+GRUPOS_SEMILLA = 42          # misma semilla -> mismos grupos en cada corrida
+
+# --- ML: predictor de abandono (Etapa 7, D58) --------------------------------
+# Abandono = un alumno que venía entrando (al menos una interacción en los
+# últimos ABANDONO_HORIZONTE_DIAS) y NO entra en los próximos
+# ABANDONO_HORIZONTE_DIAS. Se entrena con "fotos" de la cursada tomadas cada
+# ABANDONO_PASO_DIAS días (desde el día ABANDONO_HORIZONTE_DIAS de la cursada).
+ABANDONO_HORIZONTE_DIAS = 14
+ABANDONO_PASO_DIAS = 3       # no múltiplo de 7: las fotos caen en distintos días de la semana
+ABANDONO_REGLA_DIAS = 7      # regla simple de referencia: "más de 7 días sin entrar"
+# Costo de equivocarse (como en la clase 10): no detectar a quien abandona
+# (falso negativo) cuesta 5 veces más que contactar a alguien que iba a seguir
+# (falso positivo). El umbral del modelo es el que minimiza el costo total.
+ABANDONO_COSTO_FN = 5
+ABANDONO_COSTO_FP = 1
+ABANDONO_SEMILLA = 42
+ABANDONO_ARCHIVO = "modelo_abandono.joblib"   # se guarda junto a gold (se regenera con los datos)
+
 # --- Esquema académico (sección 5 de la consigna) --------------------------
 # metodo:
 #   "acumulativo" -> se suman puntos. Como todavía no están todos los
