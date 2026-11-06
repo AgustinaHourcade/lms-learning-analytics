@@ -4,8 +4,9 @@ Responde, a la fecha de corte: ¿qué instrumentos cuestan más?, ¿cuántos los
 rinden?, ¿cómo se reparten las notas? y ¿cómo se fue moviendo la condición
 (Libre / Regular / Promociona) a medida que se tomaron las evaluaciones?
 
-  Tarjetas        nota promedio (con y sin los 0), tasa de entrega, instrumento
-                  con el promedio más bajo y % Libre.
+  Tarjetas        fila 1: nota promedio (con y sin los 0, con el promedio de cada
+                  materia abajo), tasa de entrega e instrumento con el promedio
+                  más bajo. Fila 2: % de alumnos Libre, Regular y Promociona.
   Por instrumento boxplot de cada instrumento (solo quienes lo rindieron, D22)
                   con el % de la base que lo rindió abajo.
   Distribución    histograma en la escala de la materia, coloreado por condición,
@@ -63,14 +64,26 @@ cuentan = instrumentos[~instrumentos["es_recuperatorio"]]
 tasa_entrega = cuentan["rindieron"].sum() / cuentan["base"].sum() * 100
 con_nota = notas[notas["rendidos"] > 0]
 mas_bajo = cuentan.dropna(subset=["promedio_pct"]).nsmallest(1, "promedio_pct")
-libre = dist.loc[dist["condicion"] == "Libre", "alumnos"].sum() / dist["alumnos"].sum() * 100
+
+
+def por_materia(df: pd.DataFrame) -> str | None:
+    """Con varias materias, el promedio (sobre 100) de cada una en una línea: 'ALG 52 · AED 61 · PYE 58'."""
+    if len(materias) < 2:
+        return None
+    prom = df.groupby("asignatura")["nota_pct"].mean()
+    return " · ".join(f"{comp.SIGLAS[m]} {comp.num(prom[m], 0)}" for m in materias if pd.notna(prom.get(m)))
+
 
 comp.tarjetas([
     dict(label="Nota promedio", value=f"{comp.num(notas['nota_pct'].mean(), 1)} / 100",
-         help="Toda la base, con 0 en lo no rendido (D16-D17). Sobre 100 para comparar Álgebra con el resto."),
+         delta=por_materia(notas), delta_color="off", delta_arrow="off",
+         help="Toda la base, con 0 en lo no rendido (D16-D17). Sobre 100 para comparar Álgebra con el resto."
+              + (" Abajo, el promedio de cada materia." if len(materias) > 1 else "")),
     dict(label="Nota (rindieron)",value=f"{comp.num(con_nota['nota_pct'].mean(), 1)} / 100",
+         delta=por_materia(con_nota), delta_color="off", delta_arrow="off",
          help=f"Solo los {comp.num(len(con_nota))} alumnos con al menos una evaluación rendida. La diferencia "
-              "con la tarjeta anterior es el peso de los que no rinden."),
+              "con la tarjeta anterior es el peso de los que no rinden."
+              + (" Abajo, el promedio de cada materia." if len(materias) > 1 else "")),
     dict(label="Tasa de entrega", value=comp.pct(tasa_entrega),
          help="Evaluaciones rendidas / (alumnos de la base × evaluaciones tomadas). No cuenta el recuperatorio."),
     dict(label="Promedio más bajo",
@@ -78,9 +91,27 @@ comp.tarjetas([
          delta=mas_bajo["nombre"].iloc[0] if len(mas_bajo) else None, delta_color="off", delta_arrow="off",
          help="El instrumento con el promedio (sobre 100, solo quienes lo rindieron) más bajo."
               + ("" if f.asignatura else f" Materia: {mas_bajo['asignatura'].iloc[0]}." if len(mas_bajo) else "")),
-    dict(label="🔴 Libre", value=comp.pct(libre),
-         help="Alumnos de la base que a la fecha de corte están por debajo del corte de Regular."),
 ])
+
+# Segunda fila: % de la base en cada condición (sumando las materias elegidas).
+total_base = dist["alumnos"].sum()
+AYUDA_CONDICION = {
+    "Libre": "Por debajo del corte de Regular (60 en las tres materias; en Álgebra, 60 de 120).",
+    "Regular": "Entre el corte de Regular y el de Promociona (Álgebra y PyE de 60 a < 85; AED de 60 a < 90).",
+    "Promociona": "Desde el corte de Promociona (Álgebra y PyE ≥ 85; AED ≥ 90).",
+}
+fila_condicion = []
+for cond, ayuda in AYUDA_CONDICION.items():
+    d_cond = dist[dist["condicion"] == cond]
+    n_cond = int(d_cond["alumnos"].sum())
+    detalle = (" Por materia: " + " · ".join(f"{comp.SIGLAS[r.asignatura]} {comp.pct(r.pct, 0)}"
+                                             for r in d_cond.itertuples()) + "." if len(f.materias) > 1 else "")
+    fila_condicion.append(dict(
+        label=f"{comp.ICONOS_CONDICION[cond]} {cond}",
+        value=comp.pct(n_cond / total_base * 100 if total_base else 0),
+        delta=f"{comp.num(n_cond)} de {comp.num(total_base)} alumnos", delta_color="off", delta_arrow="off",
+        help=f"Alumnos de la base a la fecha de corte, con 0 en lo no rendido (D16-D17). {ayuda}{detalle}"))
+comp.tarjetas(fila_condicion)
 
 tab_inst, tab_dist, tab_cond, tab_tabla = st.tabs(["Por instrumento", "Distribución", "Condición", "Tabla"])
 

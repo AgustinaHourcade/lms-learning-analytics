@@ -60,7 +60,8 @@ def test_rendimiento(app):
     """Dashboard de Rendimiento: con todas las materias, sin evaluaciones a la fecha y con el toggle."""
     app.switch_page("paginas/4_rendimiento.py").run()
     assert not app.exception, app.exception
-    assert len(app.metric) == 5
+    assert len(app.metric) == 7  # 4 de notas + Libre / Regular / Promociona
+    assert [m.label for m in app.metric][-3:] == ["🔴 Libre", "🟡 Regular", "🟢 Promociona"]
     assert len(app.tabs) == 4
     app.toggle[0].set_value(False).run()
     assert not app.exception, app.exception
