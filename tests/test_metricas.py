@@ -260,3 +260,23 @@ def test_ficha_individual(d):
     assert (f["instrumentos"]["id_alumno"] == primero).all()
     with pytest.raises(KeyError):
         m.ficha_alumno(d, "ALU_9999")
+
+
+def test_foto_datos_coincide_con_gold(d):
+    """La foto de antes/después (D51) cuenta todo lo cargado, sin fecha de corte."""
+    f = m.foto_datos(d).set_index("asignatura")
+    assert f["alumnos"].sum() == d.matricula["en_base"].sum()
+    assert f["notas"].sum() == d.calificaciones["rindio"].sum()
+    assert f["instrumentos"].sum() == len(d.instrumentos)
+    assert f["eventos"].sum() == len(d.interacciones)
+    assert (f[["libre", "regular", "promociona"]].sum(axis=1) <= f["alumnos"]).all()
+
+
+def test_comparar_fotos(d):
+    antes = m.foto_datos(d)
+    despues = antes.copy()
+    despues.loc[0, "notas"] += 10
+    c = m.comparar_fotos(antes, despues)
+    assert len(c) == len(antes) * len(m.FOTO_DATOS)
+    cambios = c[c["diferencia"] != 0]
+    assert len(cambios) == 1 and cambios.iloc[0]["clave"] == "notas" and cambios.iloc[0]["diferencia"] == 10

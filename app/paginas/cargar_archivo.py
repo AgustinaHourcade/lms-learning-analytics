@@ -55,6 +55,54 @@ def archivos_cargados(estado: tuple) -> tuple[pd.DataFrame, list[str]]:
     return pd.DataFrame(filas).sort_values(["Tipo", "Materia", "Instrumento", "Exportado"]), avisos
 
 
+def foto() -> pd.DataFrame:
+    """Lo que hay cargado ahora, por materia (D51). Ignora la materia de la barra."""
+    return comp.metrica("foto_datos", asignatura=None)
+
+
+# Tarjetas que se muestran para la materia del archivo: (clave, decimales, ¿subir es malo?)
+TARJETAS_ANTES_DESPUES = [("notas", 0, False), ("instrumentos", 0, False), ("nota_promedio", 2, False),
+                          ("alumnos", 0, False), ("promociona", 0, False), ("regular", 0, False),
+                          ("libre", 0, True), ("eventos", 0, False)]
+
+
+def mostrar_antes_despues(antes: pd.DataFrame, despues: pd.DataFrame, asignatura: str | None) -> None:
+    """Compara los indicadores antes y después de la carga, para verificar que
+    los datos nuevos entraron (D51)."""
+    comp_ = comp.comparar_fotos(antes, despues)
+    st.subheader("Antes y después de la carga")
+    if not comp_["diferencia"].fillna(0).ne(0).any():
+        st.warning("No cambió ningún indicador. Puede pasar si el archivo ya estaba cargado o si reemplazó a "
+                   "una exportación con los mismos datos.", icon=":material/info:")
+    st.caption("Calculado con todos los datos cargados (sin fecha de corte), así un instrumento nuevo se ve "
+               "aunque sea posterior a la fecha elegida en la barra. La nota promedio incluye los 0 de quienes "
+               "no rindieron y está en la escala de la materia (Álgebra sobre 120, el resto sobre 100).")
+
+    materias = [asignatura] if asignatura in set(comp_["asignatura"]) else list(comp_["asignatura"].unique())
+    for materia in materias:
+        filas = comp_[comp_["asignatura"] == materia].set_index("clave")
+        st.markdown(f"**{materia}**")
+        items = []
+        for clave, dec, invertir in TARJETAS_ANTES_DESPUES:
+            f = filas.loc[clave]
+            dif = f["diferencia"]
+            items.append({"label": f["indicador"], "value": comp.num(f["despues"], dec),
+                          "delta": None if pd.isna(dif) or dif == 0 else
+                          f"{'+' if dif > 0 else ''}{comp.num(dif, dec)} (antes {comp.num(f['antes'], dec)})",
+                          "delta_color": "inverse" if invertir else "normal"})
+        comp.tarjetas(items, columnas=4)
+
+    with st.expander("Todas las materias e indicadores"):
+        tabla = comp_.drop(columns="clave").rename(columns={
+            "asignatura": "Materia", "indicador": "Indicador", "antes": "Antes", "despues": "Después",
+            "diferencia": "Diferencia"})
+        st.dataframe(tabla.style.format({"Antes": "{:,.2f}", "Después": "{:,.2f}", "Diferencia": "{:+,.2f}"},
+                                        decimal=",", thousands=".")
+                     .map(lambda v: "color: #0ca30c" if v > 0 else "color: #d03b3b" if v < 0 else "",
+                          subset=["Diferencia"]),
+                     width="stretch", hide_index=True)
+
+
 # Resultado de la última carga (sobrevive al rerun que limpia el uploader).
 if resultado := st.session_state.pop("resultado_carga", None):
     if resultado["ok"]:
@@ -65,6 +113,8 @@ if resultado := st.session_state.pop("resultado_carga", None):
         st.markdown(f"- ❌ {e}")
     for a in resultado["avisos"]:
         st.markdown(f"- ⚠️ {a}")
+    if resultado.get("antes") is not None:
+        mostrar_antes_despues(resultado["antes"], resultado["despues"], resultado["asignatura"])
     if resultado.get("gold"):
         with st.expander("Filas de cada tabla después de recalcular"):
             st.dataframe(pd.Series(resultado["gold"], name="filas").rename_axis("tabla"), width="content")
@@ -101,14 +151,18 @@ if archivo is not None:
     # -----------------------------------------------------------------------
     if v["ok"]:
         st.subheader("2. Confirmar")
-        st.markdown("Se va a copiar a `data/raw/` y se recalculan todos los dashboards.")
+        st.markdown("Se va a copiar a `data/raw/` y se recalculan todos los dashboards. Al terminar se "
+                    "muestran los indicadores de antes y después, para verificar que los datos entraron.")
         if st.button("Cargar y recalcular", type="primary", icon=":material/sync:"):
+            antes = foto()
             with st.spinner("Cargando y recalculando (tarda unos segundos)…"):
                 r = agregar_archivo(contenido, archivo.name)
             comp.limpiar_cache()
             st.session_state["resultado_carga"] = {
                 "ok": r.ok, "mensaje": r.mensaje, "errores": r.errores, "avisos": r.avisos,
-                "gold": r.resumen["gold"] if r.resumen else None}
+                "gold": r.resumen["gold"] if r.resumen else None,
+                "antes": antes if r.ok else None, "despues": foto() if r.ok else None,
+                "asignatura": v["asignatura"]}
             st.session_state["uploader"] += 1  # vacía el uploader
             st.rerun()
 

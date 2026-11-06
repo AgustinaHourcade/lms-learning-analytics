@@ -6,12 +6,12 @@ Generado por el pipeline (`python -m src.pipeline`). No editar a mano.
 |---|---|
 | dim_alumno | 319 |
 | dim_asignatura | 3 |
-| dim_instrumento | 17 |
+| dim_instrumento | 18 |
 | dim_accion | 95 |
 | dim_fecha | 143 |
 | fact_interaccion | 149,458 |
 | fact_sesion | 20,657 |
-| fact_calificacion | 3,615 |
+| fact_calificacion | 3,831 |
 | fact_participacion | 957 |
 | fact_matricula | 642 |
 | otros_perfiles_interaccion | 9,660 |
@@ -42,7 +42,8 @@ Generado por el pipeline (`python -m src.pipeline`). No editar a mano.
 | PYE-06 | Probabilidad y Estadística | 🚀Recuperatorio: Evaluación Semanal Nº1 | 100 | 21 | 2025-09-24 | 🚀Evaluación Semanal Nº1 |
 | PYE-07 | Probabilidad y Estadística | 🧠 PARCIAL 1 | 100 | 167 | 2025-09-27 |  |
 | PYE-08 | Probabilidad y Estadística | 👉  Actividad Rápida 5 | 100 | 54 | 2025-10-15 |  |
-| PYE-09 | Probabilidad y Estadística | 🚀Evaluación Semanal Nº2 | 100 | 13 | 2025-10-23 |  |
+| PYE-09 | Probabilidad y Estadística | 👉  Actividad Rápida 6 | 100 | 94 | 2025-10-21 |  |
+| PYE-10 | Probabilidad y Estadística | 🚀Evaluación Semanal Nº2 | 100 | 13 | 2025-10-23 |  |
 | ALG-01 | Álgebra | AUTOEVALUACION1 | 10 | 165 | 2025-08-21 |  |
 | ALG-02 | Álgebra | AUTOEVALUACION2 | 10 | 152 | 2025-09-18 |  |
 | ALG-03 | Álgebra | 1° Parcial | 25 | 162 | 2025-10-11 |  |

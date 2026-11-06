@@ -35,7 +35,7 @@ import streamlit as st  # noqa: E402
 from src import metricas  # noqa: E402
 from src.config import (ASIGNATURAS, FECHA_CORTE_DEFECTO, GOLD, SIN_EVALUACIONES,  # noqa: E402
                         UMBRAL_INACTIVIDAD_DIAS)
-from src.metricas import ACTIVO, INACTIVO, SIN_ACTIVIDAD  # noqa: E402
+from src.metricas import ACTIVO, INACTIVO, SIN_ACTIVIDAD, comparar_fotos  # noqa: E402,F401 (comparar_fotos: D51)
 
 # ---------------------------------------------------------------------------
 # Paleta (D48). Valores validados para daltonismo (skill de dataviz).

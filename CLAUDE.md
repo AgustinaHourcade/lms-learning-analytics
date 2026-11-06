@@ -35,7 +35,7 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
   - `app/Inicio.py` arma el menú con `st.navigation`, dibuja la barra lateral global (fecha de corte, materia, umbral; D46) y corre la página. Las páginas están en `app/paginas/` (no `pages/`): para sumar una, crear el archivo y agregarlo a `PAGINAS`.
   - `app/componentes.py`: `metrica("nombre", ...)` llama a `src.metricas` con caché y completa fecha/materia/umbral desde la barra (D47); `filtros()`, `encabezado()`, `tarjetas()`, `semaforo()`, `boton_csv()`, `num()`/`pct()`/`fmt_fecha()` y la paleta (`COLORES_MATERIA`, `COLORES_CONDICION`, `COLORES_ACTIVIDAD`, `SECUENCIAL`; D48). Plotly usa la plantilla `plotly_white+tfi`. Las páginas no leen parquet ni llaman a `src.metricas` directo.
   - Si gold no existe, la app corre el pipeline sola (D49). `LMS_GOLD` cambia la carpeta de gold (solo para tests).
-  - `paginas/cargar_archivo.py`: valida y muestra qué reconoció, y al confirmar llama a `agregar_archivo()` y limpia el caché (D50). Tema en `.streamlit/config.toml`.
+  - `paginas/cargar_archivo.py`: valida y muestra qué reconoció, y al confirmar llama a `agregar_archivo()` y limpia el caché (D50). Después muestra los indicadores antes y después de la carga por materia (`foto_datos` y `comparar_fotos` de `src.metricas`, calculados con todo lo cargado, sin fecha de corte; D51). Tema en `.streamlit/config.toml`.
 - bronze, silver y gold están en `.gitignore`: cada persona los regenera corriendo el pipeline.
 
 ## Estado actual de los datos (bronze)
@@ -63,7 +63,7 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
 - **AED**: promedio de las autoevaluaciones (sobre 100). Regular desde 60, Promociona ≥ 90.
 
 ## Decisiones TOMADAS
-El registro completo, con justificación y estado, está en `docs/decisiones.md` (es la base del informe). Si se toma una decisión nueva, se agrega ahí con el número siguiente (hoy, D51); los números no se reutilizan porque el código los cita.
+El registro completo, con justificación y estado, está en `docs/decisiones.md` (es la base del informe). Si se toma una decisión nueva, se agrega ahí con el número siguiente (hoy, D52); los números no se reutilizan porque el código los cita.
 Ojo: la lista de abajo está numerada 1-7 y NO son los números D del registro; en el código se citan siempre los D (por ej., nota final = D16-D17, promedio por instrumento = D22).
 
 1. Instrumento no rendido = 0 para la nota final y la condición. En los Excel no rendir no aparece como nota vacía: directamente no hay fila, así que hay que completar alumno × instrumento con 0.

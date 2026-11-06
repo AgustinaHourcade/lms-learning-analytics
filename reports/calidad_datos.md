@@ -6,10 +6,10 @@ Generado por el pipeline (`python -m src.pipeline`). No editar a mano.
 |---|---|---|---|
 | trazabilidad | 159,804 | 159,118 | 12 |
 | participacion | 986 | 986 | 33 |
-| calificaciones | 1,793 | 1,793 | 17 |
+| calificaciones | 1,887 | 1,887 | 17 |
 | matriculados | 516 | 513 | 10 |
 
-## Archivos usados (26)
+## Archivos usados (27)
 
 Cada Excel se reconoce por su contenido (tipo y materia), no por el nombre.
 
@@ -27,6 +27,7 @@ Cada Excel se reconoce por su contenido (tipo y materia), no por el nombre.
 - calificaciones_alumnos_20251024_115105.xlsx
 - calificaciones_alumnos_20251024_115127.xlsx
 - calificaciones_alumnos_20251024_115130.xlsx
+- calificaciones_alumnos_20251107_102000.xlsx
 - calificaciones_alumnos_20251024_114929.xlsx
 - calificaciones_alumnos_20251024_114941.xlsx
 - calificaciones_alumnos_20251024_114944.xlsx
@@ -59,7 +60,7 @@ Cada Excel se reconoce por su contenido (tipo y materia), no por el nombre.
 - `Nota` separada en `Nota obtenida`, `Nota máxima` y `Nota (%)`. Ninguna fuera de rango.
 - Usuarios desactivados (celda coloreada): 0.
 - `Detalle` viene vacío en todas las filas. Se conserva la columna.
-- Instrumentos por asignatura: Algoritmos y Estructuras de Datos 5; Probabilidad y Estadística 9; Álgebra 3.
+- Instrumentos por asignatura: Algoritmos y Estructuras de Datos 5; Probabilidad y Estadística 10; Álgebra 3.
 
 ## matriculados
 - 3 filas de pie de tabla ('Cantidad de filas:') eliminadas.
