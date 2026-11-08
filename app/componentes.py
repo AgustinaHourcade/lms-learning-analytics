@@ -16,6 +16,7 @@ Una página típica:
 """
 from __future__ import annotations
 
+import html
 import inspect
 import os
 import re
@@ -78,6 +79,13 @@ CSS = """
   .semaforo-Promociona {background:#e2f6e2; color:#006300;}
   .semaforo-otro       {background:#f0efec; color:#52514e;}
   [data-testid="stMetric"] [data-testid="stMetricValue"] {font-size: 1.9rem;}
+  .chips {display:grid; grid-template-columns:repeat(auto-fill, minmax(165px, 1fr)); gap:.5rem; margin:.25rem 0 .75rem;}
+  .chip  {border:1px solid rgba(11,11,11,.10); border-left:4px solid var(--c); border-radius:.5rem;
+          padding:.45rem .65rem; background:rgba(11,11,11,.015);}
+  .chip-titulo  {font-size:.78rem; color:#52514e; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .chip-valor   {font-size:1.35rem; font-weight:600; line-height:1.25;}
+  .chip-valor small {font-size:.75rem; font-weight:400; color:#52514e;}
+  .chip-detalle {font-size:.78rem; color:#52514e; font-variant-numeric:tabular-nums;}
 </style>
 """
 
@@ -255,6 +263,23 @@ def tarjetas(items: list, columnas: int | None = None) -> None:
     cols = st.columns(columnas or len(items))
     for i, it in enumerate(items):
         cols[i % len(cols)].metric(border=True, **it)
+
+
+def chips(items: list[dict]) -> None:
+    """Grilla de chips chicos (más compactos que tarjetas(), para muchos valores).
+    Cada item: titulo, valor y opcionales unidad, detalle (texto o lista de renglones),
+    color (borde) y ayuda (tooltip)."""
+    partes = []
+    for it in items:
+        ayuda = html.escape(it.get("ayuda", it["titulo"]), quote=True)
+        unidad = f" <small>{html.escape(it['unidad'])}</small>" if it.get("unidad") else ""
+        renglones = it.get("detalle") or []
+        renglones = [renglones] if isinstance(renglones, str) else renglones
+        detalle = "".join(f'<div class="chip-detalle">{html.escape(r)}</div>' for r in renglones if r)
+        partes.append(f'<div class="chip" style="--c:{it.get("color", NEUTRO)}" title="{ayuda}">'
+                      f'<div class="chip-titulo">{html.escape(it["titulo"])}</div>'
+                      f'<div class="chip-valor">{html.escape(str(it["valor"]))}{unidad}</div>{detalle}</div>')
+    st.markdown(f'<div class="chips">{"".join(partes)}</div>', unsafe_allow_html=True)
 
 
 def semaforo(condicion: str, detalle: str = "") -> str:

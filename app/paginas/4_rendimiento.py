@@ -7,8 +7,9 @@ rinden?, ¿cómo se reparten las notas? y ¿cómo se fue moviendo la condición
   Tarjetas        fila 1: nota promedio (con y sin los 0, con el promedio de cada
                   materia abajo), tasa de entrega e instrumento con el promedio
                   más bajo. Fila 2: % de alumnos Libre, Regular y Promociona.
-  Por instrumento boxplot de cada instrumento (solo quienes lo rindieron, D22)
-                  con el % de la base que lo rindió abajo.
+  Por instrumento chips con promedio, mínimo y máximo de cada instrumento y
+                  boxplot (solo quienes lo rindieron, D22) con el % de la base
+                  que lo rindió abajo.
   Distribución    histograma en la escala de la materia, coloreado por condición,
                   con los cortes del ESQUEMA.
   Condición       % por condición hoy y su evolución evaluación a evaluación (D51).
@@ -50,6 +51,34 @@ def en_dos_lineas(texto: str, largo: int = 16) -> str:
     palabras = texto.split(" ")
     corte = min(range(1, len(palabras)), key=lambda i: abs(len(" ".join(palabras[:i])) - len(texto) / 2))
     return " ".join(palabras[:corte]) + "<br>" + " ".join(palabras[corte:])
+
+
+def puntos(pct: float, maximo: float) -> str:
+    """Nota sobre 100 -> puntos del instrumento, sin ',0' si da entero (75 sobre 100 con máximo 10 -> '7,5')."""
+    p = round(pct * maximo / 100, 1)
+    return comp.num(p, 0 if p == int(p) else 1)
+
+
+def chip_instrumento(fila, color: str) -> dict:
+    """Chip de un instrumento: promedio, mínimo y máximo obtenidos (solo quienes lo rindieron, D22),
+    sobre 100 y, si el instrumento no es sobre 100 (Álgebra), también en sus puntos."""
+    if not fila.rindieron:
+        return dict(titulo=fila.nombre, valor="–", detalle="nadie lo rindió", color=comp.NEUTRO)
+    maximo = fila.puntaje_maximo
+    en_puntos = pd.notna(maximo) and maximo != 100
+    detalle = [f"mín {comp.num(fila.minimo_pct, 0)} · máx {comp.num(fila.maximo_pct, 0)} (sobre 100)"]
+    if en_puntos:
+        detalle.insert(0, f"{puntos(fila.promedio_pct, maximo)} de {comp.num(maximo, 0)} pts en promedio")
+        detalle.append(f"mín {puntos(fila.minimo_pct, maximo)} · máx {puntos(fila.maximo_pct, maximo)} "
+                       f"(de {comp.num(maximo, 0)} pts)")
+    detalle.append(f"rindieron {comp.num(fila.rindieron)}")
+    return dict(
+        titulo=fila.nombre, valor=comp.num(fila.promedio_pct, 1), unidad="/ 100 prom.", detalle=detalle,
+        color=comp.NEUTRO if fila.es_recuperatorio else color,
+        ayuda=f"{fila.nombre}: promedio, nota más baja y más alta OBTENIDAS por los {fila.rindieron} que lo "
+              "rindieron (D22), no los límites de la escala. Los que no lo rindieron no cuentan."
+              + (f" El instrumento vale {comp.num(maximo, 0)} puntos." if en_puntos else "")
+              + (" Recuperatorio." if fila.es_recuperatorio else ""))
 
 
 instrumentos["nombre"] = instrumentos["instrumento"].map(comp.nombre_corto)
@@ -119,7 +148,9 @@ tab_inst, tab_dist, tab_cond, tab_tabla = st.tabs(["Por instrumento", "Distribuc
 # Por instrumento: boxplot + % que lo rindió
 # ---------------------------------------------------------------------------
 with tab_inst:
-    st.caption("Arriba, cada caja resume las notas (sobre 100) de **quienes rindieron** ese instrumento (D22): "
+    st.caption("Los chips dan el promedio y la nota más baja y más alta **obtenidas** por quienes lo rindieron, "
+               "sobre 100 y, en Álgebra, también en los puntos del instrumento. "
+               "En el gráfico, cada caja resume las notas (sobre 100) de **quienes rindieron** ese instrumento (D22): "
                "la línea del medio es la mediana, la punteada el promedio y los puntos sueltos, casos atípicos. "
                "Abajo, qué % de la base lo rindió. Un promedio alto con pocas entregas suele ser selección: "
                "rinden los que vienen bien.")
@@ -128,6 +159,7 @@ with tab_inst:
         notas_m = rendidas[rendidas["asignatura"] == materia]
         color = comp.COLORES_MATERIA[materia]
         st.subheader(materia)
+        comp.chips([chip_instrumento(fila, color) for fila in prom.itertuples()])
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.72, 0.28], vertical_spacing=0.06)
         for fila in prom.itertuples():
             valores = notas_m.loc[notas_m["id_instrumento"] == fila.id_instrumento, "nota_pct_instrumento"]
