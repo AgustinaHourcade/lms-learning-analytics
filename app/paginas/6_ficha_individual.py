@@ -4,15 +4,20 @@ Responde, para UN alumno y a la fecha de corte: ¿cómo le va en cada materia?,
 ¿cuánto entra al aula comparado con su curso?, ¿qué hace cuando entra? y
 ¿tiene alguna alerta que pida contactarlo?
 
-  Buscador        por apellido, nombre o ID (sin tildes ni mayúsculas); muestra
-                  al primero por defecto. Lista solo a los alumnos de la base
-                  (D11) de la materia elegida en la barra lateral (D56).
+  Selector        un solo desplegable con búsqueda: se escribe parte del apellido,
+                  nombre o ID y filtra la lista; muestra al primero por defecto.
+                  Lista solo a los alumnos de la base (D11) de la materia elegida
+                  en la barra lateral (D56).
   Resumen         una tarjeta por materia con el semáforo (🟢 Promociona,
                   🟡 Regular, 🔴 Libre), la nota contra el promedio del curso,
-                  los instrumentos rendidos y el estado de actividad (D35).
+                  el riesgo de abandono (nivel y probabilidad, D58), los
+                  instrumentos rendidos y el estado de actividad (D35).
   Alertas         las de D37 para este alumno.
   Notas           cada instrumento contra el promedio de quienes lo rindieron
-                  (D22), y la tabla con el recuperatorio (D34).
+                  (D22), en dos vistas a elección: Libreta (una tarjeta por
+                  instrumento con su nota, si aprobó y el promedio del
+                  curso) o Barras; y la tabla
+                  con el recuperatorio (D34).
   Actividad       su evolución semanal contra el promedio por alumno del curso,
                   su posición (percentil) y el reporte de participación (D36).
   Trazabilidad    qué tipo de interacciones hace (contra el curso) y todos sus
@@ -22,6 +27,7 @@ La ficha muestra todas las materias del alumno aunque la barra lateral tenga
 una elegida: el filtro de materia solo acota el buscador.
 Todo sale de src.metricas vía comp.metrica() (D29, D47): la página solo filtra y dibuja.
 """
+import html
 import re
 
 import pandas as pd
@@ -39,6 +45,26 @@ f = comp.encabezado(
 
 GRIS = "#c3c2b7"
 GRIS_TEXTO = "#52514e"
+
+# Estilos de la libreta de notas: van en la página (no en componentes.CSS) para que se vean
+# apenas se guarda el archivo, sin reiniciar Streamlit.
+CSS_LIBRETA = """
+<style>
+  /* Ficha individual: libreta de notas (una tarjeta por instrumento) */
+  .libreta {display:grid; grid-template-columns:repeat(auto-fill, minmax(165px, 1fr)); gap:.6rem; margin:.3rem 0 1.2rem;}
+  .nota {border:1px solid rgba(11,11,11,.10); border-left-width:5px; border-radius:.5rem; padding:.55rem .7rem;
+         background:#fff; line-height:1.25;}
+  .nota-nombre {font-size:.8rem; color:#52514e; min-height:2.1em;}
+  .nota-valor  {font-size:1.7rem; font-weight:700; color:#0b0b0b;}
+  .nota-puntos {font-size:.8rem; color:#52514e; font-weight:400; margin-left:.25rem;}
+  .nota-estado {font-size:.82rem; font-weight:600; margin-top:.1rem;}
+  .nota-curso  {font-size:.78rem; color:#52514e; margin-top:.35rem; border-top:1px dashed #e1e0d9; padding-top:.3rem;}
+  .nota-aprobada    {border-left-color:#0ca30c;} .nota-aprobada .nota-estado    {color:#006300;}
+  .nota-no-aprobada {border-left-color:#d03b3b; background:#fff7f7;} .nota-no-aprobada .nota-estado {color:#8a1f1f;}
+  .nota-no-rindio   {border-left-color:#c3c2b7; background:#f6f5f2;} .nota-no-rindio .nota-valor {color:#898781;}
+  .nota-no-rindio .nota-estado {color:#52514e;}
+</style>
+"""
 
 
 def nombre_corto(instrumento: str) -> str:
@@ -59,23 +85,42 @@ def signo(x, decimales: int = 1) -> str:
     return ("+" if x > 0 else "") + comp.num(x, decimales)
 
 
+def tarjeta_nota(t) -> str:
+    """HTML de una tarjeta de la libreta: nota, si aprobó y el promedio del curso (fila de ficha['instrumentos'])."""
+    nombre = html.escape(nombre_corto(t.instrumento))
+    curso = (f"Curso: {comp.pct(t.promedio_curso_pct, 0)}" if pd.notna(t.promedio_curso_pct) else "Curso: –")
+    if not t.rindio:
+        estado = "No lo rindió" if t.es_recuperatorio else "No rindió · cuenta 0"
+        return (f'<div class="nota nota-no-rindio"><div class="nota-nombre">{nombre}</div>'
+                f'<div class="nota-valor">–</div><div class="nota-estado">{estado}</div>'
+                f'<div class="nota-curso">{curso}</div></div>')
+    aprobada = str(t.observaciones).strip().lower() == "aprobada"
+    clase, estado = ("nota-aprobada", "✓ Aprobada") if aprobada else ("nota-no-aprobada", "✗ No aprobada")
+    if t.recuperatorio_aplicado:
+        estado += " · la reemplaza el recuperatorio"
+    if pd.notna(t.promedio_curso_pct):
+        dif = t.nota_pct - t.promedio_curso_pct
+        curso += f" · {'▲' if dif >= 0 else '▼'} {comp.num(abs(dif), 0)} pts"
+    return (f'<div class="nota {clase}"><div class="nota-nombre">{nombre}</div>'
+            f'<div class="nota-valor">{comp.pct(t.nota_pct, 0)}'
+            f'<span class="nota-puntos">{comp.num(t.nota_obtenida, 2)} / {comp.num(t.puntaje_maximo, 0)}</span></div>'
+            f'<div class="nota-estado">{estado}</div><div class="nota-curso">{curso}</div></div>')
+
+
 # ---------------------------------------------------------------------------
-# Buscador
+# Selector de alumno (el desplegable ya trae búsqueda: se escribe y filtra)
 # ---------------------------------------------------------------------------
-c1, c2 = st.columns([2, 3], vertical_alignment="bottom")
-texto = c1.text_input("Buscar alumno", key="fi_buscar", placeholder="Apellido, nombre o ID (ej.: ALU_1263)",
-                      help="No importan las tildes ni las mayúsculas. Se puede escribir solo una parte.")
-encontrados = comp.metrica("buscar_alumnos", texto=texto, solo_base=True)
-if encontrados.empty:
-    st.warning(f"No hay alumnos de {f.materia.lower()} que coincidan con «{texto}».",
-               icon=":material/person_off:")
+alumnos = comp.metrica("buscar_alumnos", texto="", solo_base=True)
+if alumnos.empty:
+    st.warning(f"No hay alumnos en la base de {f.materia.lower()}.", icon=":material/person_off:")
     st.stop()
 
-nombres = dict(zip(encontrados["id_alumno"], encontrados["nombre_completo"]))
-id_alumno = c2.selectbox(
-    f"Alumno ({comp.num(len(encontrados))} {'encontrado' if len(encontrados) == 1 else 'encontrados'})",
-    list(nombres), format_func=lambda i: f"{nombres[i]} · {i}", key="fi_alumno",
-    help="Ordenados por apellido. Sin búsqueda, se muestra el primero de la lista.")
+nombres = dict(zip(alumnos["id_alumno"], alumnos["nombre_completo"]))
+id_alumno = st.selectbox(
+    f"Alumno ({comp.num(len(alumnos))} en la base)", list(nombres),
+    format_func=lambda i: f"{nombres[i]} · {i}", key="fi_alumno",
+    help="Escribí parte del apellido, nombre o ID (ej.: ALU_1263) para filtrar. Ordenados por apellido; "
+         "por defecto se muestra el primero.")
 
 ficha = comp.metrica("ficha_alumno", id_alumno=id_alumno)
 materias = ficha["materias"]
@@ -88,6 +133,9 @@ if materias.empty:  # no pasa con solo_base=True, pero por las dudas
     st.stop()
 orden = {m: i for i, m in enumerate(ESQUEMA)}
 materias = materias.sort_values("asignatura", key=lambda s: s.map(orden)).reset_index(drop=True)
+riesgo = comp.metrica("riesgo_alumno", id_alumno=id_alumno).set_index("asignatura")   # D58
+umbral_riesgo = 100 * comp.metrica("info_modelo")["umbral"]
+ab = comp.ml_abandono   # constantes del predictor (estados y horizonte)
 
 # ---------------------------------------------------------------------------
 # Resumen por materia
@@ -104,6 +152,19 @@ for col, fila in zip(cols, materias.itertuples()):
                                                f"promedio ({comp.num(fila.promedio_nota_final, 1)})",
                   help=f"Σ puntos / Σ máximos de los instrumentos ya tomados × {fila.escala} (D17). "
                        "Lo no rendido cuenta 0 (D15). El promedio es el de toda la base de la materia.")
+        if fila.asignatura in riesgo.index:
+            r = riesgo.loc[fila.asignatura]
+            if r["estado_abandono"] == ab.CURSANDO:
+                ayuda = (f"Probabilidad de que no entre al aula en los próximos "
+                         f"{ab.ABANDONO_HORIZONTE_DIAS} días, según el predictor "
+                         f"(D58). Alto desde {comp.pct(umbral_riesgo, 0)}, Medio desde la mitad."
+                         + (f" Señales: {r['motivos']}." if r["motivos"] else ""))
+            elif r["estado_abandono"] == ab.YA_ABANDONO:
+                ayuda = (f"Hace {comp.num(r['dias_sin_actividad'])} días que no entra: ya cumple la definición "
+                         f"de abandono ({ab.ABANDONO_HORIZONTE_DIAS} días sin entrar). Conviene contactarlo.")
+            else:
+                ayuda = "Nunca entró al aula hasta la fecha de corte."
+            st.metric("Riesgo de abandono", comp.texto_riesgo(r), help=ayuda)
         estado = f"{comp.ICONOS_ACTIVIDAD[fila.estado_actividad]} {fila.estado_actividad}"
         if fila.eventos:
             estado += f" · última vez hace {fila.dias_sin_actividad} días ({comp.fmt_fecha(fila.ultima_interaccion)})"
@@ -134,32 +195,53 @@ with tab_notas:
         st.info(f"Al {comp.fmt_fecha(f.fecha_corte)} todavía no se tomó ninguna evaluación en sus materias.",
                 icon=":material/event_busy:")
     else:
-        st.caption("Cada barra es su nota en el instrumento (en % del máximo). En gris, lo que no rindió: "
-                   "cuenta 0 para la nota final (D15). El rombo ◆ es el promedio de **quienes lo rindieron** "
-                   "(D22). Los recuperatorios van aparte: si lo rindió, su nota reemplaza a la original (D34).")
         inst = inst.assign(nombre=inst["instrumento"].map(nombre_corto),
                            nota_pct=(inst["nota_obtenida"] / inst["puntaje_maximo"] * 100).round(1))  # la original
         inst["eje"] = inst["nombre"].map(en_dos_lineas)
-        for materia in [m for m in materias["asignatura"] if m in set(inst["asignatura"])]:
-            q = inst[inst["asignatura"] == materia]
-            rindio = q["rindio"]
-            fig = go.Figure()
-            fig.add_bar(x=q["eje"], y=q["nota_pct"].where(rindio, 0), showlegend=False,
-                        marker_color=[comp.COLORES_MATERIA[materia] if r else GRIS for r in rindio],
-                        text=[comp.pct(v, 0) if r else "No rindió" for v, r in zip(q["nota_pct"], rindio)],
-                        textposition="outside", cliponaxis=False,
-                        customdata=q[["nombre", "nota_obtenida", "puntaje_maximo"]].fillna(0),
-                        hovertemplate="%{customdata[0]}<br>Nota: %{customdata[1]:g} / %{customdata[2]:g}"
-                                      "<extra></extra>")
-            fig.add_scatter(x=q["eje"], y=q["promedio_curso_pct"], mode="markers", showlegend=False,
-                            marker=dict(symbol="diamond", size=11, color="#0b0b0b"),
-                            customdata=q[["nombre", "rindieron"]],
-                            hovertemplate="%{customdata[0]}<br>Promedio de quienes lo rindieron: %{y:.1f} %"
-                                          "<br>(%{customdata[1]} alumnos)<extra></extra>")
-            fig.update_yaxes(range=[0, 115], ticksuffix=" %")
-            fig.update_xaxes(tickangle=0)
-            fig.update_layout(title=materia, height=300, bargap=0.35)
-            st.plotly_chart(fig, width="stretch")
+        presentes_notas = [m for m in materias["asignatura"] if m in set(inst["asignatura"])]
+        vista = st.segmented_control("Vista", ["Libreta", "Barras"], default="Libreta",
+                                     key="fi_vista_notas") or "Libreta"
+
+        if vista == "Libreta":
+            st.caption("Una tarjeta por instrumento, en el orden en que se tomaron: su nota (en % del máximo y en "
+                       "puntos), si la aprobó y el promedio de **quienes lo rindieron** (D22). Lo que no rindió "
+                       "cuenta 0 para la nota final (D15). Si rindió el recuperatorio, su nota reemplaza a la "
+                       "original (D34).")
+            st.markdown(CSS_LIBRETA, unsafe_allow_html=True)
+            for materia in presentes_notas:
+                fila = materias[materias["asignatura"] == materia].iloc[0]
+                q = inst[inst["asignatura"] == materia]
+                nota_materia = ("–" if fila.instrumentos == 0
+                                else f"{comp.num(fila.nota_final, 1)} / {fila.escala}")
+                st.markdown(f"**{materia}** &nbsp; {comp.semaforo(fila.condicion)} &nbsp; "
+                            f"Nota a la fecha de corte: **{nota_materia}** · rindió {fila.rendidos} de "
+                            f"{fila.instrumentos}", unsafe_allow_html=True)
+                st.markdown(f'<div class="libreta">{"".join(tarjeta_nota(t) for t in q.itertuples())}</div>',
+                            unsafe_allow_html=True)
+        else:
+            st.caption("Cada barra es su nota en el instrumento (en % del máximo). En gris, lo que no rindió: "
+                       "cuenta 0 para la nota final (D15). El rombo ◆ es el promedio de **quienes lo rindieron** "
+                       "(D22). Los recuperatorios van aparte: si lo rindió, su nota reemplaza a la original (D34).")
+            for materia in presentes_notas:
+                q = inst[inst["asignatura"] == materia]
+                rindio = q["rindio"]
+                fig = go.Figure()
+                fig.add_bar(x=q["eje"], y=q["nota_pct"].where(rindio, 0), showlegend=False,
+                            marker_color=[comp.COLORES_MATERIA[materia] if r else GRIS for r in rindio],
+                            text=[comp.pct(v, 0) if r else "No rindió" for v, r in zip(q["nota_pct"], rindio)],
+                            textposition="outside", cliponaxis=False,
+                            customdata=q[["nombre", "nota_obtenida", "puntaje_maximo"]].fillna(0),
+                            hovertemplate="%{customdata[0]}<br>Nota: %{customdata[1]:g} / %{customdata[2]:g}"
+                                          "<extra></extra>")
+                fig.add_scatter(x=q["eje"], y=q["promedio_curso_pct"], mode="markers", showlegend=False,
+                                marker=dict(symbol="diamond", size=11, color="#0b0b0b"),
+                                customdata=q[["nombre", "rindieron"]],
+                                hovertemplate="%{customdata[0]}<br>Promedio de quienes lo rindieron: %{y:.1f} %"
+                                              "<br>(%{customdata[1]} alumnos)<extra></extra>")
+                fig.update_yaxes(range=[0, 115], ticksuffix=" %")
+                fig.update_xaxes(tickangle=0)
+                fig.update_layout(title=materia, height=300, bargap=0.35)
+                st.plotly_chart(fig, width="stretch")
 
         tabla = inst.assign(
             Materia=inst["asignatura"], Instrumento=inst["nombre"], Fecha=inst["fecha_instrumento"].dt.date,

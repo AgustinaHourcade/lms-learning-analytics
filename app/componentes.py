@@ -32,7 +32,7 @@ import plotly.graph_objects as go  # noqa: E402
 import plotly.io as pio  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from src import metricas  # noqa: E402
+from src import metricas, ml_abandono, ml_grupos  # noqa: E402
 from src.config import (ASIGNATURAS, FECHA_CORTE_DEFECTO, GOLD, SIN_EVALUACIONES,  # noqa: E402
                         UMBRAL_INACTIVIDAD_DIAS)
 from src.metricas import ACTIVO, INACTIVO, SIN_ACTIVIDAD  # noqa: E402
@@ -52,6 +52,11 @@ COLORES_CONDICION = {"Libre": CRITICO, "Regular": ATENCION, "Promociona": BIEN, 
 ICONOS_CONDICION = {"Libre": "🔴", "Regular": "🟡", "Promociona": "🟢", SIN_EVALUACIONES: "⚪"}
 COLORES_ACTIVIDAD = {ACTIVO: BIEN, INACTIVO: SERIO, SIN_ACTIVIDAD: NEUTRO}
 ICONOS_ACTIVIDAD = {ACTIVO: "🟢", INACTIVO: "🟠", SIN_ACTIVIDAD: "⚪"}
+# Riesgo de abandono (D58): nivel del predictor o estado si no hace falta predecir.
+COLORES_RIESGO = {ml_abandono.ALTO: CRITICO, ml_abandono.MEDIO: ATENCION, ml_abandono.BAJO: BIEN,
+                  ml_abandono.YA_ABANDONO: "#7a2a2a", ml_abandono.SIN_ACTIVIDAD: NEUTRO}
+ICONOS_RIESGO = {ml_abandono.ALTO: "🔴", ml_abandono.MEDIO: "🟡", ml_abandono.BAJO: "🟢",
+                 ml_abandono.YA_ABANDONO: "⚫", ml_abandono.SIN_ACTIVIDAD: "⚪"}
 
 # Secuencial (mapas de calor): un solo tono, de claro a oscuro.
 SECUENCIAL = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
@@ -125,17 +130,42 @@ def datos() -> metricas.Datos:
     return _datos(version_gold())
 
 
+# Módulos donde metrica() busca la función, en este orden.
+MODULOS = [metricas, ml_grupos, ml_abandono]
+
+
+def _funcion(nombre: str):
+    for modulo in MODULOS:
+        if hasattr(modulo, nombre):
+            return getattr(modulo, nombre)
+    raise AttributeError(f"No hay ninguna métrica llamada {nombre!r} en {[m.__name__ for m in MODULOS]}")
+
+
+@st.cache_resource(max_entries=1, show_spinner="Cargando el predictor de abandono (la primera vez se entrena)…")
+def _modelo_abandono(version: str) -> ml_abandono.ModeloAbandono:
+    """El predictor de abandono, leído con joblib una sola vez (D58). Se guarda
+    junto a gold; si los datos cambiaron, cargar_modelo lo reentrena."""
+    return ml_abandono.cargar_modelo(_datos(version), ml_abandono.ruta_modelo(carpeta_gold()))
+
+
+def modelo_abandono() -> ml_abandono.ModeloAbandono:
+    return _modelo_abandono(version_gold())
+
+
 @st.cache_data(max_entries=500, show_spinner="Calculando…")
 def _metrica(nombre: str, version: str, args: tuple, kwargs: tuple):
-    return getattr(metricas, nombre)(_datos(version), *args, **dict(kwargs))
+    funcion, kwargs = _funcion(nombre), dict(kwargs)
+    if "modelo" in inspect.signature(funcion).parameters:   # funciones del predictor de abandono
+        kwargs.setdefault("modelo", _modelo_abandono(version))
+    return funcion(_datos(version), *args, **kwargs)
 
 
 def metrica(nombre: str, *args, **kwargs):
-    """Llama a `src.metricas.<nombre>` con la caché de la app. Si la función recibe
-    fecha_corte, asignatura o umbral y no se pasan, usa los de la barra lateral.
+    """Llama a `src.metricas.<nombre>` (o a `src.ml_grupos` / `src.ml_abandono`) con la caché de la app.
+    Si la función recibe fecha_corte, asignatura o umbral y no se pasan, usa los de la barra lateral.
     Ejemplos: metrica("nota_final"), metrica("evolucion_actividad", frecuencia="M"),
               metrica("nota_final", asignatura=None)   # todas, ignorando la barra"""
-    parametros = inspect.signature(getattr(metricas, nombre)).parameters
+    parametros = inspect.signature(_funcion(nombre)).parameters
     f = filtros()
     for clave, valor in {"fecha_corte": f.fecha_corte, "asignatura": f.asignatura, "umbral": f.umbral}.items():
         if clave in parametros and clave not in kwargs:
@@ -279,3 +309,50 @@ def boton_csv(df: pd.DataFrame, nombre: str, etiqueta: str = "Descargar CSV") ->
                        file_name=nombre if nombre.endswith(".csv") else f"{nombre}.csv",
                        mime="text/csv", icon=":material/download:")
 
+
+
+# ---------------------------------------------------------------------------
+# Predictor de abandono (D58): bloques para la Ficha individual y Matrícula y alertas
+# ---------------------------------------------------------------------------
+def texto_riesgo(fila) -> str:
+    """'🔴 Alto · 42 %' o '⚫ Ya abandonó' (ícono + texto, nunca solo color)."""
+    nivel = fila["nivel_riesgo"]
+    prob = f" · {pct(fila['probabilidad'], 0)}" if pd.notna(fila["probabilidad"]) else ""
+    return f"{ICONOS_RIESGO.get(nivel, '')} {nivel}{prob}"
+
+
+def riesgo_abandono_alumno(id_alumno: str) -> None:
+    """Para la Ficha individual: el riesgo de abandono del alumno en cada materia,
+    con los motivos y su evolución semana a semana. Uso: comp.riesgo_abandono_alumno(id)."""
+    import plotly.express as px
+
+    r = metrica("riesgo_alumno", id_alumno=id_alumno)
+    if r.empty:
+        st.caption("El alumno no está en la base de ninguna materia.")
+        return
+    umbral = 100 * metrica("info_modelo")["umbral"]
+    cols = st.columns(len(r))
+    for col, (_, fila) in zip(cols, r.iterrows()):
+        with col.container(border=True):
+            st.markdown(f"**{SIGLAS.get(fila['asignatura'], fila['asignatura'])}** · riesgo de abandono")
+            st.markdown(f"### {texto_riesgo(fila)}")
+            if fila["estado_abandono"] == ml_abandono.CURSANDO:
+                st.caption(f"Probabilidad de no entrar en los próximos {ml_abandono.ABANDONO_HORIZONTE_DIAS} días "
+                           f"(riesgo alto desde {pct(umbral, 0)}).")
+                if fila["motivos"]:
+                    st.markdown(f"Señales: {fila['motivos']}.")
+            elif fila["estado_abandono"] == ml_abandono.YA_ABANDONO:
+                st.caption(f"Hace {num(fila['dias_sin_actividad'])} días que no entra: ya cumple la definición "
+                           "de abandono. Conviene contactarlo.")
+            else:
+                st.caption("Nunca entró al aula hasta la fecha de corte.")
+    ev = metrica("evolucion_riesgo", id_alumno=id_alumno)
+    ev = ev[ev["probabilidad"].notna()].assign(materia=lambda t: t["asignatura"].map(SIGLAS))
+    if len(ev) > 1:
+        fig = px.line(ev, x="fecha_corte", y="probabilidad", color="asignatura", markers=True,
+                      color_discrete_map=COLORES_MATERIA,
+                      labels={"fecha_corte": "", "probabilidad": "Probabilidad de abandono (%)", "asignatura": ""})
+        fig.add_hline(y=umbral, line_dash="dash", line_color=CRITICO, annotation_text="Riesgo alto")
+        fig.update_layout(height=280, yaxis_range=[0, 100])
+        st.plotly_chart(fig, width="stretch")
+        st.caption("Cada punto usa solo lo que se sabía ese día. Sin punto = ese día no venía entrando.")
