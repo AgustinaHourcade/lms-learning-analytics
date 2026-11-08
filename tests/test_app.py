@@ -72,6 +72,21 @@ def test_ficha_individual_buscador(app):
     assert not app.exception, app.exception
 
 
+def test_predictor_buscador_individual(app):
+    """La página del predictor tiene el mismo buscador que la Ficha y el resumen del alumno (D58)."""
+    app.switch_page("paginas/ml_abandono.py").run()
+    assert not app.exception, app.exception
+    assert app.selectbox(key="ab_alumno").value.startswith("ALU_")   # muestra al primero por defecto
+    app.selectbox(key="ab_alumno").set_value("ALU_1105").run()
+    assert not app.exception, app.exception
+    assert any("ALU_1105" in m.value for m in app.markdown)
+    assert any("riesgo de abandono" in m.value for m in app.markdown)
+    app.selectbox(key="materia").set_value("Álgebra").run()           # el buscador se acota a la materia
+    assert not app.exception, app.exception
+    app.date_input(key="fecha_corte").set_value("2025-08-06").run()   # antes del día 14 de la cursada
+    assert not app.exception, app.exception
+
+
 def test_grupos_antes_de_la_primera_evaluacion(app):
     """Con una fecha de corte sin evaluaciones, la página de grupos avisa en vez de romperse."""
     app.date_input(key="fecha_corte").set_value("2025-08-06").run()

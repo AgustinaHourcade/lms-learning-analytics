@@ -99,6 +99,53 @@ st.caption(f"{comp.num(len(tabla))} alumnos, de mayor a menor riesgo. Las señal
            "la probabilidad sale del modelo, que las pesa todas juntas.")
 comp.boton_csv(tabla, "riesgo_abandono")
 
+# --- Un alumno -----------------------------------------------------------------------------
+# Mismo buscador que la Ficha individual: un desplegable con búsqueda por nombre o ID, solo
+# alumnos de la base de la materia de la barra, ordenados por apellido; muestra al primero.
+st.subheader("Buscar un alumno")
+alumnos = comp.metrica("buscar_alumnos", texto="", solo_base=True)
+if alumnos.empty:
+    st.info(f"No hay alumnos en la base de {f.materia.lower()}.", icon=":material/person_off:")
+else:
+    nombres = dict(zip(alumnos["id_alumno"], alumnos["nombre_completo"]))
+    # El ícono del peor nivel del alumno (entre las materias de la barra) ayuda a ubicarlo en la lista.
+    orden_nivel = {n: i for i, n in enumerate(ab.NIVELES)}
+    peor = (riesgo.assign(_o=riesgo["nivel_riesgo"].map(orden_nivel)).sort_values("_o")
+            .drop_duplicates("id_alumno").set_index("id_alumno")["nivel_riesgo"])
+    id_alumno = st.selectbox(
+        f"Alumno ({comp.num(len(alumnos))} en la base)", list(nombres), key="ab_alumno",
+        format_func=lambda i: f"{comp.ICONOS_RIESGO.get(peor.get(i), '')} {nombres[i]} · {i}".strip(),
+        help="Escribí parte del apellido, nombre o ID (ej.: ALU_1263) para filtrar. Ordenados por apellido; "
+             "por defecto se muestra el primero. El ícono es su nivel de riesgo más alto.")
+    st.markdown(f"**{nombres[id_alumno]} · {id_alumno}**")
+    if f.asignatura:
+        st.caption(f"El buscador lista solo alumnos de {f.asignatura}, pero el resumen muestra todas sus materias.")
+
+    # Tarjeta por materia (nivel, probabilidad, señales) y evolución semana a semana.
+    comp.riesgo_abandono_alumno(id_alumno)
+
+    # Sus indicadores contra la mediana de quienes vienen entrando en la misma materia.
+    todos = comp.metrica("riesgo_abandono", asignatura=None)
+    suyo = todos[todos["id_alumno"].eq(id_alumno)]
+    curso = todos[todos["estado_abandono"].eq(ab.CURSANDO)].groupby("asignatura")
+    indicadores = ["dias_sin_actividad", "eventos_7d", "eventos_14d", "eventos_14d_previos", "dias_activos_14d",
+                   "sesiones_14d", "minutos_14d", "evaluaciones_14d", "pct_semanas_activas", "eventos_total"]
+    nombres_ind = {**ab.VARIABLES, "eventos_14d_previos": "Interacciones en las 2 semanas anteriores"}
+    resumen = pd.DataFrame({"Indicador": [nombres_ind[c] for c in indicadores]})
+    for _, fila in suyo.iterrows():
+        sigla = comp.SIGLAS.get(fila["asignatura"], fila["asignatura"])
+        mediana = curso.get_group(fila["asignatura"])[indicadores].median() if fila["asignatura"] in curso.groups \
+            else pd.Series(index=indicadores, dtype=float)
+        resumen[f"{sigla} · alumno"] = [fila[c] for c in indicadores]
+        resumen[f"{sigla} · mediana del curso"] = mediana.to_numpy()
+    st.markdown("**Sus indicadores a la fecha de corte**")
+    st.dataframe(resumen, hide_index=True, width="stretch",
+                 column_config={c: st.column_config.NumberColumn(format="%.0f") for c in resumen.columns[1:]})
+    st.caption("Mediana del curso = la de los alumnos de esa materia que vienen entrando (a quienes se les "
+               f"predice). Son las mismas variables que usa el modelo, calculadas solo con la actividad hasta "
+               f"el {comp.fmt_fecha(f.fecha_corte)}. Para notas y participación, ver la Ficha individual.")
+    comp.boton_csv(resumen, f"riesgo_{id_alumno}")
+
 # --- Cómo funciona -----------------------------------------------------------------------
 with st.expander("Cómo se armó el modelo y qué tan bueno es", icon=":material/science:"):
     st.markdown(
