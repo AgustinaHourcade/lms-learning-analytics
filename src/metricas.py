@@ -36,11 +36,18 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from src.config import (CONDICIONES, ESQUEMA, FECHA_CORTE_DEFECTO, GOLD, SIN_EVALUACIONES,
-                        UMBRAL_INACTIVIDAD_DIAS)
+from src.config import (CONDICIONES, DIAS_DESCONECTADO, DIAS_REGRESO, ESQUEMA, FECHA_CORTE_DEFECTO, GOLD,
+                        SIN_EVALUACIONES, UMBRAL_INACTIVIDAD_DIAS)
 
 ACTIVO, INACTIVO, SIN_ACTIVIDAD = "Activo", "Inactivo", "Sin actividad"
 ESTADOS_ACTIVIDAD = [ACTIVO, INACTIVO, SIN_ACTIVIDAD]
+# D54: los inactivos se parten en dos tramos según hace cuánto que no entran.
+ENFRIANDOSE, DESCONECTADO = "Enfriándose", "Desconectado"
+TRAMOS_ACTIVIDAD = [ACTIVO, ENFRIANDOSE, DESCONECTADO, SIN_ACTIVIDAD]
+# Movimientos de la última semana (D54)
+CRUZO_UMBRAL, VOLVIO, ENTRA_NO_RINDE, NUNCA_ENTRO = (
+    "Cruzó el umbral", "Volvió", "Entra y no rinde", "Nunca entró")
+MOVIMIENTOS = [CRUZO_UMBRAL, VOLVIO, ENTRA_NO_RINDE, NUNCA_ENTRO]
 DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
 # Variables de actividad que se cruzan con la nota (dashboard 5).
@@ -251,7 +258,9 @@ def actividad_alumnos(d: Datos, fecha_corte=None, asignatura=None, umbral: int =
                       desde=None) -> pd.DataFrame:
     """Una fila por alumno de la base con su actividad hasta la fecha de corte.
     estado_actividad: Activo (entró en los últimos `umbral` días), Inactivo
-    (entró alguna vez, pero hace más) o Sin actividad (nunca entró) (D35)."""
+    (entró alguna vez, pero hace más) o Sin actividad (nunca entró) (D35).
+    tramo_actividad: lo mismo, pero los inactivos se separan en Enfriándose
+    (hasta DIAS_DESCONECTADO días sin entrar) y Desconectado (más) (D54)."""
     corte = fecha_de_corte(fecha_corte)
     ev = _eventos(d, corte, asignatura, desde)
     ev = ev.assign(semana=ev["fecha"] - pd.to_timedelta(ev["fecha"].dt.day_of_week, unit="D"))
@@ -272,6 +281,9 @@ def actividad_alumnos(d: Datos, fecha_corte=None, asignatura=None, umbral: int =
         [df["eventos"].eq(0), df["dias_sin_actividad"].le(umbral).fillna(False).astype(bool)],
         [SIN_ACTIVIDAD, ACTIVO], default=INACTIVO)
     df["activo"] = df["estado_actividad"].eq(ACTIVO)
+    lejos = df["dias_sin_actividad"].gt(max(DIAS_DESCONECTADO, umbral)).fillna(False).astype(bool)
+    df["tramo_actividad"] = df["estado_actividad"].where(
+        df["estado_actividad"].ne(INACTIVO), np.where(lejos, DESCONECTADO, ENFRIANDOSE))
     return df
 
 
@@ -386,6 +398,37 @@ def participacion_alumnos(d: Datos, fecha_corte=None, asignatura=None, umbral: i
     nombres = d.alumnos[["id_alumno", "apellido", "nombre", "nombre_completo"]]
     df = act.merge(nombres, on="id_alumno", how="left").merge(rep, how="left")
     return df.sort_values(["asignatura", "apellido", "nombre"]).reset_index(drop=True)
+
+
+def movimientos_semana(d: Datos, fecha_corte=None, asignatura=None,
+                       umbral: int = UMBRAL_INACTIVIDAD_DIAS) -> pd.DataFrame:
+    """Qué cambió en los últimos 7 días antes de la fecha de corte (D54). Una fila
+    por alumno y movimiento (un alumno puede aparecer en más de uno):
+      Cruzó el umbral   activo hace una semana, inactivo ahora
+      Volvió            activo ahora y, una semana antes, llevaba DIAS_REGRESO
+                        días o más sin entrar (no cuenta a quien entra por primera vez)
+      Entra y no rinde  activo ahora, con instrumentos tomados y ninguno rendido
+      Nunca entró       sin ninguna interacción en toda la cursada
+    Siempre mira la cursada completa: no depende del período del dashboard."""
+    corte = fecha_de_corte(fecha_corte)
+    ahora = tabla_alumnos(d, corte, asignatura, umbral)
+    antes = actividad_alumnos(d, corte - pd.Timedelta(days=7), asignatura, umbral)
+    df = ahora.merge(antes[["asignatura", "id_alumno", "activo", "dias_sin_actividad", "eventos"]]
+                     .rename(columns=lambda c: c if c in ("asignatura", "id_alumno") else f"{c}_antes"),
+                     how="left")
+    lejos_antes = df["dias_sin_actividad_antes"].ge(DIAS_REGRESO).fillna(False)
+    reglas = {
+        CRUZO_UMBRAL: df["activo_antes"].fillna(False).astype(bool) & ~df["activo"],
+        VOLVIO: df["activo"] & lejos_antes.astype(bool),
+        ENTRA_NO_RINDE: df["activo"] & df["instrumentos"].gt(0) & df["rendidos"].eq(0),
+        NUNCA_ENTRO: df["eventos"].eq(0),
+    }
+    columnas = ["asignatura", "id_alumno", "nombre_completo", "dias_sin_actividad", "ultima_interaccion",
+                "eventos", "rendidos", "instrumentos", "inscripto"]
+    partes = [df.loc[filtro, columnas].assign(movimiento=nombre) for nombre, filtro in reglas.items()]
+    out = pd.concat(partes, ignore_index=True)
+    out["movimiento"] = pd.Categorical(out["movimiento"], MOVIMIENTOS)
+    return out[["movimiento", *columnas]].sort_values(["movimiento", "asignatura", "nombre_completo"])                                           .reset_index(drop=True)
 
 
 # Herramientas del reporte de participación: (uso del alumno, recursos que ofrece el aula).

@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 
 from src import metricas as m
-from src.config import FECHA_CORTE_DEFECTO, SIN_EVALUACIONES
+from src.config import DIAS_DESCONECTADO, DIAS_REGRESO, FECHA_CORTE_DEFECTO, SIN_EVALUACIONES
 
 ALG, PYE, AED = "Álgebra", "Probabilidad y Estadística", "Algoritmos y Estructuras de Datos"
 FECHAS = ["2025-08-10", "2025-09-15", "2025-09-23", "2025-09-24", "2025-10-11", FECHA_CORTE_DEFECTO]
@@ -297,3 +297,39 @@ def test_uso_herramientas(d):
 def test_concordancia_tiempo(d):
     c = m.concordancia_tiempo(d)
     assert len(c) == 3 and (c["rho"] > 0.9).all()
+
+
+# ---------------------------------------------------------------------------
+# Tramos de actividad y movimientos de la semana (D54)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("umbral", [3, 7, 30])
+def test_tramos_parten_a_los_inactivos(d, umbral):
+    a = m.actividad_alumnos(d, umbral=umbral)
+    assert set(a["tramo_actividad"]) <= set(m.TRAMOS_ACTIVIDAD)
+    # activos y sin actividad son los mismos; los inactivos se reparten en dos tramos
+    assert (a["tramo_actividad"] == m.ACTIVO).equals(a["estado_actividad"] == m.ACTIVO)
+    inactivos = a[a["estado_actividad"] == m.INACTIVO]
+    assert inactivos["tramo_actividad"].isin([m.ENFRIANDOSE, m.DESCONECTADO]).all()
+    lim = max(DIAS_DESCONECTADO, umbral)
+    assert (inactivos["tramo_actividad"] == m.DESCONECTADO).tolist() == (inactivos["dias_sin_actividad"] > lim).tolist()
+
+
+def test_movimientos_de_la_semana(d):
+    corte = T(FECHA_CORTE_DEFECTO)
+    mov = m.movimientos_semana(d, corte)
+    ahora = m.actividad_alumnos(d, corte).set_index(["asignatura", "id_alumno"])
+    antes = m.actividad_alumnos(d, corte - pd.Timedelta(days=7)).set_index(["asignatura", "id_alumno"])
+    for nombre, g in mov.groupby("movimiento", observed=True):
+        claves = list(zip(g["asignatura"], g["id_alumno"]))
+        if nombre == m.CRUZO_UMBRAL:
+            assert antes.loc[claves, "activo"].all() and not ahora.loc[claves, "activo"].any()
+        elif nombre == m.VOLVIO:
+            assert ahora.loc[claves, "activo"].all()
+            assert (antes.loc[claves, "dias_sin_actividad"] >= DIAS_REGRESO).all()
+        elif nombre in (m.ENTRA_NO_RINDE,):
+            assert ahora.loc[claves, "activo"].all() and (g["rendidos"] == 0).all()
+        else:
+            assert (ahora.loc[claves, "eventos"] == 0).all()
+    # cruzar el umbral cuadra con la caída de activos de una semana a la otra
+    cruzaron = (mov["movimiento"] == m.CRUZO_UMBRAL).sum()
+    assert cruzaron == (antes["activo"] & ~ahora["activo"]).sum()
