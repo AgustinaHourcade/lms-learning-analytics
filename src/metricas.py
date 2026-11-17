@@ -564,7 +564,7 @@ def ficha_alumno(d: Datos, id_alumno: str, fecha_corte=None, umbral: int = UMBRA
       semanal       su actividad por semana y materia, con las interacciones
                     promedio por alumno de la base en esa semana (curso_eventos)
       categorias    sus interacciones por tipo y materia, en cantidad y en %,
-                    contra el % del curso
+                    contra el % del curso (con 0 los tipos que usa el curso y él no)
       alertas       sus alertas (D37) a la fecha de corte
       evaluaciones  las fechas de las evaluaciones ya tomadas, para marcarlas
       eventos       toda su trazabilidad hasta la fecha de corte, de la más nueva
@@ -607,8 +607,12 @@ def ficha_alumno(d: Datos, id_alumno: str, fecha_corte=None, umbral: int = UMBRA
 
     categorias = _por_tipo(ev, "eventos")
     if not categorias.empty:
-        categorias = categorias.merge(_por_tipo(ev_todos, "curso")[["asignatura", "categoria", "pct_curso"]],
-                                      how="left")
+        # Outer: también los tipos que el curso usa y el alumno no (0 %, por ej. nunca entró a
+        # Evaluación), pero solo en las materias donde tiene alguna interacción.
+        curso = _por_tipo(ev_todos, "curso")[["asignatura", "categoria", "pct_curso"]]
+        curso = curso[curso["asignatura"].isin(categorias["asignatura"])]
+        categorias = (categorias.merge(curso, how="outer").fillna({"eventos": 0, "pct_eventos": 0.0})
+                      .astype({"eventos": "int64"}).sort_values(["asignatura", "categoria"], ignore_index=True))
 
     al = alertas(d, fecha_corte, suyas, umbral) if suyas else pd.DataFrame(columns=["asignatura", "id_alumno"])
     return {

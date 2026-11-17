@@ -42,9 +42,25 @@ from src.metricas import ACTIVO, INACTIVO, SIN_ACTIVIDAD  # noqa: E402
 # ---------------------------------------------------------------------------
 # Categórica, en orden fijo: los 3 primeros sirven para cualquier gráfico
 # (también dispersión), así que cada materia tiene uno.
-CATEGORICA = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
-COLORES_MATERIA = dict(zip(ASIGNATURAS, CATEGORICA))
+CATEGORICA = ["#2563C9", "#D4661F", "#0E8F62", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
+COLORES_MATERIA = dict(zip(ASIGNATURAS, CATEGORICA))   # Álgebra azul, AED naranja, PyE verde
 SIGLAS = {nombre: datos["sigla"] for nombre, datos in ASIGNATURAS.items()}
+# Etiqueta de sigla (fondo suave, texto oscuro) para chips y tablas.
+SIGLA_FONDO = dict(zip(ASIGNATURAS, ["#EAF0F8", "#FBEFE6", "#E6F2EB"]))
+SIGLA_TEXTO = dict(zip(ASIGNATURAS, ["#164279", "#8A4415", "#0B6B49"]))
+
+# Tokens del diseño "Analítica académica" (D59): texto, bordes y tonos de estado.
+# Cada tono = (fondo suave, texto, color sólido); siempre van con ícono y texto (D48).
+TINTA, TINTA_2, TINTA_3, TENUE = "#1A1917", "#57544C", "#6B6861", "#8A867C"
+BORDE, BORDE_SUAVE, ACENTO = "#E3E1DC", "#EFEDE8", "#1B4B8F"
+TONOS = {
+    "bien": ("#E6F2EB", "#116040", "#0E8F62"),
+    "atencion": ("#FBF0DC", "#7A5000", "#A06A00"),
+    "critico": ("#FBE9E6", "#93241C", "#B02A20"),
+    "oscuro": ("#EBE9E4", "#35332D", "#35332D"),
+    "neutro": ("#F1EFEA", "#57544C", "#8A867C"),
+    "acento": ("#EAF0F8", "#164279", "#1B4B8F"),
+}
 
 # Estados: colores reservados, siempre acompañados de ícono y texto.
 BIEN, ATENCION, SERIO, CRITICO, NEUTRO = "#0ca30c", "#fab219", "#ec835a", "#d03b3b", "#898781"
@@ -64,30 +80,75 @@ SECUENCIAL = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", 
 # Plantilla de plotly: fondo blanco, grilla tenue y la paleta categórica.
 pio.templates["tfi"] = go.layout.Template(layout=dict(
     colorway=CATEGORICA,
-    font=dict(family='system-ui, -apple-system, "Segoe UI", sans-serif'),
-    xaxis=dict(gridcolor="#e1e0d9", linecolor="#c3c2b7"),
-    yaxis=dict(gridcolor="#e1e0d9", linecolor="#c3c2b7"),
+    font=dict(family='Inter, system-ui, -apple-system, "Segoe UI", sans-serif', color="#2C2A25", size=12),
+    title=dict(font=dict(family='"Space Grotesk", Inter, sans-serif', size=14, color=TINTA)),
+    xaxis=dict(gridcolor=BORDE_SUAVE, linecolor=BORDE, tickfont=dict(color=TINTA_3)),
+    yaxis=dict(gridcolor=BORDE_SUAVE, linecolor=BORDE, tickfont=dict(color=TINTA_3)),
     margin=dict(t=48, l=8, r=8, b=8),
     legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
-    hoverlabel=dict(font_size=13),
+    hoverlabel=dict(font_size=13, font_family="Inter, sans-serif"),
+    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
 ))
 pio.templates.default = "plotly_white+tfi"
 
 CSS = """
 <style>
-  .semaforo {display:inline-flex; align-items:center; gap:.4rem; padding:.25rem .7rem; border-radius:999px;
-             font-weight:600; border:1px solid rgba(11,11,11,.10);}
-  .semaforo-Libre      {background:#fde8e8; color:#8a1f1f;}
-  .semaforo-Regular    {background:#fff4d6; color:#6b4a00;}
-  .semaforo-Promociona {background:#e2f6e2; color:#006300;}
-  .semaforo-otro       {background:#f0efec; color:#52514e;}
+  .semaforo {display:inline-flex; align-items:center; gap:.4rem; padding:.2rem .7rem; border-radius:999px;
+             font-weight:600; font-size:12px;}
+  .semaforo-Libre      {background:#FBE9E6; color:#93241C;}
+  .semaforo-Regular    {background:#FBF0DC; color:#7A5000;}
+  .semaforo-Promociona {background:#E6F2EB; color:#116040;}
+  .semaforo-otro       {background:#F1EFEA; color:#57544C;}
   [data-testid="stMetric"] [data-testid="stMetricValue"] {font-size: 1.9rem;}
+
+  /* ---- Diseño "Analítica académica" (D59) ---- */
+  .block-container {max-width: 1240px; padding-top: 2.2rem;}
+  h1 {font-size: 1.95rem !important; letter-spacing: -.02em; font-weight: 600 !important;}
+  .tfi-desc {margin: -.2rem 0 .35rem; max-width: 72ch; font-size: 13px; line-height: 1.55; color: #57544C;}
+  /* Tarjetas: st.container(border=True, key="tarjeta_...") queda blanca como en el diseño. */
+  [class*="st-key-tarjeta"] {background: #FFFFFF; border-radius: 13px !important; border-color: #E3E1DC !important;}
+  [data-testid="stSidebar"] [class*="st-key-tarjeta"] {border-radius: 12px !important;}
+  [data-testid="stMetric"] {background: #FFFFFF;}
+  .stTabs [data-baseweb="tab-list"] {gap: 4px; border-bottom: 1px solid #E3E1DC;}
+  .stTabs [data-baseweb="tab"] {height: 42px; padding: 0 14px; font-weight: 500;}
+  .stTabs [data-baseweb="tab"] p {font-size: 14px;}
+  .stTabs [aria-selected="true"] p {font-weight: 600;}
+  .tfi-kicker {margin: 0 0 4px; font: 600 11px Inter, sans-serif; letter-spacing: .06em; text-transform: uppercase;
+               color: #6B6861;}
+  .tfi-h3, .tfi-card h2, .tfi-card h3, .tfi-card h4 {margin: 0 !important; padding: 0 !important;
+           font: 600 15px 'Space Grotesk', Inter, sans-serif !important; color: #1A1917; letter-spacing: 0;
+           scroll-margin-top: 0;}
+  .tfi-card h4 {font: 600 14px Inter, sans-serif !important;}
+  .tfi-nota-al-pie {margin: 0; font-size: 12px; color: #6B6861; line-height: 1.5;}
+  .tfi-card {background: #FFFFFF; border: 1px solid #E3E1DC; border-radius: 13px; margin-bottom: 14px;
+             overflow: hidden; font-family: Inter, sans-serif; color: #1A1917;}
+  .tfi-card-cab {display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;
+                 padding: 15px 16px 13px;}
+  .tfi-card-pie {display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 11px 16px;
+                 border-top: 1px solid #EFEDE8; background: #FCFBF9; font-size: 12px; color: #6B6861;}
+  .tfi-num {font-variant-numeric: tabular-nums;}
+  .tfi-chip {display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 999px;
+             font: 500 12px Inter, sans-serif; white-space: nowrap;}
+  .tfi-chip-sm {height: 24px; padding: 0 9px; font-size: 11px; font-weight: 600;}
+  .tfi-sigla {display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 5px;
+              font: 600 11px Inter, sans-serif; white-space: nowrap;}
+  .tfi-cuadro {width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: 0 0 auto;}
+  .tfi-tabla {border-collapse: collapse; width: 100%;}
+  .tfi-tabla th {font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: #6B6861; font-weight: 600;
+                 text-align: left; padding: 10px 12px; border-bottom: 1px solid #E3E1DC; white-space: nowrap;
+                 background: transparent;}
+  .tfi-tabla td {font-size: 13px; color: #2C2A25; padding: 12px; border-bottom: 1px solid #EFEDE8;
+                 vertical-align: middle; font-variant-numeric: tabular-nums;}
+  .tfi-tabla tbody tr:last-child td {border-bottom: none;}
+  .tfi-tabla th, .tfi-tabla td {border-left: none; border-right: none; border-top: none;}
+  .tfi-barra {height: 8px; border-radius: 999px; background: #EDEBE6; overflow: hidden; position: relative;}
+  .tfi-barra > span {display: block; height: 100%; border-radius: 999px;}
 </style>
 """
 
 
 def estilos() -> None:
-    """CSS mínimo (como en el ejemplo de la clase 10): solo el semáforo y las tarjetas."""
+    """CSS global: semáforo, tarjetas y las piezas del diseño (D59)."""
     st.markdown(CSS, unsafe_allow_html=True)
 
 
@@ -224,16 +285,17 @@ def barra_lateral() -> Filtros:
     st.session_state["fecha_corte"] = min(max(st.session_state["fecha_corte"], inicio), fin)
 
     with st.sidebar:
-        st.header("Filtros")
-        fecha = st.date_input("Fecha de corte", min_value=inicio, max_value=fin, key="fecha_corte",
-                              format="DD/MM/YYYY",
-                              help="Todo se calcula con lo que se sabía ese día (inclusive): notas de los "
-                                   "instrumentos ya tomados, actividad hasta esa fecha.")
-        materia = st.selectbox("Materia", [TODAS, *ASIGNATURAS], key="materia")
-        umbral = st.slider("Inactivo después de (días sin entrar)", 1, 30, key="umbral",
-                           help="Un alumno que no entra hace más de estos días cuenta como inactivo (D35).")
-        st.button("Restablecer", on_click=_restablecer, width="stretch")
-        st.caption(f"Datos del {fmt_fecha(inicio)} al {fmt_fecha(fin)}.")
+        with st.container(border=True, key="tarjeta_filtros"):
+            st.markdown('<div class="tfi-kicker">Filtros</div>', unsafe_allow_html=True)
+            fecha = st.date_input("Fecha de corte", min_value=inicio, max_value=fin, key="fecha_corte",
+                                  format="DD/MM/YYYY",
+                                  help="Todo se calcula con lo que se sabía ese día (inclusive): notas de los "
+                                       "instrumentos ya tomados, actividad hasta esa fecha.")
+            materia = st.selectbox("Materia", [TODAS, *ASIGNATURAS], key="materia")
+            umbral = st.slider("Inactivo después de (días sin entrar)", 1, 30, key="umbral",
+                               help="Un alumno que no entra hace más de estos días cuenta como inactivo (D35).")
+            st.button("Restablecer filtros", on_click=_restablecer, width="stretch")
+        st.caption(f"Datos del {fmt_fecha(inicio)} al {fmt_fecha(fin)} · {len(ASIGNATURAS)} materias.")
 
     f = Filtros(fecha_corte=fecha, asignatura=None if materia == TODAS else materia, umbral=int(umbral))
     st.session_state["_filtros"] = f
@@ -271,10 +333,100 @@ def encabezado(titulo: str, descripcion: str = "") -> Filtros:
     f = filtros()
     st.title(titulo)
     if descripcion:
-        st.markdown(descripcion)
+        st.markdown(f'<div class="tfi-desc">{descripcion}</div>', unsafe_allow_html=True)
     st.caption(f"Corte: **{fmt_fecha(f.fecha_corte)}** · {f.materia} · "
                f"Inactivo después de {f.umbral} días sin entrar")
     return f
+
+
+# ---------------------------------------------------------------------------
+# Piezas HTML del diseño (D59). Devuelven texto: se arman bloques y se dibujan
+# con html(). Siempre ícono + texto, nunca solo color (D48).
+# ---------------------------------------------------------------------------
+_FORMAS = {   # SVG de 16x16; `{f}` = color del recorte interior
+    "bien": '<circle cx="8" cy="8" r="6.6" fill="currentColor"/>'
+            '<path d="M4.9 8.3l2.1 2.1 4.2-4.5" fill="none" stroke="{f}" stroke-width="1.7" '
+            'stroke-linecap="round" stroke-linejoin="round"/>',
+    "atencion": '<path d="M8 1.6l6.6 11.8H1.4z" fill="currentColor"/>'
+                '<path d="M8 6v3.1M8 11.2v.1" stroke="{f}" stroke-width="1.5" stroke-linecap="round"/>',
+    "critico": '<path d="M5.2 1.4h5.6l3.8 3.8v5.6l-3.8 3.8H5.2l-3.8-3.8V5.2z" fill="currentColor"/>'
+               '<path d="M8 4.8v4M8 10.8v.1" stroke="{f}" stroke-width="1.6" stroke-linecap="round"/>',
+    "oscuro": '<rect x="2" y="2" width="12" height="12" rx="3" fill="currentColor"/>'
+              '<path d="M5 8h6" stroke="{f}" stroke-width="1.8" stroke-linecap="round"/>',
+    "neutro": '<circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.6"/>'
+              '<path d="M8 7.2v4M8 4.8v.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+}
+_FORMAS["acento"] = _FORMAS["neutro"]
+
+# Tono de cada estado del modelo.
+TONO_CONDICION = {"Promociona": "bien", "Regular": "atencion", "Libre": "critico", SIN_EVALUACIONES: "neutro"}
+TONO_ACTIVIDAD = {ACTIVO: "bien", INACTIVO: "atencion", SIN_ACTIVIDAD: "neutro"}
+TONO_RIESGO = {ml_abandono.ALTO: "critico", ml_abandono.MEDIO: "atencion", ml_abandono.BAJO: "bien",
+               ml_abandono.YA_ABANDONO: "oscuro", ml_abandono.SIN_ACTIVIDAD: "neutro"}
+
+
+def esc(texto) -> str:
+    """Escapa texto que viene de los datos antes de meterlo en HTML."""
+    import html as _html
+    return _html.escape("" if texto is None or (not isinstance(texto, str) and pd.isna(texto)) else str(texto))
+
+
+def icono(tono: str, tam: int = 12, etiqueta: str = "") -> str:
+    fondo = TONOS[tono][0]
+    aria = f'role="img" aria-label="{esc(etiqueta)}"' if etiqueta else 'aria-hidden="true"'
+    return (f'<svg viewBox="0 0 16 16" width="{tam}" height="{tam}" {aria} style="flex:0 0 auto">'
+            f'{_FORMAS[tono].format(f=fondo)}</svg>')
+
+
+def chip(texto: str, tono: str = "neutro", con_icono: bool = False, chico: bool = False) -> str:
+    """Pastilla redondeada: '⚠ Sin entrar hace 13 días', '309 interacciones'."""
+    fondo, color, _ = TONOS[tono]
+    clase = "tfi-chip tfi-chip-sm" if chico else "tfi-chip"
+    return (f'<span class="{clase} tfi-num" style="background:{fondo};color:{color}">'
+            f'{icono(tono) if con_icono else ""}{texto}</span>')
+
+
+def pastilla_condicion(condicion: str, chico: bool = False) -> str:
+    """Semáforo de la condición con la forma del diseño (círculo, triángulo, octógono)."""
+    return chip(esc(condicion), TONO_CONDICION.get(condicion, "neutro"), con_icono=True, chico=chico)
+
+
+def sigla(asignatura: str) -> str:
+    """Etiqueta 'ALG' / 'AED' / 'PYE' con el color suave de la materia."""
+    return (f'<span class="tfi-sigla" style="background:{SIGLA_FONDO.get(asignatura, "#F1EFEA")};'
+            f'color:{SIGLA_TEXTO.get(asignatura, TINTA_2)}">{esc(SIGLAS.get(asignatura, asignatura))}</span>')
+
+
+def cuadro(color: str, tam: int = 10) -> str:
+    return f'<span class="tfi-cuadro" style="background:{color};width:{tam}px;height:{tam}px"></span>'
+
+
+def barra(valor, color: str, alto: int = 8, maximo: float = 100, marca=None) -> str:
+    """Barra horizontal de progreso (0..maximo); `marca` dibuja una rayita gris (por ej. el curso)."""
+    ancho = 0 if valor is None or pd.isna(valor) else max(0, min(100, 100 * float(valor) / maximo))
+    raya = ""
+    if marca is not None and pd.notna(marca):
+        x = max(0, min(100, 100 * float(marca) / maximo))
+        raya = (f'<span style="position:absolute;left:calc({x:.1f}% - 1px);top:-3px;width:2px;'
+                f'height:{alto + 6}px;background:{TINTA_2};border-radius:1px"></span>')
+    return (f'<div class="tfi-barra" style="height:{alto}px;overflow:visible">'
+            f'<span style="width:{ancho:.1f}%;background:{color}"></span>{raya}</div>')
+
+
+def grafico(fig, contenedor=st) -> None:
+    """Gráfico de plotly con la plantilla de la app (fondo transparente, Inter) y sin la
+    barra de herramientas. theme=None: si no, el tema de Streamlit pisa la plantilla.
+    Los fondos van explícitos porque Streamlit igual pone los del tema si vienen de la plantilla."""
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    contenedor.plotly_chart(fig, width="stretch", theme=None, config={"displayModeBar": False})
+
+
+def html(bloque: str) -> None:
+    """Dibuja un bloque HTML del diseño (sin iframe: hereda fuentes y estilos de la app).
+    Va por st.markdown y no por st.html porque st.html borra los SVG (íconos y minigráficos).
+    Se junta todo en una línea para que markdown no lea la sangría como bloque de código."""
+    st.markdown(" ".join(linea.strip() for linea in bloque.splitlines() if linea.strip()),
+                unsafe_allow_html=True)
 
 
 def tarjetas(items: list, columnas: int | None = None) -> None:

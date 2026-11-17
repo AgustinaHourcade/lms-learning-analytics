@@ -64,10 +64,16 @@ def test_ficha_individual_buscador(app):
     primero = app.selectbox(key="fi_alumno").value          # muestra al primero por defecto
     assert primero.startswith("ALU_")
     assert not app.text_input                                # un solo buscador: el desplegable
-    assert any(m.label == "Riesgo de abandono" for m in app.metric)   # card del predictor (D58)
+    assert any("Riesgo de abandono" in m.value for m in app.markdown)   # cabecera con el predictor (D58)
+    assert any("Estado por materia" in m.value for m in app.markdown)
     app.selectbox(key="fi_alumno").set_value("ALU_1105").run()
     assert not app.exception, app.exception
-    assert any("ALU_1105" in s.value for s in app.subheader)
+    assert any("ALU_1105" in m.value for m in app.markdown)
+    app.button(key="fi_siguiente").click().run()                       # anterior / siguiente
+    assert not app.exception, app.exception
+    assert app.selectbox(key="fi_alumno").value != "ALU_1105"
+    app.button(key="fi_sig_riesgo").click().run()                      # siguiente en riesgo
+    assert not app.exception, app.exception
     app.date_input(key="fecha_corte").set_value("2025-08-06").run()   # antes de cualquier evaluación
     assert not app.exception, app.exception
 
