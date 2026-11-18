@@ -36,11 +36,18 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from src.config import (CONDICIONES, ESQUEMA, FECHA_CORTE_DEFECTO, GOLD, SIN_EVALUACIONES,
-                        UMBRAL_INACTIVIDAD_DIAS)
+from src.config import (CONDICIONES, DIAS_DESCONECTADO, DIAS_REGRESO, ESQUEMA, FECHA_CORTE_DEFECTO, GOLD,
+                        SIN_EVALUACIONES, UMBRAL_INACTIVIDAD_DIAS)
 
 ACTIVO, INACTIVO, SIN_ACTIVIDAD = "Activo", "Inactivo", "Sin actividad"
 ESTADOS_ACTIVIDAD = [ACTIVO, INACTIVO, SIN_ACTIVIDAD]
+# D54: los inactivos se parten en dos tramos según hace cuánto que no entran.
+ENFRIANDOSE, DESCONECTADO = "Enfriándose", "Desconectado"
+TRAMOS_ACTIVIDAD = [ACTIVO, ENFRIANDOSE, DESCONECTADO, SIN_ACTIVIDAD]
+# Movimientos de la última semana (D54)
+CRUZO_UMBRAL, VOLVIO, ENTRA_NO_RINDE, NUNCA_ENTRO = (
+    "Cruzó el umbral", "Volvió", "Entra y no rinde", "Nunca entró")
+MOVIMIENTOS = [CRUZO_UMBRAL, VOLVIO, ENTRA_NO_RINDE, NUNCA_ENTRO]
 DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
 # Variables de actividad que se cruzan con la nota (dashboard 5).
@@ -251,7 +258,9 @@ def actividad_alumnos(d: Datos, fecha_corte=None, asignatura=None, umbral: int =
                       desde=None) -> pd.DataFrame:
     """Una fila por alumno de la base con su actividad hasta la fecha de corte.
     estado_actividad: Activo (entró en los últimos `umbral` días), Inactivo
-    (entró alguna vez, pero hace más) o Sin actividad (nunca entró) (D35)."""
+    (entró alguna vez, pero hace más) o Sin actividad (nunca entró) (D35).
+    tramo_actividad: lo mismo, pero los inactivos se separan en Enfriándose
+    (hasta DIAS_DESCONECTADO días sin entrar) y Desconectado (más) (D54)."""
     corte = fecha_de_corte(fecha_corte)
     ev = _eventos(d, corte, asignatura, desde)
     ev = ev.assign(semana=ev["fecha"] - pd.to_timedelta(ev["fecha"].dt.day_of_week, unit="D"))
@@ -272,6 +281,9 @@ def actividad_alumnos(d: Datos, fecha_corte=None, asignatura=None, umbral: int =
         [df["eventos"].eq(0), df["dias_sin_actividad"].le(umbral).fillna(False).astype(bool)],
         [SIN_ACTIVIDAD, ACTIVO], default=INACTIVO)
     df["activo"] = df["estado_actividad"].eq(ACTIVO)
+    lejos = df["dias_sin_actividad"].gt(max(DIAS_DESCONECTADO, umbral)).fillna(False).astype(bool)
+    df["tramo_actividad"] = df["estado_actividad"].where(
+        df["estado_actividad"].ne(INACTIVO), np.where(lejos, DESCONECTADO, ENFRIANDOSE))
     return df
 
 
@@ -361,6 +373,105 @@ def reporte_participacion(d: Datos, asignatura=None) -> pd.DataFrame:
     p = _filtrar(d.participacion, asignatura)
     return p[p["en_base"]].merge(d.alumnos[["id_alumno", "nombre_completo"]], on="id_alumno", how="left") \
                           .reset_index(drop=True)
+
+
+def evolucion_participacion(d: Datos, fecha_corte=None, asignatura=None, frecuencia: str = "W",
+                            desde=None) -> pd.DataFrame:
+    """evolucion_actividad() más las mismas series relativas al tamaño de la base
+    de cada materia (D53): % de la base que entró en el período e interacciones,
+    sesiones y minutos por alumno. Sirve para comparar materias de distinto tamaño."""
+    df = evolucion_actividad(d, fecha_corte, asignatura, frecuencia, desde)
+    n = df["asignatura"].map(base(d, asignatura).groupby("asignatura").size())
+    df["pct_base_activa"] = (df["alumnos_activos"] / n * 100).round(2)
+    for col in ["eventos", "sesiones", "minutos"]:
+        df[f"{col}_por_alumno"] = (df[col] / n).round(2)
+    return df
+
+
+def participacion_alumnos(d: Datos, fecha_corte=None, asignatura=None, umbral: int = UMBRAL_INACTIVIDAD_DIAS,
+                          desde=None) -> pd.DataFrame:
+    """Una fila por alumno de la base: actividad entre `desde` y la fecha de corte
+    (trazabilidad) y el reporte de participación (foto, D36). Es tabla_alumnos()
+    sin las notas, pero respetando el rango de fechas del dashboard (D53)."""
+    act = actividad_alumnos(d, fecha_corte, asignatura, umbral, desde)
+    rep = d.participacion[["asignatura", "id_alumno", *COLUMNAS_REPORTE]].rename(columns=COLUMNAS_REPORTE)
+    nombres = d.alumnos[["id_alumno", "apellido", "nombre", "nombre_completo"]]
+    df = act.merge(nombres, on="id_alumno", how="left").merge(rep, how="left")
+    return df.sort_values(["asignatura", "apellido", "nombre"]).reset_index(drop=True)
+
+
+def movimientos_semana(d: Datos, fecha_corte=None, asignatura=None,
+                       umbral: int = UMBRAL_INACTIVIDAD_DIAS) -> pd.DataFrame:
+    """Qué cambió en los últimos 7 días antes de la fecha de corte (D54). Una fila
+    por alumno y movimiento (un alumno puede aparecer en más de uno):
+      Cruzó el umbral   activo hace una semana, inactivo ahora
+      Volvió            activo ahora y, una semana antes, llevaba DIAS_REGRESO
+                        días o más sin entrar (no cuenta a quien entra por primera vez)
+      Entra y no rinde  activo ahora, con instrumentos tomados y ninguno rendido
+      Nunca entró       sin ninguna interacción en toda la cursada
+    Siempre mira la cursada completa: no depende del período del dashboard."""
+    corte = fecha_de_corte(fecha_corte)
+    ahora = tabla_alumnos(d, corte, asignatura, umbral)
+    antes = actividad_alumnos(d, corte - pd.Timedelta(days=7), asignatura, umbral)
+    df = ahora.merge(antes[["asignatura", "id_alumno", "activo", "dias_sin_actividad", "eventos"]]
+                     .rename(columns=lambda c: c if c in ("asignatura", "id_alumno") else f"{c}_antes"),
+                     how="left")
+    lejos_antes = df["dias_sin_actividad_antes"].ge(DIAS_REGRESO).fillna(False)
+    reglas = {
+        CRUZO_UMBRAL: df["activo_antes"].fillna(False).astype(bool) & ~df["activo"],
+        VOLVIO: df["activo"] & lejos_antes.astype(bool),
+        ENTRA_NO_RINDE: df["activo"] & df["instrumentos"].gt(0) & df["rendidos"].eq(0),
+        NUNCA_ENTRO: df["eventos"].eq(0),
+    }
+    columnas = ["asignatura", "id_alumno", "nombre_completo", "dias_sin_actividad", "ultima_interaccion",
+                "eventos", "rendidos", "instrumentos", "inscripto"]
+    partes = [df.loc[filtro, columnas].assign(movimiento=nombre) for nombre, filtro in reglas.items()]
+    out = pd.concat(partes, ignore_index=True)
+    out["movimiento"] = pd.Categorical(out["movimiento"], MOVIMIENTOS)
+    return out[["movimiento", *columnas]].sort_values(["movimiento", "asignatura", "nombre_completo"])                                           .reset_index(drop=True)
+
+
+# Herramientas del reporte de participación: (uso del alumno, recursos que ofrece el aula).
+HERRAMIENTAS = {
+    "Foros": ("foros_cantidad_de_intervenciones_del_usuario", "foros_cantidad_temas_de_debate"),
+    "Encuestas": ("encuestas_cargados", "encuestas_cantidad"),
+    "Correo interno": ("emails_enviados", None),
+    "Archivos": ("archivos_cargados", "archivos_cantidad"),
+    "Wikis": ("wikis_cargados", "wikis_cantidad"),
+}
+
+
+def uso_herramientas(d: Datos, asignatura=None) -> pd.DataFrame:
+    """Por materia y herramienta (foto al 24/10, D36): cuántos recursos ofrece el
+    aula (temas de foro, encuestas...), cuántos alumnos de la base la usaron al
+    menos una vez, qué % son y cuántos usos hubo en total (D53)."""
+    p = reporte_participacion(d, asignatura)
+    filas = []
+    for asig, g in p.groupby("asignatura"):
+        for herramienta, (uso, recursos) in HERRAMIENTAS.items():
+            usos = g[uso].fillna(0)
+            filas.append({"asignatura": asig, "herramienta": herramienta,
+                          "recursos": int(g[recursos].max()) if recursos else pd.NA,
+                          "alumnos": int((usos > 0).sum()), "pct_alumnos": round((usos > 0).mean() * 100, 2),
+                          "usos": int(usos.sum()), "base_reporte": len(g)})
+    df = pd.DataFrame(filas, columns=["asignatura", "herramienta", "recursos", "alumnos", "pct_alumnos", "usos",
+                                      "base_reporte"])
+    df["recursos"] = df["recursos"].astype("Int64")
+    return df
+
+
+def concordancia_tiempo(d: Datos, asignatura=None) -> pd.DataFrame:
+    """Control de las sesiones (D25): por materia, Spearman entre los minutos que
+    salen de la trazabilidad (sesiones cortadas a los 30 min) y el tiempo estimado
+    de uso del reporte de participación. Se compara a la fecha del reporte
+    (FECHA_CORTE_DEFECTO), porque el reporte es una foto (D36)."""
+    t = participacion_alumnos(d, FECHA_CORTE_DEFECTO, asignatura).dropna(subset=["tiempo_uso_min"])
+    filas = []
+    for asig, g in t.groupby("asignatura"):
+        rho, p = stats.spearmanr(g["minutos"], g["tiempo_uso_min"]) if len(g) > 2 else (np.nan, np.nan)
+        filas.append({"asignatura": asig, "rho": round(float(rho), 3), "p_valor": float(p), "n": len(g),
+                      "minutos_total": round(g["minutos"].sum(), 1), "tiempo_uso_total": g["tiempo_uso_min"].sum()})
+    return pd.DataFrame(filas)
 
 
 # ---------------------------------------------------------------------------

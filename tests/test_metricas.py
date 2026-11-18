@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 
 from src import metricas as m
-from src.config import FECHA_CORTE_DEFECTO, SIN_EVALUACIONES
+from src.config import DIAS_DESCONECTADO, DIAS_REGRESO, FECHA_CORTE_DEFECTO, SIN_EVALUACIONES
 
 ALG, PYE, AED = "Álgebra", "Probabilidad y Estadística", "Algoritmos y Estructuras de Datos"
 FECHAS = ["2025-08-10", "2025-09-15", "2025-09-23", "2025-09-24", "2025-10-11", FECHA_CORTE_DEFECTO]
@@ -323,6 +323,79 @@ def test_ficha_individual(d):
     assert (f["instrumentos"]["id_alumno"] == primero).all()
     with pytest.raises(KeyError):
         m.ficha_alumno(d, "ALU_9999")
+
+
+# ---------------------------------------------------------------------------
+# Dashboard de Participación (D53)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("desde", [None, "2025-10-01"])
+def test_participacion_alumnos_respeta_el_rango(d, desde):
+    p = m.participacion_alumnos(d, desde=desde)
+    assert len(p) == len(d.matricula[d.matricula["en_base"]])
+    assert not p.duplicated(["asignatura", "id_alumno"]).any()
+    ev = d.interacciones[d.interacciones["en_base"] & (d.interacciones["fecha"] <= FECHA_CORTE_DEFECTO)]
+    if desde:
+        ev = ev[ev["fecha"] >= desde]
+    assert p["eventos"].sum() == len(ev)
+    assert p["avance"].between(0, 100).all()
+
+
+def test_evolucion_participacion_relativa_a_la_base(d):
+    e = m.evolucion_participacion(d, frecuencia="W")
+    n = m.base(d).groupby("asignatura").size()
+    fila = e.iloc[3]
+    assert fila["pct_base_activa"] == pytest.approx(fila["alumnos_activos"] / n[fila["asignatura"]] * 100, abs=0.01)
+    assert e["pct_base_activa"].between(0, 100).all()
+    assert e["eventos"].sum() == d.interacciones["en_base"].sum()
+
+
+def test_uso_herramientas(d):
+    h = m.uso_herramientas(d)
+    assert len(h) == 3 * len(m.HERRAMIENTAS)
+    assert h["pct_alumnos"].between(0, 100).all() and (h["alumnos"] <= h["base_reporte"]).all()
+    foros = h[h["herramienta"] == "Foros"].set_index("asignatura")
+    assert foros.loc[ALG, "recursos"] == 5 and foros.loc[AED, "alumnos"] == 0
+
+
+def test_concordancia_tiempo(d):
+    c = m.concordancia_tiempo(d)
+    assert len(c) == 3 and (c["rho"] > 0.9).all()
+
+
+# ---------------------------------------------------------------------------
+# Tramos de actividad y movimientos de la semana (D54)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("umbral", [3, 7, 30])
+def test_tramos_parten_a_los_inactivos(d, umbral):
+    a = m.actividad_alumnos(d, umbral=umbral)
+    assert set(a["tramo_actividad"]) <= set(m.TRAMOS_ACTIVIDAD)
+    # activos y sin actividad son los mismos; los inactivos se reparten en dos tramos
+    assert (a["tramo_actividad"] == m.ACTIVO).equals(a["estado_actividad"] == m.ACTIVO)
+    inactivos = a[a["estado_actividad"] == m.INACTIVO]
+    assert inactivos["tramo_actividad"].isin([m.ENFRIANDOSE, m.DESCONECTADO]).all()
+    lim = max(DIAS_DESCONECTADO, umbral)
+    assert (inactivos["tramo_actividad"] == m.DESCONECTADO).tolist() == (inactivos["dias_sin_actividad"] > lim).tolist()
+
+
+def test_movimientos_de_la_semana(d):
+    corte = T(FECHA_CORTE_DEFECTO)
+    mov = m.movimientos_semana(d, corte)
+    ahora = m.actividad_alumnos(d, corte).set_index(["asignatura", "id_alumno"])
+    antes = m.actividad_alumnos(d, corte - pd.Timedelta(days=7)).set_index(["asignatura", "id_alumno"])
+    for nombre, g in mov.groupby("movimiento", observed=True):
+        claves = list(zip(g["asignatura"], g["id_alumno"]))
+        if nombre == m.CRUZO_UMBRAL:
+            assert antes.loc[claves, "activo"].all() and not ahora.loc[claves, "activo"].any()
+        elif nombre == m.VOLVIO:
+            assert ahora.loc[claves, "activo"].all()
+            assert (antes.loc[claves, "dias_sin_actividad"] >= DIAS_REGRESO).all()
+        elif nombre in (m.ENTRA_NO_RINDE,):
+            assert ahora.loc[claves, "activo"].all() and (g["rendidos"] == 0).all()
+        else:
+            assert (ahora.loc[claves, "eventos"] == 0).all()
+    # cruzar el umbral cuadra con la caída de activos de una semana a la otra
+    cruzaron = (mov["movimiento"] == m.CRUZO_UMBRAL).sum()
+    assert cruzaron == (antes["activo"] & ~ahora["activo"]).sum()
 
 
 @pytest.mark.parametrize("fecha", ["2025-09-15", FECHA_CORTE_DEFECTO])
