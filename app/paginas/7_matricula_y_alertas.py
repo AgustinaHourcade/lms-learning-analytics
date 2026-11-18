@@ -6,14 +6,16 @@ verdad?, ¿quién cursa sin estar inscripto?, ¿quién se inscribió y no aparec
 
   Tarjetas        inscriptos, activos, no inscriptos cursando, inscriptos sin
                   notas y alumnos con prioridad alta.
-  Matrícula       inscriptos vs. con actividad vs. activos vs. con nota, evolución
-                  de inscripciones contra el primer ingreso al aula y condición
-                  de inscriptos vs. no inscriptos.
-  Alertas         cuántas hay de cada tipo por materia y la lista priorizada por
-                  alumno (D37, D52), filtrable y en CSV.
+  Matrícula       embudo base -> entraron -> con nota -> activos, evolución de
+                  inscripciones contra el primer ingreso al aula y condición de
+                  inscriptos vs. no inscriptos.
+  Alertas         tarjetas por prioridad, alertas por tipo y materia y la lista
+                  priorizada por alumno (D37, D52), filtrable y en CSV.
   No inscriptos   quiénes cursan sin estar en Matriculados (para la secretaría).
   Sin notas       inscriptos que no rindieron nada: nunca entraron o entran y no rinden.
 
+Diseño: sistema visual del rediseño (tarjetas, chips con forma, notas de lectura).
+Las notas de lectura se arman con los datos de la fecha de corte, no son texto fijo.
 Todo sale de src.metricas vía comp.metrica() (D29, D47): la página solo filtra y dibuja.
 """
 import pandas as pd
@@ -25,46 +27,58 @@ from src.metricas import TIPOS_ALERTA
 
 f = comp.encabezado(
     "Matrícula y alertas",
-    "Cruce entre la inscripción formal y lo que pasa en el aula virtual, y la lista de alumnos "
-    "que necesitan un seguimiento, ordenada por prioridad.",
+    "El cruce entre la inscripción formal y lo que pasa en el aula virtual, y la lista de alumnos que "
+    "necesitan seguimiento, ordenada por prioridad.",
 )
 
-ORDEN = {"asignatura": list(comp.COLORES_MATERIA)}
+MATERIAS = [m for m in comp.ORDEN_MATERIAS if m in f.materias]
+ORDEN = {"asignatura": MATERIAS}
 SUFIJO = f"{f.fecha_corte:%Y%m%d}"
+APRUEBA = ["Regular", "Promociona"]
 
 resumen = comp.metrica("resumen_matricula")
 tabla = comp.metrica("tabla_alumnos")
 por_alumno = comp.metrica("alertas_por_alumno")
 alertas = comp.metrica("alertas")
+por_materia = resumen.set_index("asignatura").reindex(MATERIAS)
 
 
 def total(col: str) -> int:
     return int(resumen[col].sum())
 
 
+def corto(asignatura: str) -> str:
+    return comp.NOMBRE_CORTO.get(asignatura, asignatura)
+
+
+def nota_txt(df: pd.DataFrame) -> pd.Series:
+    return df["nota_final"].map(lambda v: comp.num(v, 1)).astype(str) + " / " + df["escala"].astype("Int64").astype(str)
+
+
 # ---------------------------------------------------------------------------
 # Tarjetas
 # ---------------------------------------------------------------------------
-inscriptos = total("inscriptos")
+no_insc = tabla[~tabla["inscripto"]]
+aprueban_sin_insc = int(no_insc["condicion"].isin(APRUEBA).sum())
 altas = int((por_alumno["prioridad"] == "Alta").sum())
 comp.tarjetas([
-    dict(label="Inscriptos", value=comp.num(inscriptos),
+    dict(label="Inscriptos", value=comp.num(total("inscriptos")),
+         delta=f"sobre {comp.num(total('base'))} de la base",
          help=f"Último estado Aceptada en Matriculados (D11). Hay además {comp.num(total('bajas'))} bajas. "
               "Un alumno que cursa dos materias cuenta dos veces."),
-    dict(label="🟢 Activos", value=comp.num(total("activos")),
-         delta=f"{comp.pct(total('activos') / total('base') * 100, 0)} de la base", delta_color="off",
-         delta_arrow="off",
+    dict(label="Activos", value=comp.num(total("activos")), tono_valor="bien",
+         delta=f"{comp.pct(total('activos') / max(total('base'), 1) * 100, 0)} de la base",
          help=f"Alumnos de la base (inscriptos + con nota) que entraron en los últimos {f.umbral} días (D35)."),
-    dict(label="Sin inscripción", value=comp.num(total("no_inscriptos_cursando")),
-         help="Tienen notas o actividad, pero no figuran como Aceptada en Matriculados."),
+    dict(label="Cursan sin inscripción", value=comp.num(total("no_inscriptos_cursando")), tono="atencion",
+         delta=f"{comp.num(aprueban_sin_insc)} van a aprobar",
+         help="Tienen notas o actividad, pero no figuran como Aceptada en Matriculados. Abajo, cuántos de "
+              "ellos están Regulares o promocionan a la fecha de corte."),
     dict(label="Inscriptos sin notas", value=comp.num(total("inscriptos_sin_notas")),
-         delta=f"{comp.num(total('inscriptos_sin_actividad'))} nunca entraron", delta_color="off",
-         delta_arrow="off",
-         help="Inscriptos que no rindieron ningún instrumento a la fecha de corte. Abajo, los que además "
-              "nunca entraron al aula."),
-    dict(label="🔴 Prioridad alta", value=comp.num(altas),
-         help="Alumnos con alerta de prioridad alta (D52): inscriptos sin actividad o con dos o más alertas "
-              "académicas a la vez (inactivo, Libre, entra pero no rinde)."),
+         delta=f"{comp.num(total('inscriptos_sin_actividad'))} nunca entraron",
+         help="Inscriptos que no rindieron ningún instrumento a la fecha de corte."),
+    dict(label="Prioridad alta", value=comp.num(altas), tono="critico", delta="contactar esta semana",
+         help="Inscriptos sin actividad o con dos o más alertas académicas a la vez (inactivo, Libre, entra "
+              "pero no rinde) (D52)."),
 ])
 
 tab_mat, tab_alertas, tab_no_insc, tab_sin_notas = st.tabs(
@@ -73,231 +87,366 @@ tab_mat, tab_alertas, tab_no_insc, tab_sin_notas = st.tabs(
 # ---------------------------------------------------------------------------
 # Matrícula: embudo, evolución y condición por grupo
 # ---------------------------------------------------------------------------
+PASOS = [("base", "con_actividad", "antes de entrar al aula"),
+         ("con_actividad", "con_nota", "ya en el paso de rendir algo"),
+         ("con_nota", "activos", "entre tener nota y seguir entrando")]
+
+
+def embudo(asig: str, r: pd.Series) -> str:
+    """Base -> entraron -> con nota -> activos, con la caída más grande marcada en rojo."""
+    caidas = [(int(r[a] - r[b]), b, texto) for a, b, texto in PASOS]
+    mayor, donde, texto = max(caidas)
+    rojo = comp.TONOS["critico"][1]
+    color = comp.COLORES_MATERIA[asig]
+    filas = [
+        comp.barra("Base", r["base"], r["base"], color),
+        comp.barra("Entraron alguna vez", r["con_actividad"], r["base"], color,
+                   color_numero=rojo if donde == "con_actividad" else None),
+        comp.barra("Con al menos una nota", r["con_nota"], r["base"], color,
+                   color_numero=rojo if donde == "con_nota" else None),
+        comp.barra(f"Activos (últ. {f.umbral} días)", r["activos"], r["base"], comp.BIEN,
+                   color_numero=comp.TONOS["bien"][1], destacada=True),
+    ]
+    caida = (f'<p class="num" style="margin:8px 0 0;font-size:.8rem;font-weight:500;color:{rojo}">'
+             f'−{comp.num(mayor)} {texto}</p>') if mayor > 0 else ""
+    return (f'<p style="margin:0 0 12px;font-size:.87rem">{comp.punto_materia(asig)}</p>'
+            + "".join(filas) + caida)
+
+
+def lectura_embudo() -> str:
+    entraron = por_materia["con_actividad"].sum() / max(por_materia["base"].sum(), 1) * 100
+    partes = []
+    if entraron >= 90:
+        partes.append(f"Casi todos entraron alguna vez ({comp.pct(entraron, 0)} de la base): el problema no es "
+                      "el arranque, es sostener.")
+    else:
+        partes.append(f"Solo el {comp.pct(entraron, 0)} de la base entró alguna vez al aula.")
+    if len(MATERIAS) > 1:
+        sin_rendir = (por_materia["con_actividad"] - por_materia["con_nota"]).clip(lower=0)
+        peor, otros = sin_rendir.idxmax(), sin_rendir.drop(sin_rendir.idxmax())
+        if sin_rendir[peor] >= 10 and sin_rendir[peor] >= 1.5 * max(otros.max(), 1):
+            partes.append(f"{corto(peor)} pierde gente un paso antes que las otras: {comp.num(sin_rendir[peor])} "
+                          "de su base entraron pero nunca rindieron nada.")
+    return " ".join(partes)
+
+
+def condicion_por_grupo(sit: pd.DataFrame) -> tuple[str, float | None]:
+    """HTML de las barras apiladas de condición y la diferencia (pp) de aprobados
+    entre inscriptos y no inscriptos, ponderada por alumnos."""
+    sit = sit[sit["condicion"].isin(["Promociona", "Regular", "Libre"])]
+    html, aprob = [], {}
+    for asig in MATERIAS:
+        sub = sit[sit["asignatura"] == asig]
+        if sub.empty:
+            continue
+        html.append(f'<p style="margin:10px 0 7px;font-size:.8rem;font-weight:600">{corto(asig)}</p>')
+        for grupo in ["Inscriptos", "No inscriptos"]:
+            g = sub[sub["grupo"] == grupo].set_index("condicion")["alumnos"]
+            n = g.sum()
+            if not n:
+                continue
+            partes = [(g.get(c, 0) / n * 100, comp.COLORES_CONDICION[c], f"{c}: {g.get(c, 0)} de {n} alumnos")
+                      for c in ["Promociona", "Regular", "Libre"]]
+            html.append(comp.barra_apilada(f"{grupo} ({comp.num(n)})", partes, ancho_etiqueta=118))
+            a = aprob.setdefault(grupo, [0, 0])
+            a[0] += g.reindex(APRUEBA).fillna(0).sum()
+            a[1] += n
+    if len(aprob) < 2:
+        return "".join(html), None
+    tasa = {k: v[0] / v[1] * 100 for k, v in aprob.items()}
+    return "".join(html), tasa["Inscriptos"] - tasa["No inscriptos"]
+
+
 with tab_mat:
-    st.subheader("Inscriptos vs. activos vs. con nota")
-    etapas = {"inscriptos": "Inscriptos", "base": "Base<br>(inscriptos + con nota)",
-              "con_actividad": "Entraron<br>alguna vez", "activos": f"Activos<br>(últimos {f.umbral} días)",
-              "con_nota": "Con al menos<br>una nota"}
-    largo = resumen.melt(id_vars="asignatura", value_vars=list(etapas), var_name="etapa", value_name="alumnos")
-    largo["etapa"] = largo["etapa"].map(etapas)
-    fig = px.bar(largo, x="etapa", y="alumnos", color="asignatura", barmode="group",
-                 text="alumnos", category_orders={**ORDEN, "etapa": list(etapas.values())},
-                 color_discrete_map=comp.COLORES_MATERIA, labels={"alumnos": "Alumnos", "etapa": "",
-                                                                   "asignatura": ""})
-    fig.update_traces(textposition="outside", cliponaxis=False,
-                      hovertemplate="%{x}<br>%{fullData.name}: %{y} alumnos<extra></extra>")
-    fig.update_xaxes(tickangle=0)
-    fig.update_layout(height=380, bargap=0.25, bargroupgap=0.05)
-    st.plotly_chart(fig, width="stretch")
-    st.caption("La **base** de cada materia son los inscriptos más los que tienen alguna nota sin estar "
-               "inscriptos (D11): por eso supera a los inscriptos. Que casi todos hayan entrado alguna vez pero "
-               "bastantes menos estén activos indica abandono a lo largo de la cursada.")
+    with comp.tarjeta("embudo"):
+        comp.seccion("De la base al alumno activo",
+                     "La <strong>base</strong> de cada materia son los inscriptos más los que tienen alguna nota "
+                     "sin estar inscriptos. El embudo muestra dónde se pierde gente; el número en rojo es el paso "
+                     "donde más alumnos se caen.")
+        for col, asig in zip(st.columns(len(MATERIAS), gap="large"), MATERIAS):
+            col.html(embudo(asig, por_materia.loc[asig]))
+        comp.nota(lectura_embudo())
 
-    st.subheader("Inscripciones vs. primer ingreso al aula")
-    evo = comp.metrica("evolucion_matricula")
-    if evo.empty:
-        st.info("A esta fecha de corte todavía no hay inscripciones ni ingresos.", icon=":material/event_busy:")
-    else:
-        fig = px.line(evo, x="fecha", y="alumnos", color="serie", facet_col="asignatura",
-                      category_orders=ORDEN, line_shape="hv",
-                      color_discrete_map={"Inscriptos": comp.CATEGORICA[6], "Ya entraron al aula": comp.CATEGORICA[3]},
-                      labels={"fecha": "", "alumnos": "Alumnos (acumulado)", "serie": "", "asignatura": ""})
-        fig.update_traces(hovertemplate="%{x|%d/%m}: %{y} alumnos<extra>%{fullData.name}</extra>", line_width=2)
-        fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
-        fig.update_xaxes(tickformat="%d/%m")
-        fig.update_layout(height=360, legend=dict(y=1.16), margin=dict(t=80))
-        st.plotly_chart(fig, width="stretch")
-        st.caption("Inscriptos: acumulado según la fecha de inscripción del último estado Aceptada. "
-                   "Ya entraron: alumnos de la base según su primera interacción en la trazabilidad. Cuando la "
-                   "línea de ingresos va por encima, hay alumnos cursando antes (o sin) haberse inscripto.")
+    c1, c2 = st.columns(2)
+    with c1, comp.tarjeta("evolucion"):
+        comp.seccion("Inscripciones vs. primer ingreso",
+                     "Acumulado de inscripciones aceptadas contra alumnos que ya entraron al aula. Cuando la línea "
+                     "de ingresos va por encima, hay gente cursando antes de (o sin) inscribirse.")
+        evo = comp.metrica("evolucion_matricula")
+        if evo.empty:
+            comp.nota("A esta fecha de corte todavía no hay inscripciones ni ingresos.")
+        else:
+            series = {"Ya entraron al aula": comp.ATENCION, "Inscriptos": comp.CATEGORICA[3]}
+            st.html(comp.leyenda(list(series.items()), "linea"))
+            fig = px.line(evo, x="fecha", y="alumnos", color="serie", facet_col="asignatura",
+                          category_orders=ORDEN, line_shape="hv", color_discrete_map=series,
+                          labels={"fecha": "", "alumnos": "Alumnos (acumulado)", "serie": "", "asignatura": ""})
+            fig.update_traces(hovertemplate="%{x|%d/%m}: %{y} alumnos<extra>%{fullData.name}</extra>",
+                              line_width=2.4)
+            fig.for_each_annotation(lambda a: a.update(text=corto(a.text.split("=")[-1]),
+                                                       font=dict(size=12, color=comp.TEXTO)))
+            fig.update_xaxes(tickformat="%d/%m", nticks=4)
+            fig.update_yaxes(title_text="", nticks=4)
+            fig.update_layout(height=270, showlegend=False, margin=dict(t=28, l=4, r=4, b=4))
+            comp.grafico(fig)
+            n = total("no_inscriptos_cursando")
+            if n:
+                comp.nota(f"Hoy hay <strong>{comp.num(n)} alumnos</strong> cursando sin figurar como inscriptos. "
+                          "Si la inscripción se completa tarde, la brecha se ve como una línea de ingresos que "
+                          "corre por encima durante semanas.", "atencion")
 
-    st.subheader("Condición de inscriptos y no inscriptos")
-    sit = comp.metrica("situacion_academica")
-    if sit.empty or sit["condicion"].isin(list(comp.COLORES_CONDICION)[:3]).sum() == 0:
-        st.info("A esta fecha de corte todavía no se tomó ninguna evaluación.", icon=":material/event_busy:")
-    else:
-        sit["pct"] = sit["alumnos"] / sit.groupby(["asignatura", "grupo"])["alumnos"].transform("sum") * 100
-        sit["etiqueta"] = comp.con_icono(sit["condicion"], comp.ICONOS_CONDICION)
-        conds = [c for c in comp.COLORES_CONDICION if c in set(sit["condicion"])]
-        fig = px.bar(sit, x="pct", y="grupo", color="condicion", facet_col="asignatura", orientation="h",
-                     facet_col_spacing=0.04,
-                     category_orders={**ORDEN, "condicion": conds, "grupo": ["Inscriptos", "No inscriptos"]},
-                     color_discrete_map=comp.COLORES_CONDICION, custom_data=["etiqueta", "alumnos"],
-                     text=sit["pct"].map(lambda v: comp.pct(v, 0) if v >= 6 else ""),
-                     labels={"pct": "% de alumnos", "grupo": "", "condicion": "", "asignatura": ""})
-        fig.update_traces(hovertemplate="%{y}<br>%{customdata[0]}: %{customdata[1]} alumnos (%{x:.1f} %)"
-                                        "<extra></extra>",
-                          textposition="inside", insidetextanchor="middle", marker_line_width=2,
-                          marker_line_color="white")
-        fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
-        fig.update_xaxes(range=[0, 100], dtick=50)
-        fig.update_layout(barmode="stack", height=280, bargap=0.3, legend=dict(y=1.22), margin=dict(t=90))
-        st.plotly_chart(fig, width="stretch")
-        st.caption("Muchos no inscriptos rinden y les va bien: no son alumnos perdidos sino un problema "
-                   "administrativo a regularizar antes del cierre de actas.")
+    with c2, comp.tarjeta("condicion"):
+        comp.seccion("¿Rinden distinto los no inscriptos?",
+                     "Condición a la fecha de corte de cada grupo. Si se parecen, no son alumnos perdidos: es un "
+                     "problema administrativo.")
+        sit = comp.metrica("situacion_academica")
+        html_cond, dif = condicion_por_grupo(sit) if not sit.empty else ("", None)
+        if not html_cond:
+            comp.nota("A esta fecha de corte todavía no se tomó ninguna evaluación.")
+        else:
+            st.html(comp.leyenda([(c, comp.COLORES_CONDICION[c]) for c in ["Promociona", "Regular", "Libre"]])
+                    + html_cond)
+            if dif is not None:
+                if abs(dif) <= 10:
+                    comp.nota(f"<strong>Rinden parecido</strong> (la proporción que aprueba difiere "
+                              f"{comp.num(abs(dif), 0)} puntos). Los no inscriptos no son alumnos perdidos: son un "
+                              "problema administrativo a regularizar antes del cierre de actas.", "bien")
+                else:
+                    peor = "los no inscriptos" if dif > 0 else "los inscriptos"
+                    comp.nota(f"<strong>Hay diferencia:</strong> entre {peor} aprueban {comp.num(abs(dif), 0)} "
+                              "puntos menos. Igual conviene regularizar a los que van aprobando.", "atencion")
 
-    st.dataframe(resumen, hide_index=True, width="stretch", column_config={
-        "asignatura": "Materia", "base": "Base", "inscriptos": "Inscriptos", "bajas": "Bajas",
-        "con_actividad": "Entraron alguna vez", "activos": "Activos", "con_nota": "Con nota",
-        "no_inscriptos_cursando": "Cursan sin inscripción", "inscriptos_sin_actividad": "Inscriptos sin actividad",
-        "inscriptos_sin_notas": "Inscriptos sin notas"})
-    comp.boton_csv(resumen, f"resumen_matricula_{SUFIJO}", "Descargar resumen por materia")
+    with comp.tarjeta("tabla_matricula"):
+        t1, t2 = st.columns([3, 1], vertical_alignment="center")
+        with t1:
+            comp.seccion("Matrícula por materia")
+        tabla_res = resumen.set_index("asignatura").reindex(MATERIAS).reset_index()
+        with t2:
+            comp.boton_csv(tabla_res, f"resumen_matricula_{SUFIJO}")
+        st.dataframe(
+            comp.estilo_tabla(tabla_res, materias=["asignatura"],
+                              color_columnas={"no_inscriptos_cursando": comp.TONOS["atencion"][1]}),
+            hide_index=True, width="stretch", column_config={
+                "asignatura": "Materia", "base": "Base", "inscriptos": "Inscriptos", "bajas": "Bajas",
+                "con_actividad": "Entraron", "activos": "Activos", "con_nota": "Con nota",
+                "no_inscriptos_cursando": "Sin inscripción", "inscriptos_sin_actividad": "Insc. sin actividad",
+                "inscriptos_sin_notas": "Insc. sin notas"})
 
 # ---------------------------------------------------------------------------
-# Alertas: conteo por tipo y lista priorizada
+# Alertas: tarjetas por prioridad, conteo por tipo y lista priorizada
 # ---------------------------------------------------------------------------
+PRIORIDADES = {
+    "Alta": ("critico", "Acumulan dos o más señales de abandono, o están inscriptos sin aparecer. "
+                        "Contactar esta semana."),
+    "Media": ("atencion", "Una sola señal: inactivo, Libre o no rinde. Seguir de cerca."),
+    "Administrativa": ("info", "Cursan bien pero sin inscripción. Derivar a secretaría, no al docente."),
+}
+
+
+def lectura_tipos(cuenta: pd.DataFrame) -> str:
+    """El tipo de alerta más concentrado en una sola materia (si lo hay)."""
+    if len(MATERIAS) < 2:
+        return ""
+    tot = cuenta.groupby("alerta")["alumnos"].sum()
+    top = cuenta.loc[cuenta.groupby("alerta")["alumnos"].idxmax()].set_index("alerta")
+    top["share"] = top["alumnos"] / tot
+    top = top[tot.reindex(top.index) >= 10].sort_values("share", ascending=False)
+    if top.empty or top["share"].iloc[0] < 0.5:
+        return ""
+    alerta, fila = top.index[0], top.iloc[0]
+    return (f"“{alerta}” está concentrada en {corto(fila['asignatura'])}: {comp.num(fila['alumnos'])} de "
+            f"{comp.num(tot[alerta])}. Es un problema de esa materia, no de toda la cohorte.")
+
+
 with tab_alertas:
     if por_alumno.empty:
-        st.success("No hay alumnos con alertas a esta fecha de corte.", icon=":material/check_circle:")
+        comp.nota("No hay alumnos con alertas a esta fecha de corte.", "bien", icono=True)
     else:
-        # Mensajes estilo clase 10 (st.error / st.warning / st.info), uno por prioridad.
         conteo = por_alumno["prioridad"].value_counts()
-        mensajes = {
-            "Alta": (st.error, "contactar esta semana: no aparecen o acumulan varias señales de abandono."),
-            "Media": (st.warning, "seguir de cerca: una sola señal (inactivo, Libre o no rinde)."),
-            "Administrativa": (st.info, "cursan bien pero sin inscripción: derivar a la secretaría."),
-        }
-        for prioridad, (caja, texto) in mensajes.items():
-            n = int(conteo.get(prioridad, 0))
-            if n:
-                caja(f"**{comp.ICONOS_PRIORIDAD[prioridad]} {n} alumnos con prioridad {prioridad.lower()}**: {texto}")
+        comp.avisos([comp.aviso(f"Prioridad {p.lower()}" if p != "Administrativa" else p,
+                                comp.num(int(conteo.get(p, 0))), texto, tono)
+                     for p, (tono, texto) in PRIORIDADES.items()])
 
-        st.subheader("Alertas por tipo y materia")
-        cuenta = alertas.groupby(["asignatura", "alerta"]).size().rename("alumnos").reset_index()
-        cuenta["pct"] = cuenta["alumnos"] / cuenta["asignatura"].map(resumen.set_index("asignatura")["base"]) * 100
-        fig = px.bar(cuenta, x="alumnos", y="alerta", color="asignatura", barmode="group", orientation="h",
-                     text="alumnos", custom_data=["pct"],
-                     category_orders={**ORDEN, "alerta": list(TIPOS_ALERTA.values())},
-                     color_discrete_map=comp.COLORES_MATERIA,
-                     labels={"alumnos": "Alumnos", "alerta": "", "asignatura": ""})
-        fig.update_traces(textposition="outside", cliponaxis=False,
-                          hovertemplate="%{y}<br>%{fullData.name}: %{x} alumnos (%{customdata[0]:.1f} % de la "
-                                        "base)<extra></extra>")
-        fig.update_layout(height=140 + 22 * len(TIPOS_ALERTA) * len(f.materias) + 20 * len(TIPOS_ALERTA),
-                          bargap=0.2, bargroupgap=0.05)
-        st.plotly_chart(fig, width="stretch")
-        st.caption("Un alumno puede tener varias alertas (D37). \"Condición Libre\" no se repite para quien no "
-                   "tiene ni actividad ni notas: ese ya figura como inscripto sin actividad. Inactivo depende del "
-                   "umbral de la barra lateral.")
+        with comp.tarjeta("tipos"):
+            comp.seccion("Alertas por tipo",
+                         "Un alumno puede tener varias. Inactivo depende del umbral de la barra lateral; "
+                         "“Condición Libre” no se repite para quien ya figura como inscripto sin actividad.")
+            cuenta = alertas.groupby(["asignatura", "alerta"]).size().rename("alumnos").reset_index()
+            cuenta["pct"] = cuenta["alumnos"] / cuenta["asignatura"].map(resumen.set_index("asignatura")["base"]) * 100
+            orden_tipos = cuenta.groupby("alerta")["alumnos"].sum().sort_values(ascending=False).index.tolist()
+            fig = px.bar(cuenta, x="alumnos", y="alerta", color="asignatura", barmode="group", orientation="h",
+                         text="alumnos", custom_data=["pct"],
+                         category_orders={**ORDEN, "alerta": orden_tipos},
+                         color_discrete_map=comp.COLORES_MATERIA,
+                         labels={"alumnos": "Alumnos", "alerta": "", "asignatura": ""})
+            fig.update_traces(textposition="outside", cliponaxis=False, textfont_size=11,
+                              hovertemplate="%{y}<br>%{fullData.name}: %{x} alumnos (%{customdata[0]:.1f} % de la "
+                                            "base)<extra></extra>")
+            fig.for_each_trace(lambda t: t.update(name=corto(t.name)))
+            fig.update_xaxes(showgrid=False, showticklabels=False, title_text="")
+            # Dentro de cada tipo, ALG arriba y AED abajo (como la leyenda): en barras horizontales
+            # plotly apila los grupos de abajo hacia arriba, así que se invierten las trazas.
+            fig.data = fig.data[::-1]
+            fig.update_layout(height=70 + 15 * len(orden_tipos) * len(MATERIAS) + 22 * len(orden_tipos),
+                              bargap=0.28, bargroupgap=0.06, legend_traceorder="reversed",
+                              margin=dict(t=30, l=4, r=24, b=4))
+            comp.grafico(fig)
+            lectura = lectura_tipos(cuenta)
+            if lectura:
+                comp.nota(lectura)
 
-        st.subheader("A quién contactar primero")
-        c1, c2, c3 = st.columns([1, 2, 1.4])
-        prioridades = c1.multiselect("Prioridad", list(comp.ICONOS_PRIORIDAD), default=["Alta", "Media"],
-                                     key="alertas_prioridad")
-        tipos = c2.multiselect("Tipo de alerta", list(TIPOS_ALERTA), format_func=TIPOS_ALERTA.get,
-                               key="alertas_tipo", placeholder="Todas")
-        texto = c3.text_input("Buscar alumno", key="alertas_buscar", placeholder="Apellido, nombre o ID")
+        with comp.tarjeta("lista_alertas"):
+            comp.seccion("A quién contactar primero")
+            c1, c2, c3 = st.columns([1.3, 2, 1.4], vertical_alignment="bottom")
+            prioridades = c1.pills("Prioridad", list(PRIORIDADES), selection_mode="multi",
+                                   default=["Alta", "Media"], key="alertas_prioridad")
+            tipos = c2.multiselect("Tipo de alerta", list(TIPOS_ALERTA), format_func=TIPOS_ALERTA.get,
+                                   key="alertas_tipo", placeholder="Todas")
+            texto = c3.text_input("Buscar alumno", key="alertas_buscar", placeholder="Apellido, nombre o ID")
 
-        vista = por_alumno[por_alumno["prioridad"].isin(prioridades or list(comp.ICONOS_PRIORIDAD))]
-        if tipos:
-            vista = vista[vista["tipos"].map(lambda ts: bool(set(tipos) & set(ts)))]
-        if texto.strip():
-            buscado = vista["nombre_completo"].fillna("") + " " + vista["id_alumno"]
-            vista = vista[buscado.str.contains(texto.strip(), case=False, regex=False)]
-        vista = vista.assign(
-            prioridad=comp.con_icono(vista["prioridad"].astype(str), comp.ICONOS_PRIORIDAD),
-            condicion=comp.con_icono(vista["condicion"], comp.ICONOS_CONDICION),
-            estado_actividad=comp.con_icono(vista["estado_actividad"], comp.ICONOS_ACTIVIDAD),
-            nota=vista["nota_final"].map(lambda v: comp.num(v, 1)) + " / "
-                 + vista["escala"].astype("Int64").astype(str),
-        )
-        columnas = {"prioridad": "Prioridad", "asignatura": "Materia", "id_alumno": "ID",
-                    "nombre_completo": "Alumno", "alertas": "Alertas", "condicion": "Condición", "nota": "Nota",
-                    "estado_actividad": "Actividad", "dias_sin_actividad": "Días sin entrar",
-                    "ultima_interaccion": "Último ingreso", "avance": "Avance (al 24/10)"}
-        if f.asignatura:
-            columnas.pop("asignatura")
-        st.dataframe(vista[list(columnas)].rename(columns=columnas), hide_index=True, width="stretch",
-                     height=420, column_config={
-                         "Último ingreso": st.column_config.DatetimeColumn(format="DD/MM/YYYY HH:mm"),
-                         "Avance (al 24/10)": st.column_config.ProgressColumn(format="%d %%", min_value=0,
-                                                                              max_value=100),
-                         "Alertas": st.column_config.TextColumn(width="large")})
-        st.caption(f"{comp.num(len(vista))} de {comp.num(len(por_alumno))} alumnos con alguna alerta. "
-                   "Prioridad (D52): **alta** = inscripto sin actividad o dos o más alertas académicas a la vez; "
-                   "**media** = una sola; **administrativa** = solo cursa sin inscripción. El avance es una foto "
-                   "del reporte de participación (D36).")
-        c1, c2 = st.columns(2)
-        with c1:
-            comp.boton_csv(vista.drop(columns=["tipos", "nota"]), f"alertas_por_alumno_{SUFIJO}",
-                           "Descargar esta lista")
-        with c2:
-            comp.boton_csv(alertas.drop(columns="tipo"), f"alertas_detalle_{SUFIJO}",
-                           "Descargar todas las alertas (una fila por alerta)")
+            vista = por_alumno[por_alumno["prioridad"].isin(prioridades or list(PRIORIDADES))]
+            if tipos:
+                vista = vista[vista["tipos"].map(lambda ts: bool(set(tipos) & set(ts)))]
+            if texto.strip():
+                buscado = vista["nombre_completo"].fillna("") + " " + vista["id_alumno"]
+                vista = vista[buscado.str.contains(texto.strip(), case=False, regex=False)]
+            st.html(f'<p class="tfi-pie num" style="margin:-4px 0 6px">{comp.num(len(vista))} de '
+                    f'{comp.num(len(por_alumno))} alumnos con alguna alerta</p>')
+
+            mostrar = pd.DataFrame({
+                "Prioridad": comp.con_forma(vista["prioridad"].astype(str)),
+                "Alumno": vista["nombre_completo"].fillna("—"),
+                "ID": vista["id_alumno"],
+                "Materia": vista["asignatura"].map(comp.SIGLAS),
+                "Por qué": vista["alertas"],
+                "Condición": comp.con_forma(vista["condicion"]),
+                "Nota": nota_txt(vista),
+                "Sin entrar": vista["dias_sin_actividad"].map(comp.fmt_dias),
+                "Avance": vista["avance"],
+            }, index=vista.index)
+            if f.asignatura:
+                mostrar = mostrar.drop(columns="Materia")
+            st.dataframe(comp.estilo_tabla(mostrar, estados=["Prioridad", "Condición"], materias=["Materia"]),
+                         hide_index=True, width="stretch", height=420, column_config={
+                             "Avance": st.column_config.ProgressColumn(
+                                 "Avance", format="%d %%", min_value=0, max_value=100,
+                                 help="Avance en el aula según el reporte de participación (foto al 24/10, D36)."),
+                             "Por qué": st.column_config.TextColumn(width="medium")})
+            comp.pie("<strong>Prioridad:</strong> alta = inscripto sin actividad, o dos o más alertas académicas "
+                     "juntas · media = una sola · administrativa = solo cursa sin inscripción.")
+            b1, b2, _ = st.columns([1, 1.4, 1.6])
+            with b1:
+                comp.boton_csv(vista.drop(columns=["tipos"]), f"alertas_por_alumno_{SUFIJO}", "Descargar lista")
+            with b2:
+                comp.boton_csv(alertas.drop(columns="tipo"), f"alertas_detalle_{SUFIJO}",
+                               "Descargar todas (una fila por alerta)")
 
 # ---------------------------------------------------------------------------
 # No inscriptos cursando
 # ---------------------------------------------------------------------------
-COLUMNAS_ALUMNO = {"asignatura": "Materia", "id_alumno": "ID", "nombre_completo": "Alumno",
-                   "condicion": "Condición", "nota": "Nota", "rendidos_txt": "Rindió",
-                   "estado_actividad": "Actividad", "eventos": "Interacciones",
-                   "ultima_interaccion": "Último ingreso", "en_matriculados": "En Matriculados", "estado": "Estado"}
-CONFIG_ALUMNO = {"Último ingreso": st.column_config.DatetimeColumn(format="DD/MM/YYYY HH:mm"),
-                 "En Matriculados": st.column_config.CheckboxColumn()}
-
-
-def lista_alumnos(df: pd.DataFrame, columnas: list[str], nombre_csv: str, vacio: str) -> None:
-    if df.empty:
-        st.success(vacio, icon=":material/check_circle:")
-        return
-    df = df.assign(
-        condicion=comp.con_icono(df["condicion"], comp.ICONOS_CONDICION),
-        estado_actividad=comp.con_icono(df["estado_actividad"], comp.ICONOS_ACTIVIDAD),
-        nota=df["nota_final"].map(lambda v: comp.num(v, 1)) + " / "
-             + df["escala"].astype("Int64").astype(str),
-        rendidos_txt=df["rendidos"].astype(str) + " de " + df["instrumentos"].astype(str),
-    )
-    if f.asignatura:
-        columnas = [c for c in columnas if c != "asignatura"]
-    nombres = {c: COLUMNAS_ALUMNO[c] for c in columnas}
-    st.dataframe(df[columnas].rename(columns=nombres), hide_index=True, width="stretch", height=400,
-                 column_config={k: v for k, v in CONFIG_ALUMNO.items() if k in nombres.values()})
-    comp.boton_csv(df[columnas].rename(columns=nombres), f"{nombre_csv}_{SUFIJO}", "Descargar lista")
-
-
 with tab_no_insc:
-    no_insc = tabla[~tabla["inscripto"]].sort_values(["asignatura", "apellido", "nombre"])
-    st.markdown("Alumnos que **tienen notas o actividad** en la materia pero **no figuran como Aceptada** en "
-                "Matriculados (nunca se inscribieron o su último movimiento es una baja). Si aprueban, no van a "
-                "poder figurar en el acta: conviene derivarlos a la secretaría.")
-    if not no_insc.empty:
-        sin_registro = int((~no_insc["en_matriculados"]).sum())
-        con_baja = int(no_insc["estado"].eq("Baja").sum())
-        aprobando = int(no_insc["condicion"].isin(["Regular", "Promociona"]).sum())
+    comp.nota("Alumnos con notas o actividad en la materia que <strong>no figuran como Aceptada en "
+              "Matriculados</strong>: nunca se inscribieron, o su último movimiento es una baja. <strong>Si "
+              "aprueban, no van a poder figurar en el acta.</strong> Conviene derivarlos a secretaría antes del "
+              "cierre.", "atencion", icono=True)
+    if no_insc.empty:
+        comp.nota("Todos los alumnos que cursan están inscriptos.", "bien", icono=True)
+    else:
         comp.tarjetas([
-            ("Cursan sin inscripción", comp.num(len(no_insc))),
-            ("No están en Matriculados", comp.num(sin_registro), "Nunca aparecieron en el archivo de inscripciones."),
-            ("Con baja", comp.num(con_baja), "Se inscribieron y después se dieron de baja, pero siguen rindiendo."),
-            ("🟢🟡 Regulares o promocionan", comp.num(aprobando),
-             "Los más urgentes de regularizar: van camino a aprobar."),
+            dict(label="Cursan sin inscripción", value=comp.num(len(no_insc)),
+                 delta=f"{comp.pct(len(no_insc) / max(total('base'), 1) * 100, 0)} de la base"),
+            dict(label="No están en Matriculados", value=comp.num(int((~no_insc["en_matriculados"]).sum())),
+                 delta="nunca se inscribieron"),
+            dict(label="Con baja", value=comp.num(int(no_insc["estado"].eq("Baja").sum())),
+                 delta="se dieron de baja y siguen"),
+            dict(label="Regularizan o promocionan", value=comp.num(aprueban_sin_insc), tono="bien",
+                 delta="aprueban y no pueden figurar"),
         ])
-    lista_alumnos(no_insc, ["asignatura", "id_alumno", "nombre_completo", "condicion", "nota", "rendidos_txt",
-                            "estado_actividad", "ultima_interaccion", "en_matriculados", "estado"],
-                  "no_inscriptos_cursando", "Todos los alumnos que cursan están inscriptos.")
+
+        with comp.tarjeta("secretaria"):
+            t1, t2, t3 = st.columns([2, 1.3, 1], vertical_alignment="bottom")
+            with t1:
+                comp.seccion("Lista para secretaría")
+            orden = t2.selectbox("Mostrar", ["Primero los que aprueban", "Todos", "Solo con baja"],
+                                 key="no_insc_orden", label_visibility="collapsed")
+            lista = no_insc.assign(aprueba=no_insc["condicion"].isin(APRUEBA))
+            if orden == "Primero los que aprueban":
+                lista = lista.sort_values(["aprueba", "nota_final"], ascending=[False, False])
+            elif orden == "Solo con baja":
+                lista = lista[lista["estado"].eq("Baja")]
+            mostrar = pd.DataFrame({
+                "Alumno": lista["nombre_completo"].fillna("—"),
+                "ID": lista["id_alumno"],
+                "Materia": lista["asignatura"].map(comp.SIGLAS),
+                "Condición": comp.con_forma(lista["condicion"]),
+                "Nota": nota_txt(lista),
+                "Rindió": lista["rendidos"].astype(str) + " de " + lista["instrumentos"].astype(str),
+                "Actividad": comp.con_forma(lista["estado_actividad"]),
+                "Último ingreso": lista["ultima_interaccion"].map(comp.fmt_fecha),
+                "Estado en Matriculados": lista["estado"].where(lista["en_matriculados"], "No figura").fillna("No figura"),
+            }, index=lista.index)
+            if f.asignatura:
+                mostrar = mostrar.drop(columns="Materia")
+            with t3:
+                comp.boton_csv(mostrar, f"no_inscriptos_cursando_{SUFIJO}", "Descargar lista")
+            if mostrar.empty:
+                comp.nota("Nadie en este grupo.")
+            else:
+                st.dataframe(comp.estilo_tabla(mostrar, estados=["Condición", "Actividad", "Estado en Matriculados"],
+                                               materias=["Materia"], resaltar=lista["aprueba"]),
+                             hide_index=True, width="stretch", height=400)
+            comp.pie("Las filas resaltadas son las urgentes: aprueban la materia (Regular o Promociona) y no "
+                     "figuran en el acta.")
 
 # ---------------------------------------------------------------------------
 # Inscriptos sin notas
 # ---------------------------------------------------------------------------
 with tab_sin_notas:
     sin_notas = tabla[tabla["inscripto"] & (tabla["rendidos"] == 0)]
-    sin_notas = sin_notas.assign(nunca=sin_notas["eventos"].eq(0)) \
-                         .sort_values(["nunca", "asignatura", "apellido"], ascending=[False, True, True])
-    st.markdown("Inscriptos que **no rindieron ningún instrumento** a la fecha de corte (todo cuenta 0, así que "
-                "están Libres). Se separan en dos grupos porque piden acciones distintas:")
+    sin_notas = sin_notas.assign(nunca=sin_notas["eventos"].fillna(0).eq(0)) \
+                         .sort_values(["nunca", "eventos"], ascending=[False, False])
+    st.html('<p class="tfi-desc" style="margin:4px 0 2px">Inscriptos que <strong>no rindieron ningún '
+            'instrumento</strong> a la fecha de corte: todo cuenta 0, así que están Libres. Se separan en dos '
+            'grupos porque piden acciones distintas.</p>')
     nunca, entra = int(sin_notas["nunca"].sum()), int((~sin_notas["nunca"]).sum())
-    comp.tarjetas([
-        ("⚪ Nunca entraron", comp.num(nunca),
-         "Sin interacciones ni notas: posiblemente nunca empezaron. Confirmar si siguen cursando o darlos de baja."),
-        ("🟠 Entran pero no rinden", comp.num(entra),
-         "Miran el aula pero no se presentan a las evaluaciones: el grupo donde una intervención del tutor "
-         "puede cambiar el resultado."),
+    comp.avisos([
+        comp.aviso("Nunca entraron", comp.num(nunca),
+                   "Se inscribieron y nunca abrieron el aula. Son pocos y muy accionables: un mail o una llamada "
+                   "antes de que venza el plazo de baja.", "neutro"),
+        comp.aviso("Entran pero no rinden", comp.num(entra),
+                   "Usan el aula y no se presentan a nada. Antes de darlos por perdidos, conviene descartar un "
+                   "problema de acceso a las evaluaciones.", "atencion"),
     ])
-    grupo = st.segmented_control("Mostrar", ["Todos", "Nunca entraron", "Entran pero no rinden"],
-                                 default="Todos", key="sin_notas_grupo")
-    if grupo == "Nunca entraron":
-        sin_notas = sin_notas[sin_notas["nunca"]]
-    elif grupo == "Entran pero no rinden":
-        sin_notas = sin_notas[~sin_notas["nunca"]]
-    lista_alumnos(sin_notas, ["asignatura", "id_alumno", "nombre_completo", "rendidos_txt", "estado_actividad",
-                              "eventos", "ultima_interaccion"],
-                  "inscriptos_sin_notas", "Todos los inscriptos rindieron al menos un instrumento.")
+
+    with comp.tarjeta("sin_notas"):
+        t1, t2 = st.columns([3, 1], vertical_alignment="center")
+        grupo = t1.segmented_control("Mostrar", ["Todos", "Nunca entraron", "Entran pero no rinden"],
+                                     default="Todos", key="sin_notas_grupo", label_visibility="collapsed")
+        if grupo == "Nunca entraron":
+            sin_notas = sin_notas[sin_notas["nunca"]]
+        elif grupo == "Entran pero no rinden":
+            sin_notas = sin_notas[~sin_notas["nunca"]]
+        mostrar = pd.DataFrame({
+            "Alumno": sin_notas["nombre_completo"].fillna("—"),
+            "ID": sin_notas["id_alumno"],
+            "Materia": sin_notas["asignatura"].map(comp.SIGLAS),
+            "Situación": comp.con_forma(sin_notas["nunca"].map({True: "Nunca entró", False: "Entra, no rinde"})),
+            "Rindió": "0 de " + sin_notas["instrumentos"].astype(str),
+            "Interacciones": sin_notas["eventos"].fillna(0).astype(int),
+            "Último ingreso": sin_notas["ultima_interaccion"].map(comp.fmt_fecha),
+        }, index=sin_notas.index)
+        if f.asignatura:
+            mostrar = mostrar.drop(columns="Materia")
+        with t2:
+            comp.boton_csv(mostrar, f"inscriptos_sin_notas_{SUFIJO}", "Descargar lista")
+        if mostrar.empty:
+            comp.nota("Todos los inscriptos rindieron al menos un instrumento.", "bien", icono=True)
+        else:
+            st.dataframe(comp.estilo_tabla(mostrar, estados=["Situación"], materias=["Materia"]),
+                         hide_index=True, width="stretch", height=400)
+            entran = sin_notas[~sin_notas["nunca"]]
+            if not entran.empty:
+                top = entran.iloc[0]
+                comp.pie(f"{comp.esc(top['nombre_completo'])} tiene {comp.num(top['eventos'])} interacciones y "
+                         "ninguna evaluación rendida: es el tipo de caso que más vale revisar, porque no parece "
+                         "desinterés.")

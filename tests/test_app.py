@@ -61,8 +61,13 @@ def test_matricula_y_alertas(app):
     app.switch_page("paginas/7_matricula_y_alertas.py").run()
     assert not app.exception, app.exception
     assert len(app.tabs) == 4
-    assert len(app.error) == 1 and "prioridad alta" in app.error[0].value
-    app.multiselect(key="alertas_prioridad").set_value(["Administrativa"]).run()
+    assert [m.label for m in app.metric][:5] == ["Inscriptos", "Activos", "Cursan sin inscripción",
+                                                  "Inscriptos sin notas", "Prioridad alta"]
+    app.pills(key="alertas_prioridad").set_value(["Administrativa"]).run()
+    assert not app.exception, app.exception
+    app.selectbox(key="no_insc_orden").set_value("Solo con baja").run()
+    assert not app.exception, app.exception
+    app.segmented_control(key="sin_notas_grupo").set_value("Nunca entraron").run()
     assert not app.exception, app.exception
     app.text_input(key="alertas_buscar").set_value("ALU_1").run()
     assert not app.exception, app.exception
