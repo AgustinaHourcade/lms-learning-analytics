@@ -15,6 +15,7 @@ import componentes as comp  # noqa: E402  (después de set_page_config)
 
 comp.estilos()
 comp.asegurar_gold()
+st.logo(comp.LOGO_SVG, size="large", icon_image=comp.ICONO_LOGO_SVG)
 
 PAGINAS = {
     "": [
@@ -37,6 +38,16 @@ PAGINAS = {
     ],
 }
 
+# Páginas que no usan los filtros de la barra: en su lugar se explica por qué (D52).
+SIN_FILTROS = {
+    "Cargar archivo": "Esta página trabaja con todo lo cargado, sin fecha de corte. Los filtros que elegiste "
+                      "vuelven al pasar a un dashboard.",
+    "Explorar datos": "Esta página muestra las tablas crudas del pipeline, así que no usa la fecha de corte "
+                      "ni los filtros laterales.",
+}
+
 pagina = st.navigation(PAGINAS)
-comp.barra_lateral()
+f = comp.barra_lateral(sin_filtros=SIN_FILTROS.get(pagina.title))
+comp.barra_superior([f"Último recálculo: {comp.ultimo_recalculo()}"] if pagina.title in SIN_FILTROS
+                    else [f"Datos al {comp.fmt_fecha(f.fecha_corte)}"])
 pagina.run()

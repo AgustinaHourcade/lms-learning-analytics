@@ -42,8 +42,8 @@ Generado por el pipeline (`python -m src.pipeline`). No editar a mano.
 | PYE-06 | Probabilidad y Estadística | 🚀Recuperatorio: Evaluación Semanal Nº1 | 100 | 21 | 2025-09-24 | 🚀Evaluación Semanal Nº1 |
 | PYE-07 | Probabilidad y Estadística | 🧠 PARCIAL 1 | 100 | 167 | 2025-09-27 |  |
 | PYE-08 | Probabilidad y Estadística | 👉  Actividad Rápida 5 | 100 | 54 | 2025-10-15 |  |
-| PYE-09 | Probabilidad y Estadística | 👉  Actividad Rápida 6 | 100 | 94 | 2025-10-21 |  |
-| PYE-10 | Probabilidad y Estadística | 🚀Evaluación Semanal Nº2 | 100 | 13 | 2025-10-23 |  |
+| PYE-09 | Probabilidad y Estadística | 🚀Evaluación Semanal Nº2 | 100 | 13 | 2025-10-23 |  |
+| PYE-10 | Probabilidad y Estadística | 🚀Evaluación Semanal Nº3 | 100 | 110 | s/d |  |
 | ALG-01 | Álgebra | AUTOEVALUACION1 | 10 | 165 | 2025-08-21 |  |
 | ALG-02 | Álgebra | AUTOEVALUACION2 | 10 | 152 | 2025-09-18 |  |
 | ALG-03 | Álgebra | 1° Parcial | 25 | 162 | 2025-10-11 |  |
@@ -51,3 +51,6 @@ Generado por el pipeline (`python -m src.pipeline`). No editar a mano.
 ## Sesiones (corte a 30 minutos sin eventos, D25)
 
 - 20,657 sesiones de alumnos; duración mediana 0.9 min.
+
+## Avisos
+- Probabilidad y Estadística: «🚀Evaluación Semanal Nº3» no tiene eventos 'Realizar evaluación' en la trazabilidad; queda sin fecha y se considera disponible en cualquier fecha de corte.
