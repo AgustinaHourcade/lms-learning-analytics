@@ -30,7 +30,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-import componentes as comp
+import componentes_participacion as comp
 from src.config import DIAS_DESCONECTADO, DIAS_REGRESO
 from src.metricas import (ACTIVO, CRUZO_UMBRAL, DESCONECTADO, ENFRIANDOSE, ENTRA_NO_RINDE, NUNCA_ENTRO,
                           SIN_ACTIVIDAD, TRAMOS_ACTIVIDAD, VOLVIO)
