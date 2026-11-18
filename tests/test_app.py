@@ -65,6 +65,27 @@ def test_cada_pagina_corre_y_conserva_los_filtros(app, pagina):
     assert app.selectbox(key="materia").value == "Álgebra"
 
 
+def test_matricula_y_alertas(app):
+    """Dashboard de Matrícula y alertas: tarjetas, pestañas, filtros de la lista y una fecha temprana."""
+    app.switch_page("paginas/7_matricula_y_alertas.py").run()
+    assert not app.exception, app.exception
+    assert len(app.tabs) == 4
+    assert [m.label for m in app.metric][:5] == ["Inscriptos", "Activos", "Cursan sin inscripción",
+                                                  "Inscriptos sin notas", "Prioridad alta"]
+    app.pills(key="alertas_prioridad").set_value(["Administrativa"]).run()
+    assert not app.exception, app.exception
+    app.selectbox(key="no_insc_orden").set_value("Solo con baja").run()
+    assert not app.exception, app.exception
+    app.segmented_control(key="sin_notas_grupo").set_value("Nunca entraron").run()
+    assert not app.exception, app.exception
+    app.text_input(key="alertas_buscar").set_value("ALU_1").run()
+    assert not app.exception, app.exception
+    app.selectbox(key="materia").set_value("Algoritmos y Estructuras de Datos").run()
+    assert not app.exception, app.exception
+    app.date_input(key="fecha_corte").set_value("2025-08-10").run()
+    assert not app.exception, app.exception
+
+
 def test_ficha_individual_buscador(app):
     app.switch_page("paginas/6_ficha_individual.py").run()
     assert not app.exception, app.exception
