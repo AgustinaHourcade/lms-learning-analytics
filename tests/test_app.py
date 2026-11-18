@@ -69,6 +69,7 @@ def test_trazabilidad(app):
     app.button_group(key="traz_medida").set_value("Por alumno").run()
     app.toggle(key="traz_pct").set_value(True).run()
     app.toggle(key="traz_calor_pct").set_value(True).run()
+    app.button_group(key="traz_perfil").set_value("Por hora").run()
     app.multiselect(key="traz_categorias").set_value(["Evaluación"]).run()
     app.selectbox(key="traz_eval_medida").set_value("Interacciones por alumno").run()
     assert not app.exception, app.exception

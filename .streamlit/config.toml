@@ -1,14 +1,36 @@
 # Configuración de Streamlit (se lee desde la raíz del repo, también en Streamlit Cloud).
+# Sistema visual (D55): fondo cálido, tarjetas blancas con borde, azul institucional para
+# las acciones, Inter para el texto y Space Grotesk para títulos y números grandes.
+# Los colores tienen que coincidir con los de app/componentes.py.
 
 [theme]
 base = "light"
-primaryColor = "#2a78d6"            # azul de la paleta (D48)
-backgroundColor = "#fcfcfb"
-secondaryBackgroundColor = "#f0efec"
-textColor = "#0b0b0b"
-font = "sans-serif"
-# Misma paleta categórica que app/componentes.py, para los gráficos nativos (st.bar_chart, etc.)
-chartCategoricalColors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
+primaryColor = "#1B4B8F"            # acción (botones, pestaña activa, controles)
+backgroundColor = "#F7F6F3"         # fondo
+secondaryBackgroundColor = "#F1EFEA"
+textColor = "#1A1917"
+linkColor = "#1B4B8F"
+borderColor = "#E3E1DC"
+dataframeBorderColor = "#EFEDE8"
+dataframeHeaderBackgroundColor = "#FBFAF8"
+dataframeHeaderTextColor = "#6B6861"
+showWidgetBorder = true
+baseRadius = "9px"
+buttonRadius = "8px"
+baseFontSize = 14
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap, system-ui, sans-serif"
+headingFont = "'Space Grotesk':https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap, Inter, sans-serif"
+headingFontSizes = ["1.93rem", "1.3rem", "1.07rem", "1rem", "0.93rem", "0.86rem"]
+headingFontWeights = [600, 600, 600, 600, 600, 600]
+metricValueFontSize = "1.86rem"
+metricValueFontWeight = 600
+# Paleta de materias y categórica, para los gráficos nativos (st.bar_chart, etc.)
+chartCategoricalColors = ["#2563C9", "#D4661F", "#0E8F62", "#C98A12", "#6E56CF", "#B02A20", "#A8A49B"]
+chartSequentialColors = ["#EFF4FB", "#DEE9F6", "#C5D9EF", "#A9C4E6", "#7FA6D9", "#4B7FC4", "#1B4B8F", "#123663", "#0D2A4F", "#081B33"]
+
+[theme.sidebar]
+backgroundColor = "#FCFBF9"
+secondaryBackgroundColor = "#F1EFEA"
 
 [server]
 maxUploadSize = 50                  # MB; la trazabilidad completa pesa unos pocos MB

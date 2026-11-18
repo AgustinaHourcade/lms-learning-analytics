@@ -36,6 +36,10 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
   - `app/componentes.py`: `metrica("nombre", ...)` llama a `src.metricas` con caché y completa fecha/materia/umbral desde la barra (D47); `filtros()`, `encabezado()`, `tarjetas()`, `semaforo()`, `boton_csv()`, `num()`/`pct()`/`fmt_fecha()` y la paleta (`COLORES_MATERIA`, `COLORES_CONDICION`, `COLORES_ACTIVIDAD`, `SECUENCIAL`; D48). Plotly usa la plantilla `plotly_white+tfi`. Las páginas no leen parquet ni llaman a `src.metricas` directo.
   - Si gold no existe, la app corre el pipeline sola (D49). `LMS_GOLD` cambia la carpeta de gold (solo para tests).
   - `paginas/cargar_archivo.py`: valida y muestra qué reconoció, y al confirmar llama a `agregar_archivo()` y limpia el caché (D50). Tema en `.streamlit/config.toml`.
+  - Sistema visual (D55, rediseño "Analítica académica"): fondo #F7F6F3, tarjetas blancas con borde #E3E1DC, acción #1B4B8F, Inter + Space Grotesk (títulos y números). Materias ALG #2563C9 / AED #D4661F / PYE #0E8F62; `COLORES_CATEGORIA` para los tipos de interacción; semáforo #16734A / #C98A12 / #B02A20. CSS en `app/estilos.css` (lo carga `comp.estilos()`), logo en `app/logo.svg`.
+    - Cómo se arma una página (modelo: `3_trazabilidad.py`): `encabezado()` → controles → `tarjetas()` (KPI) → `lectura()` (el dato principal) → `st.tabs` → cada bloque en `with comp.tarjeta(clave, título, explicación)` (o `titulo_tarjeta()` en una columna al lado de los controles), gráfico con leyenda propia (`comp.leyenda()`, `showlegend=False`) y `comp.nota()` con lo que se ve, calculado con los datos. `mini_tarjeta()` y `chip()` para resúmenes cortos.
+    - Gráficos con `st.plotly_chart(fig, theme=None, config={"displayModeBar": False})` y fondo blanco fijado en el layout (si no, Streamlit los pinta de gris).
+    - Falta pasar el resto de las páginas a este diseño.
 - bronze, silver y gold están en `.gitignore`: cada persona los regenera corriendo el pipeline.
 
 ## Estado actual de los datos (bronze)
@@ -63,7 +67,7 @@ La consigna completa está en `docs/consigna.pdf` (si existe).
 - **AED**: promedio de las autoevaluaciones (sobre 100). Regular desde 60, Promociona ≥ 90.
 
 ## Decisiones TOMADAS
-El registro completo, con justificación y estado, está en `docs/decisiones.md` (es la base del informe). Si se toma una decisión nueva, se agrega ahí con el número siguiente (hoy, D55); los números no se reutilizan porque el código los cita.
+El registro completo, con justificación y estado, está en `docs/decisiones.md` (es la base del informe). Si se toma una decisión nueva, se agrega ahí con el número siguiente (hoy, D56; D55 = sistema visual); los números no se reutilizan porque el código los cita.
 Ojo: la lista de abajo está numerada 1-7 y NO son los números D del registro; en el código se citan siempre los D (por ej., nota final = D16-D17, promedio por instrumento = D22).
 
 1. Instrumento no rendido = 0 para la nota final y la condición. En los Excel no rendir no aparece como nota vacía: directamente no hay fila, así que hay que completar alumno × instrumento con 0.

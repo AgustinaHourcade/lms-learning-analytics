@@ -4,8 +4,10 @@ Piezas compartidas por todas las páginas de la app (Etapa 4).
   Datos        datos() y metrica(): gold se lee una vez y cada métrica se cachea (D47).
   Filtros      barra_lateral() dibuja la fecha de corte, la materia y el umbral (D46);
                filtros() los devuelve desde cualquier página.
-  Paleta       COLORES_* e ICONOS_*: un color fijo por materia, condición y estado (D48).
-  Visuales     encabezado(), tarjetas(), semaforo(), boton_csv(), num(), pct().
+  Paleta       COLORES_* e ICONOS_*: un color fijo por materia, tipo, condición y estado (D48, D55).
+  Visuales     encabezado(), tarjetas() (KPI), tarjeta() (contenedor blanco con título),
+               lectura() y nota() (qué mirar), leyenda(), chip(), mini_tarjeta(),
+               semaforo(), boton_csv(), num(), pct(). El CSS está en app/estilos.css.
 
 Una página típica:
 
@@ -18,6 +20,7 @@ from __future__ import annotations
 
 import inspect
 import os
+import re
 import sys
 from dataclasses import dataclass
 from datetime import date
@@ -38,52 +41,63 @@ from src.config import (ASIGNATURAS, FECHA_CORTE_DEFECTO, GOLD, SIN_EVALUACIONES
 from src.metricas import ACTIVO, INACTIVO, SIN_ACTIVIDAD  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# Paleta (D48). Valores validados para daltonismo (skill de dataviz).
+# Paleta y sistema visual (D48, D55). Los mismos valores están en .streamlit/config.toml
+# y en app/estilos.css. Regla: el color de materia identifica y el del semáforo evalúa;
+# nunca se mezclan en un mismo elemento, y un estado nunca va solo con color.
 # ---------------------------------------------------------------------------
-# Categórica, en orden fijo: los 3 primeros sirven para cualquier gráfico
-# (también dispersión), así que cada materia tiene uno.
-CATEGORICA = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
-COLORES_MATERIA = dict(zip(ASIGNATURAS, CATEGORICA))
+FONDO, TARJETA, BORDE = "#F7F6F3", "#FFFFFF", "#E3E1DC"
+TEXTO, TEXTO_2, TEXTO_3, TEXTO_4 = "#1A1917", "#57544C", "#6B6861", "#8A867C"
+ACCION, GRILLA, EJE = "#1B4B8F", "#F1EFEA", "#D9D6CF"
+
+# Categórica, en orden fijo: los 3 primeros son las materias en el orden de ASIGNATURAS
+# (ALG azul, AED naranja, PYE verde), así que cada materia tiene su color en cualquier gráfico.
+CATEGORICA = ["#2563C9", "#D4661F", "#0E8F62", "#C98A12", "#6E56CF", "#B02A20", "#A8A49B"]
+_COLOR_SIGLA = {"ALG": "#2563C9", "AED": "#D4661F", "PYE": "#0E8F62"}
+COLORES_MATERIA = {nombre: _COLOR_SIGLA[datos["sigla"]] for nombre, datos in ASIGNATURAS.items()}
 SIGLAS = {nombre: datos["sigla"] for nombre, datos in ASIGNATURAS.items()}
+# Nombre corto para leyendas y textos ("Probabilidad" en vez de "Probabilidad y Estadística").
+CORTOS = {nombre: nombre.split(" y ")[0] for nombre in ASIGNATURAS}
+
+# Tipos de interacción (categorías de dim_accion). No comparten gráfico con las materias.
+COLORES_CATEGORIA = {"Contenido": "#1B4B8F", "Navegación": "#D4661F", "Evaluación": "#16734A",
+                     "Comunicación": "#C98A12", "Notas": "#A8A49B", "Agenda": "#CFCBC2"}
 
 # Estados: colores reservados, siempre acompañados de ícono y texto.
-BIEN, ATENCION, SERIO, CRITICO, NEUTRO = "#0ca30c", "#fab219", "#ec835a", "#d03b3b", "#898781"
+BIEN, ATENCION, SERIO, CRITICO, NEUTRO = "#16734A", "#C98A12", "#D9822B", "#B02A20", "#A8A49B"
 COLORES_CONDICION = {"Libre": CRITICO, "Regular": ATENCION, "Promociona": BIEN, SIN_EVALUACIONES: NEUTRO}
 ICONOS_CONDICION = {"Libre": "🔴", "Regular": "🟡", "Promociona": "🟢", SIN_EVALUACIONES: "⚪"}
 COLORES_ACTIVIDAD = {ACTIVO: BIEN, INACTIVO: SERIO, SIN_ACTIVIDAD: NEUTRO}
 ICONOS_ACTIVIDAD = {ACTIVO: "🟢", INACTIVO: "🟠", SIN_ACTIVIDAD: "⚪"}
 
 # Secuencial (mapas de calor): un solo tono, de claro a oscuro.
-SECUENCIAL = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
+SECUENCIAL = ["#EFF4FB", "#DEE9F6", "#C5D9EF", "#A9C4E6", "#7FA6D9", "#4B7FC4", "#1B4B8F", "#0D2A4F"]
 
-# Plantilla de plotly: fondo blanco, grilla tenue y la paleta categórica.
+# Plantilla de plotly: los gráficos van dentro de tarjetas blancas, con grilla tenue,
+# ejes grises, leyenda arriba a la izquierda y tooltip blanco.
 pio.templates["tfi"] = go.layout.Template(layout=dict(
     colorway=CATEGORICA,
-    font=dict(family='system-ui, -apple-system, "Segoe UI", sans-serif'),
-    xaxis=dict(gridcolor="#e1e0d9", linecolor="#c3c2b7"),
-    yaxis=dict(gridcolor="#e1e0d9", linecolor="#c3c2b7"),
-    margin=dict(t=48, l=8, r=8, b=8),
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
-    hoverlabel=dict(font_size=13),
+    font=dict(family="Inter, system-ui, sans-serif", size=12, color=TEXTO_2),
+    paper_bgcolor=TARJETA, plot_bgcolor=TARJETA,
+    xaxis=dict(gridcolor=GRILLA, linecolor=EJE, zerolinecolor=EJE, tickfont=dict(color=TEXTO_3),
+               title=dict(font=dict(color=TEXTO_4, size=11))),
+    yaxis=dict(gridcolor=GRILLA, linecolor="rgba(0,0,0,0)", zerolinecolor=EJE, tickfont=dict(color=TEXTO_3),
+               title=dict(font=dict(color=TEXTO_4, size=11))),
+    margin=dict(t=36, l=8, r=8, b=8),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=12, color="#2C2A25"),
+                title=dict(text="")),
+    hoverlabel=dict(font_size=12, bgcolor=TARJETA, bordercolor=BORDE, font=dict(color=TEXTO)),
 ))
 pio.templates.default = "plotly_white+tfi"
 
-CSS = """
-<style>
-  .semaforo {display:inline-flex; align-items:center; gap:.4rem; padding:.25rem .7rem; border-radius:999px;
-             font-weight:600; border:1px solid rgba(11,11,11,.10);}
-  .semaforo-Libre      {background:#fde8e8; color:#8a1f1f;}
-  .semaforo-Regular    {background:#fff4d6; color:#6b4a00;}
-  .semaforo-Promociona {background:#e2f6e2; color:#006300;}
-  .semaforo-otro       {background:#f0efec; color:#52514e;}
-  [data-testid="stMetric"] [data-testid="stMetricValue"] {font-size: 1.9rem;}
-</style>
-"""
+CSS = Path(__file__).with_name("estilos.css")
+ICONO_DATO = ('<svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true">'
+              '<circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.5"/>'
+              '<path d="M8 7.2v4.2M8 4.8v.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>')
 
 
 def estilos() -> None:
-    """CSS mínimo (como en el ejemplo de la clase 10): solo el semáforo y las tarjetas."""
-    st.markdown(CSS, unsafe_allow_html=True)
+    """Carga app/estilos.css (D55): tarjetas, KPI, pestañas, controles, lecturas y semáforo."""
+    st.markdown(f"<style>{CSS.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -198,8 +212,8 @@ def barra_lateral() -> Filtros:
     # Si los datos cambiaron y la fecha guardada quedó fuera de rango, se acomoda.
     st.session_state["fecha_corte"] = min(max(st.session_state["fecha_corte"], inicio), fin)
 
-    with st.sidebar:
-        st.header("Filtros")
+    with st.sidebar, st.container(border=True, key="tarjeta_filtros"):
+        st.markdown('<p class="tfi-etiqueta">Filtros</p>', unsafe_allow_html=True)
         fecha = st.date_input("Fecha de corte", min_value=inicio, max_value=fin, key="fecha_corte",
                               format="DD/MM/YYYY",
                               help="Todo se calcula con lo que se sabía ese día (inclusive): notas de los "
@@ -207,7 +221,7 @@ def barra_lateral() -> Filtros:
         materia = st.selectbox("Materia", [TODAS, *ASIGNATURAS], key="materia")
         umbral = st.slider("Inactivo después de (días sin entrar)", 1, 30, key="umbral",
                            help="Un alumno que no entra hace más de estos días cuenta como inactivo (D35).")
-        st.button("Restablecer", on_click=_restablecer, width="stretch")
+        st.button("Restablecer filtros", on_click=_restablecer, width="stretch")
         st.caption(f"Datos del {fmt_fecha(inicio)} al {fmt_fecha(fin)}.")
 
     f = Filtros(fecha_corte=fecha, asignatura=None if materia == TODAS else materia, umbral=int(umbral))
@@ -241,15 +255,73 @@ def fmt_fecha(x) -> str:
 # ---------------------------------------------------------------------------
 # Componentes visuales
 # ---------------------------------------------------------------------------
+def _md(texto: str) -> str:
+    """Markdown mínimo para los recuadros en HTML: **negrita** y *cursiva*."""
+    texto = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", texto)
+    return re.sub(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])", r"<em>\1</em>", texto)
+
+
+def _html(contenido: str) -> None:
+    st.markdown(contenido, unsafe_allow_html=True)
+
+
 def encabezado(titulo: str, descripcion: str = "") -> Filtros:
-    """Título de la página y, abajo, los filtros que se están usando."""
+    """Título de la página, la explicación en una línea y los filtros que se están usando."""
     f = filtros()
-    st.title(titulo)
+    st.title(titulo, anchor=False)
     if descripcion:
-        st.markdown(descripcion)
+        _html(f'<p class="tfi-desc">{_md(descripcion)}</p>')
     st.caption(f"Corte: **{fmt_fecha(f.fecha_corte)}** · {f.materia} · "
                f"Inactivo después de {f.umbral} días sin entrar")
     return f
+
+
+def tarjeta(clave: str, titulo: str = "", subtitulo: str = ""):
+    """Contenedor blanco con borde (D55) y, si se pasa, su título y explicación. Se usa con `with`:
+        with comp.tarjeta("evolucion", "Interacciones por semana", "Los triángulos son las evaluaciones."):
+            st.plotly_chart(fig)"""
+    c = st.container(border=True, key=f"tarjeta_{clave}")
+    if titulo or subtitulo:
+        c.markdown((f'<p class="tfi-h3">{titulo}</p>' if titulo else "")
+                   + (f'<p class="tfi-sub">{_md(subtitulo)}</p>' if subtitulo else ""), unsafe_allow_html=True)
+    return c
+
+
+def titulo_tarjeta(titulo: str, subtitulo: str = "") -> None:
+    """Título y explicación de una tarjeta cuando van al lado de un control (dentro de una columna)."""
+    _html(f'<p class="tfi-h3">{titulo}</p>' + (f'<p class="tfi-sub">{_md(subtitulo)}</p>' if subtitulo else ""))
+
+
+def lectura(texto: str, titulo: str = "", tono: str = "info") -> None:
+    """Recuadro con el dato que hay que mirar: título en negrita y la explicación.
+    tono: "info" (azul) o "atencion" (ámbar)."""
+    cuerpo = (f"<strong>{titulo}</strong> " if titulo else "") + _md(texto)
+    _html(f'<div class="tfi-lectura {tono}">{ICONO_DATO}<p>{cuerpo}</p></div>')
+
+
+def nota(texto: str, tono: str = "") -> None:
+    """Nota debajo de un gráfico: cómo leerlo o qué se ve (fondo gris; tono="atencion" para ámbar)."""
+    _html(f'<p class="tfi-nota {tono}">{_md(texto)}</p>')
+
+
+def chip(texto: str, gris: bool = False) -> str:
+    """HTML de una etiqueta redondeada (por ej., 'Pico: miércoles de 20 a 21 h')."""
+    return f'<span class="tfi-chip{" gris" if gris else ""}">{texto}</span>'
+
+
+def leyenda(colores: dict, linea: bool = False) -> None:
+    """Leyenda en HTML ({etiqueta: color}), para gráficos que se dibujan sin la de plotly.
+    linea=True dibuja un trazo (series en el tiempo) en vez de un cuadrado."""
+    clase = ' class="linea"' if linea else ""
+    _html('<div class="tfi-leyenda">' + "".join(
+        f'<span><i{clase} style="background:{c}"></i>{e}</span>' for e, c in colores.items()) + "</div>")
+
+
+def mini_tarjeta(titulo: str, valor: str, texto: str, color: str | None = None) -> str:
+    """HTML de una tarjeta chica (resumen de una materia dentro de una tarjeta grande)."""
+    marca = f'<i style="background:{color}"></i>' if color else ""
+    return (f'<div class="tfi-mini"><p class="titulo">{marca}{titulo}</p><p class="valor">{valor}</p>'
+            f'<p class="texto">{_md(texto)}</p></div>')
 
 
 def tarjetas(items: list, columnas: int | None = None) -> None:

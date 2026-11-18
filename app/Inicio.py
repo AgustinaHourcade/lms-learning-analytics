@@ -14,6 +14,7 @@ st.set_page_config(page_title="LMS Learning Analytics", page_icon=":material/sch
 import componentes as comp  # noqa: E402  (después de set_page_config)
 
 comp.estilos()
+st.logo(str(comp.RAIZ / "app" / "logo.svg"), size="large")
 comp.asegurar_gold()
 
 PAGINAS = {
