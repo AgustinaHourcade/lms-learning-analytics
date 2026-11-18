@@ -585,10 +585,14 @@ def comparar_fotos(antes: pd.DataFrame, despues: pd.DataFrame) -> pd.DataFrame:
               [["asignatura", "clave", "indicador", "antes", "despues", "diferencia"]].reset_index(drop=True))
 
 
-def buscar_alumnos(d: Datos, texto: str = "") -> pd.DataFrame:
+def buscar_alumnos(d: Datos, texto: str = "", asignatura=None, solo_base: bool = False) -> pd.DataFrame:
     """Busca por ID o por apellido/nombre (sin importar tildes ni mayúsculas).
-    Con texto vacío devuelve a todos; la ficha muestra al primero por defecto."""
+    Con texto vacío devuelve a todos; la ficha muestra al primero por defecto.
+    solo_base=True deja solo a los alumnos de la base de `asignatura` (D11):
+    los demás no tienen notas ni actividad en los KPIs (D56)."""
     a = d.alumnos.sort_values(["apellido", "nombre"])
+    if solo_base or asignatura is not None:
+        a = a[a["id_alumno"].isin(base(d, asignatura)["id_alumno"])]
     if texto.strip():
         objetivo = _sin_tildes(texto.strip())
         campo = (a["id_alumno"] + " " + a["apellido"].fillna("") + " " + a["nombre"].fillna("")).map(_sin_tildes)
@@ -597,25 +601,78 @@ def buscar_alumnos(d: Datos, texto: str = "") -> pd.DataFrame:
 
 
 def ficha_alumno(d: Datos, id_alumno: str, fecha_corte=None, umbral: int = UMBRAL_INACTIVIDAD_DIAS) -> dict:
-    """Todo lo de un alumno para la Ficha individual:
-      datos        fila de dim_alumno
-      materias     su fila de tabla_alumnos en cada materia de su base
-      instrumentos sus notas por instrumento a la fecha de corte
-      semanal      su actividad por semana y materia
-      ultimos      sus últimos 50 eventos"""
+    """Todo lo de un alumno para la Ficha individual (D56):
+      datos         fila de dim_alumno
+      materias      su fila de tabla_alumnos en cada materia de su base, más la
+                    comparación con su curso: promedio de la materia y percentil
+                    (0-100, en qué lugar queda dentro de la base) de la nota,
+                    los minutos, las interacciones y el avance
+      instrumentos  sus notas por instrumento a la fecha de corte, con el
+                    promedio del curso entre quienes lo rindieron (D22)
+      semanal       su actividad por semana y materia, con las interacciones
+                    promedio por alumno de la base en esa semana (curso_eventos)
+      categorias    sus interacciones por tipo y materia, en cantidad y en %,
+                    contra el % del curso (con 0 los tipos que usa el curso y él no)
+      alertas       sus alertas (D37) a la fecha de corte
+      evaluaciones  las fechas de las evaluaciones ya tomadas, para marcarlas
+      eventos       toda su trazabilidad hasta la fecha de corte, de la más nueva
+                    a la más vieja"""
     datos = d.alumnos[d.alumnos["id_alumno"] == id_alumno]
     if datos.empty:
         raise KeyError(f"No existe el alumno {id_alumno}")
     t = tabla_alumnos(d, fecha_corte, None, umbral)
+    por_materia = t.groupby("asignatura")
+    for col in ["nota_final", "minutos", "eventos", "avance"]:
+        t[f"promedio_{col}"] = por_materia[col].transform("mean").round(2)
+        t[f"percentil_{col}"] = (por_materia[col].rank(pct=True, method="average") * 100).round(0)
+    t["alumnos_materia"] = por_materia["id_alumno"].transform("size")
+    materias = t[t["id_alumno"] == id_alumno].reset_index(drop=True)
+    suyas = materias["asignatura"].tolist()
+
     inst = notas_instrumento(d, fecha_corte)
-    ev = _eventos(d, fecha_corte, None)
+    inst = inst[inst["id_alumno"] == id_alumno]
+    if suyas:
+        prom = promedio_por_instrumento(d, fecha_corte, suyas)[["id_instrumento", "rindieron", "promedio_pct"]]
+        inst = inst.merge(prom.rename(columns={"promedio_pct": "promedio_curso_pct"}), on="id_instrumento",
+                          how="left")
+    inst = inst.merge(d.instrumentos[["id_instrumento", "orden"]], on="id_instrumento", how="left") \
+               .sort_values(["asignatura", "orden"])
+
+    ev_todos = _eventos(d, fecha_corte, suyas or None)
+    ev = ev_todos[ev_todos["id_alumno"] == id_alumno]
+
+    semanal = evolucion_actividad(d, fecha_corte, None, "W", id_alumno=id_alumno)
+    if suyas:
+        curso = evolucion_actividad(d, fecha_corte, suyas, "W")
+        tam = base(d, suyas).groupby("asignatura").size()
+        curso["curso_eventos"] = (curso["eventos"] / curso["asignatura"].map(tam)).round(1)
+        semanal = semanal.merge(curso[["asignatura", "periodo", "curso_eventos"]], how="left")
+
+    def _por_tipo(e: pd.DataFrame, nombre: str) -> pd.DataFrame:
+        g = e.groupby(["asignatura", "categoria"]).size().rename(nombre).reset_index()
+        g[f"pct_{nombre}"] = (g[nombre] / g.groupby("asignatura")[nombre].transform("sum") * 100).round(1)
+        return g
+
+    categorias = _por_tipo(ev, "eventos")
+    if not categorias.empty:
+        # Outer: también los tipos que el curso usa y el alumno no (0 %, por ej. nunca entró a
+        # Evaluación), pero solo en las materias donde tiene alguna interacción.
+        curso = _por_tipo(ev_todos, "curso")[["asignatura", "categoria", "pct_curso"]]
+        curso = curso[curso["asignatura"].isin(categorias["asignatura"])]
+        categorias = (categorias.merge(curso, how="outer").fillna({"eventos": 0, "pct_eventos": 0.0})
+                      .astype({"eventos": "int64"}).sort_values(["asignatura", "categoria"], ignore_index=True))
+
+    al = alertas(d, fecha_corte, suyas, umbral) if suyas else pd.DataFrame(columns=["asignatura", "id_alumno"])
     return {
         "datos": datos.iloc[0],
-        "materias": t[t["id_alumno"] == id_alumno].reset_index(drop=True),
-        "instrumentos": inst[inst["id_alumno"] == id_alumno].reset_index(drop=True),
-        "semanal": evolucion_actividad(d, fecha_corte, None, "W", id_alumno=id_alumno),
-        "ultimos": ev[ev["id_alumno"] == id_alumno].sort_values("fecha_hora", ascending=False)
-                     .head(50)[["fecha_hora", "asignatura", "categoria", "accion", "descripcion"]]
+        "materias": materias,
+        "instrumentos": inst.reset_index(drop=True),
+        "semanal": semanal,
+        "categorias": categorias,
+        "alertas": al[al["id_alumno"] == id_alumno].reset_index(drop=True),
+        "evaluaciones": fechas_evaluaciones(d, fecha_corte, suyas or None).iloc[: None if suyas else 0],
+        "eventos": ev.sort_values("fecha_hora", ascending=False)
+                     [["fecha_hora", "asignatura", "categoria", "seccion", "accion", "descripcion"]]
                      .reset_index(drop=True),
     }
 

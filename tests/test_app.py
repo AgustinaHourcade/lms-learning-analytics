@@ -65,6 +65,41 @@ def test_cada_pagina_corre_y_conserva_los_filtros(app, pagina):
     assert app.selectbox(key="materia").value == "Álgebra"
 
 
+def test_ficha_individual_buscador(app):
+    app.switch_page("paginas/6_ficha_individual.py").run()
+    assert not app.exception, app.exception
+    primero = app.selectbox(key="fi_alumno").value          # muestra al primero por defecto
+    assert primero.startswith("ALU_")
+    assert not app.text_input                                # un solo buscador: el desplegable
+    assert any("Riesgo de abandono" in m.value for m in app.markdown)   # cabecera con el predictor (D58)
+    assert any("Estado por materia" in m.value for m in app.markdown)
+    app.selectbox(key="fi_alumno").set_value("ALU_1105").run()
+    assert not app.exception, app.exception
+    assert any("ALU_1105" in m.value for m in app.markdown)
+    app.button(key="fi_siguiente").click().run()                       # anterior / siguiente
+    assert not app.exception, app.exception
+    assert app.selectbox(key="fi_alumno").value != "ALU_1105"
+    app.button(key="fi_sig_riesgo").click().run()                      # siguiente en riesgo
+    assert not app.exception, app.exception
+    app.date_input(key="fecha_corte").set_value("2025-08-06").run()   # antes de cualquier evaluación
+    assert not app.exception, app.exception
+
+
+def test_predictor_buscador_individual(app):
+    """La página del predictor tiene el mismo buscador que la Ficha y el resumen del alumno (D58)."""
+    app.switch_page("paginas/ml_abandono.py").run()
+    assert not app.exception, app.exception
+    assert app.selectbox(key="ab_alumno").value.startswith("ALU_")   # muestra al primero por defecto
+    app.selectbox(key="ab_alumno").set_value("ALU_1105").run()
+    assert not app.exception, app.exception
+    assert any("ALU_1105" in m.value for m in app.markdown)
+    assert any("riesgo de abandono" in m.value for m in app.markdown)
+    app.selectbox(key="materia").set_value("Álgebra").run()           # el buscador se acota a la materia
+    assert not app.exception, app.exception
+    app.date_input(key="fecha_corte").set_value("2025-08-06").run()   # antes del día 14 de la cursada
+    assert not app.exception, app.exception
+
+
 def test_grupos_antes_de_la_primera_evaluacion(app):
     """Con una fecha de corte sin evaluaciones, la página de grupos avisa en vez de romperse."""
     app.date_input(key="fecha_corte").set_value("2025-08-06").run()

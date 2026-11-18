@@ -49,10 +49,13 @@ from src.metricas import ACTIVO, INACTIVO, SIN_ACTIVIDAD, comparar_fotos  # noqa
 # Categórica, en orden fijo: los 3 primeros son los de las materias (Álgebra,
 # AED, PyE, en el orden de ASIGNATURAS), los mismos del rediseño (D52).
 CATEGORICA = ["#2563C9", "#D4661F", "#0E8F62", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
-COLORES_MATERIA = dict(zip(ASIGNATURAS, CATEGORICA))
+COLORES_MATERIA = dict(zip(ASIGNATURAS, CATEGORICA))   # Álgebra azul, AED naranja, PyE verde
 SIGLAS = {nombre: datos["sigla"] for nombre, datos in ASIGNATURAS.items()}
 # Chips de materia: (fondo, texto).
 CHIP_MATERIA = dict(zip(ASIGNATURAS, [("#EAF0F8", "#164279"), ("#FBEFE6", "#8A4415"), ("#E6F2EB", "#0B6B49")]))
+# Etiqueta de sigla de la Ficha individual (fondo suave, texto oscuro), mismos colores.
+SIGLA_FONDO = {a: c[0] for a, c in CHIP_MATERIA.items()}
+SIGLA_TEXTO = {a: c[1] for a, c in CHIP_MATERIA.items()}
 
 # Tonos de los avisos de aviso() (D52): (fondo, borde, texto, ícono).
 TONOS_AVISO = {
@@ -60,6 +63,20 @@ TONOS_AVISO = {
     "atencion": ("#FBF0DC", "#F0E2C4", "#6B4700", "#A06A00"),
     "error": ("#FBE9E6", "#F2CFC9", "#7A3028", "#93241C"),
     "info": ("#FBFAF8", "#E3E1DC", "#57544C", "#6B6861"),
+}
+
+# Tokens del diseño "Analítica académica" de la Ficha individual (D59): texto, bordes y
+# tonos de estado. Cada tono = (fondo suave, texto, color sólido); siempre van con ícono y
+# texto (D48). Se llaman TONOS_ESTADO para no chocar con TONOS (dicts) del rediseño de main.
+TINTA, TINTA_2, TINTA_3, TENUE = "#1A1917", "#57544C", "#6B6861", "#8A867C"
+BORDE, BORDE_SUAVE, ACENTO = "#E3E1DC", "#EFEDE8", "#1B4B8F"
+TONOS_ESTADO = {
+    "bien": ("#E6F2EB", "#116040", "#0E8F62"),
+    "atencion": ("#FBF0DC", "#7A5000", "#A06A00"),
+    "critico": ("#FBE9E6", "#93241C", "#B02A20"),
+    "oscuro": ("#EBE9E4", "#35332D", "#35332D"),
+    "neutro": ("#F1EFEA", "#57544C", "#8A867C"),
+    "acento": ("#EAF0F8", "#164279", "#1B4B8F"),
 }
 
 # Estados: colores reservados, siempre acompañados de ícono y texto.
@@ -332,6 +349,43 @@ CSS = f"""
   .semaforo-Promociona {{background:#E6F2EB; color:#0B6B49;}}
   .semaforo-otro       {{background:#F1EFEA; color:#57544C;}}
   [data-testid="stMetric"] [data-testid="stMetricValue"] {{font-size: 1.75rem; font-family: {FUENTE_TITULOS};}}
+
+  /* --- Ficha individual: diseño "Analítica académica" (D59) ---------------
+     Clases fi-* para no chocar con las tfi-* del rediseño de main. */
+  .stTabs [data-baseweb="tab-list"] {{gap: 4px; border-bottom: 1px solid #E3E1DC;}}
+  .stTabs [data-baseweb="tab"] {{height: 42px; padding: 0 14px; font-weight: 500;}}
+  .stTabs [data-baseweb="tab"] p {{font-size: 14px;}}
+  .stTabs [aria-selected="true"] p {{font-weight: 600;}}
+  .tfi-kicker {{margin: 0 0 4px; font: 600 11px Inter, sans-serif; letter-spacing: .06em; text-transform: uppercase;
+               color: #6B6861;}}
+  .fi-h3, .fi-card h2, .fi-card h3, .fi-card h4 {{margin: 0 !important; padding: 0 !important;
+           font: 600 15px 'Space Grotesk', Inter, sans-serif !important; color: #1A1917; letter-spacing: 0;
+           scroll-margin-top: 0;}}
+  .fi-card h4 {{font: 600 14px Inter, sans-serif !important;}}
+  .tfi-nota-al-pie {{margin: 0; font-size: 12px; color: #6B6861; line-height: 1.5;}}
+  .fi-card {{background: #FFFFFF; border: 1px solid #E3E1DC; border-radius: 13px; margin-bottom: 14px;
+             overflow: hidden; font-family: Inter, sans-serif; color: #1A1917;}}
+  .fi-card-cab {{display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;
+                 padding: 15px 16px 13px;}}
+  .fi-card-pie {{display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 11px 16px;
+                 border-top: 1px solid #EFEDE8; background: #FCFBF9; font-size: 12px; color: #6B6861;}}
+  .tfi-num {{font-variant-numeric: tabular-nums;}}
+  .fi-chip {{display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 999px;
+             font: 500 12px Inter, sans-serif; white-space: nowrap;}}
+  .fi-chip-sm {{height: 24px; padding: 0 9px; font-size: 11px; font-weight: 600;}}
+  .tfi-sigla {{display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 5px;
+              font: 600 11px Inter, sans-serif; white-space: nowrap;}}
+  .tfi-cuadro {{width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: 0 0 auto;}}
+  .fi-tabla {{border-collapse: collapse; width: 100%;}}
+  .fi-tabla th {{font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: #6B6861; font-weight: 600;
+                 text-align: left; padding: 10px 12px; border-bottom: 1px solid #E3E1DC; white-space: nowrap;
+                 background: transparent;}}
+  .fi-tabla td {{font-size: 13px; color: #2C2A25; padding: 12px; border-bottom: 1px solid #EFEDE8;
+                 vertical-align: middle; font-variant-numeric: tabular-nums;}}
+  .fi-tabla tbody tr:last-child td {{border-bottom: none;}}
+  .fi-tabla th, .fi-tabla td {{border-left: none; border-right: none; border-top: none;}}
+  .fi-barra {{height: 8px; border-radius: 999px; background: #EDEBE6; overflow: hidden; position: relative;}}
+  .fi-barra > span {{display: block; height: 100%; border-radius: 999px;}}
 </style>
 """
 
@@ -541,10 +595,101 @@ def encabezado(titulo: str, descripcion: str = "") -> Filtros:
     f = filtros()
     st.title(titulo)
     if descripcion:
-        st.markdown(descripcion)
+        st.markdown(f'<div class="tfi-desc">{descripcion}</div>', unsafe_allow_html=True)
     st.caption(f"Corte: **{fmt_fecha(f.fecha_corte)}** · {f.materia} · "
                f"Inactivo después de {f.umbral} días sin entrar")
     return f
+
+
+# ---------------------------------------------------------------------------
+# Piezas HTML del diseño de la Ficha individual (D59). Devuelven texto: se arman
+# bloques y se dibujan con html(). Siempre ícono + texto, nunca solo color (D48).
+# Usan TONOS_ESTADO (bien/atencion/critico/oscuro/neutro/acento); los nombres
+# *_estado evitan el choque con chip()/icono() del rediseño de main, que usan TONOS.
+# ---------------------------------------------------------------------------
+_FORMAS_SVG = {   # SVG de 16x16; `{f}` = color del recorte interior
+    "bien": '<circle cx="8" cy="8" r="6.6" fill="currentColor"/>'
+            '<path d="M4.9 8.3l2.1 2.1 4.2-4.5" fill="none" stroke="{f}" stroke-width="1.7" '
+            'stroke-linecap="round" stroke-linejoin="round"/>',
+    "atencion": '<path d="M8 1.6l6.6 11.8H1.4z" fill="currentColor"/>'
+                '<path d="M8 6v3.1M8 11.2v.1" stroke="{f}" stroke-width="1.5" stroke-linecap="round"/>',
+    "critico": '<path d="M5.2 1.4h5.6l3.8 3.8v5.6l-3.8 3.8H5.2l-3.8-3.8V5.2z" fill="currentColor"/>'
+               '<path d="M8 4.8v4M8 10.8v.1" stroke="{f}" stroke-width="1.6" stroke-linecap="round"/>',
+    "oscuro": '<rect x="2" y="2" width="12" height="12" rx="3" fill="currentColor"/>'
+              '<path d="M5 8h6" stroke="{f}" stroke-width="1.8" stroke-linecap="round"/>',
+    "neutro": '<circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.6"/>'
+              '<path d="M8 7.2v4M8 4.8v.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+}
+_FORMAS_SVG["acento"] = _FORMAS_SVG["neutro"]
+
+# Tono de cada estado del modelo.
+TONO_CONDICION = {"Promociona": "bien", "Regular": "atencion", "Libre": "critico", SIN_EVALUACIONES: "neutro"}
+TONO_ACTIVIDAD = {ACTIVO: "bien", INACTIVO: "atencion", SIN_ACTIVIDAD: "neutro"}
+TONO_RIESGO_ESTADO = {ml_abandono.ALTO: "critico", ml_abandono.MEDIO: "atencion", ml_abandono.BAJO: "bien",
+               ml_abandono.YA_ABANDONO: "oscuro", ml_abandono.SIN_ACTIVIDAD: "neutro"}
+
+
+def esc(texto) -> str:
+    """Escapa texto que viene de los datos antes de meterlo en HTML."""
+    return html_lib.escape("" if texto is None or (not isinstance(texto, str) and pd.isna(texto)) else str(texto))
+
+
+def icono_estado(tono: str, tam: int = 12, etiqueta: str = "") -> str:
+    fondo = TONOS_ESTADO[tono][0]
+    aria = f'role="img" aria-label="{esc(etiqueta)}"' if etiqueta else 'aria-hidden="true"'
+    return (f'<svg viewBox="0 0 16 16" width="{tam}" height="{tam}" {aria} style="flex:0 0 auto">'
+            f'{_FORMAS_SVG[tono].format(f=fondo)}</svg>')
+
+
+def chip_estado(texto: str, tono: str = "neutro", con_icono: bool = False, chico: bool = False) -> str:
+    """Pastilla redondeada: '⚠ Sin entrar hace 13 días', '309 interacciones'."""
+    fondo, color, _ = TONOS_ESTADO[tono]
+    clase = "fi-chip fi-chip-sm" if chico else "fi-chip"
+    return (f'<span class="{clase} tfi-num" style="background:{fondo};color:{color}">'
+            f'{icono_estado(tono) if con_icono else ""}{texto}</span>')
+
+
+def pastilla_condicion(condicion: str, chico: bool = False) -> str:
+    """Semáforo de la condición con la forma del diseño (círculo, triángulo, octógono)."""
+    return chip_estado(esc(condicion), TONO_CONDICION.get(condicion, "neutro"), con_icono=True, chico=chico)
+
+
+def sigla(asignatura: str) -> str:
+    """Etiqueta 'ALG' / 'AED' / 'PYE' con el color suave de la materia."""
+    return (f'<span class="tfi-sigla" style="background:{SIGLA_FONDO.get(asignatura, "#F1EFEA")};'
+            f'color:{SIGLA_TEXTO.get(asignatura, TINTA_2)}">{esc(SIGLAS.get(asignatura, asignatura))}</span>')
+
+
+def cuadro(color: str, tam: int = 10) -> str:
+    return f'<span class="tfi-cuadro" style="background:{color};width:{tam}px;height:{tam}px"></span>'
+
+
+def barra(valor, color: str, alto: int = 8, maximo: float = 100, marca=None) -> str:
+    """Barra horizontal de progreso (0..maximo); `marca` dibuja una rayita gris (por ej. el curso)."""
+    ancho = 0 if valor is None or pd.isna(valor) else max(0, min(100, 100 * float(valor) / maximo))
+    raya = ""
+    if marca is not None and pd.notna(marca):
+        x = max(0, min(100, 100 * float(marca) / maximo))
+        raya = (f'<span style="position:absolute;left:calc({x:.1f}% - 1px);top:-3px;width:2px;'
+                f'height:{alto + 6}px;background:{TINTA_2};border-radius:1px"></span>')
+    return (f'<div class="fi-barra" style="height:{alto}px;overflow:visible">'
+            f'<span style="width:{ancho:.1f}%;background:{color}"></span>{raya}</div>')
+
+
+def grafico(fig, contenedor=st) -> None:
+    """Gráfico de plotly con la plantilla de la app (fondo transparente, Inter) y sin la
+    barra de herramientas. theme=None: si no, el tema de Streamlit pisa la plantilla.
+    Los fondos van explícitos porque Streamlit igual pone los del tema si vienen de la plantilla."""
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    contenedor.plotly_chart(fig, width="stretch", theme=None, config={"displayModeBar": False})
+
+
+def html(bloque: str) -> None:
+    """Dibuja un bloque HTML del diseño (sin iframe: hereda fuentes y estilos de la app).
+    Va por st.markdown y no por st.html porque st.html borra los SVG (íconos y minigráficos).
+    Se junta todo en una línea para que markdown no lea la sangría como bloque de código."""
+    st.markdown(" ".join(linea.strip() for linea in bloque.splitlines() if linea.strip()),
+                unsafe_allow_html=True)
 
 
 def tarjetas(items: list, columnas: int | None = None) -> None:
@@ -594,11 +739,6 @@ _FORMAS = {
     "neutro": "border-radius:50%;background:transparent !important;box-shadow:inset 0 0 0 1.6px currentColor",
     "azul": "border-radius:50%",
 }
-
-
-def esc(texto) -> str:
-    """Escapa texto que viene de los datos antes de meterlo en HTML."""
-    return html_lib.escape("" if texto is None else str(texto))
 
 
 def icono(tono: str, tam: int = 12) -> str:
@@ -810,11 +950,6 @@ ICONOS_SVG = {
                 '6.5v7.5" stroke="currentColor" stroke-width="1.4"/></svg>',
 }
 ICONO_TONO = {"exito": "ok", "atencion": "atencion", "error": "error", "info": "info"}
-
-
-def html(contenido: str) -> None:
-    """Escribe HTML (las piezas de abajo devuelven texto para poder combinarlas)."""
-    st.markdown(contenido, unsafe_allow_html=True)
 
 
 def titulo(texto: str, descripcion: str = "") -> None:
