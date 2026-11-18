@@ -81,3 +81,15 @@ def test_bloque_de_riesgo_para_la_ficha(carpeta_pipeline, monkeypatch):
     at = AppTest.from_function(ficha, default_timeout=120).run()
     assert not at.exception, at.exception
     assert any("riesgo de abandono" in m.value for m in at.markdown)
+
+
+def test_predictor_con_corte_pasado_y_otro_umbral(app):
+    """Con una fecha de corte del pasado aparece el botón para volver; mover el umbral no rompe la página."""
+    app.date_input(key="fecha_corte").set_value("2025-10-10").run()
+    app.switch_page("paginas/ml_abandono.py").run()
+    assert not app.exception, app.exception
+    assert app.button(key="ab_volver") is not None
+    app.select_slider(key="ab_umbral_alto").set_value(25.0).run()
+    assert not app.exception, app.exception
+    app.button(key="ab_umbral_reset").click().run()
+    assert not app.exception, app.exception

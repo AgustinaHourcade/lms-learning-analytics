@@ -2,31 +2,41 @@
 
 Todo el cálculo está en src/ml_grupos.py; esta página solo lo muestra.
 El modelo se ajusta con las tres materias juntas: el filtro de materia de la
-barra lateral recorta lo que se ve, pero no cambia los grupos."""
+barra lateral recorta lo que se ve, pero no cambia los grupos.
+Usa el sistema de diseño de componentes.py (como el predictor de abandono)."""
 import re
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 import componentes as comp
 from src.config import GRUPOS_K
 from src.ml_grupos import SIN_GRUPO
 
-f = comp.encabezado(
+T = comp.TONOS
+f = comp.cabecera(
     "Grupos de alumnos",
-    "Agrupamos a los alumnos con **K-Means** según cómo usan el aula y cómo les va: sesiones, minutos, "
-    "semanas con actividad, avance y nota. Cada alumno se compara con **su materia**, así que "
-    "\"poca actividad\" quiere decir poca para su curso. Sirve para mirar unos pocos perfiles, cada uno con "
-    "una acción, en vez de cientos de alumnos uno por uno.")
+    "Unos pocos perfiles en vez de cientos de alumnos uno por uno. Se arman con <strong>K-Means</strong> sobre "
+    "cinco variables (sesiones, minutos, semanas con actividad, avance y nota), comparando a cada alumno "
+    "<strong>con su propia materia</strong>, así que “poca actividad” significa poca para su curso.")
 
-# Un color fijo por tipo de grupo (de mejor a peor perfil), siempre con el nombre al lado.
-COLORES_GRUPO = {"Comprometidos": comp.BIEN, "Eficientes": comp.CATEGORICA[0],
-                 "Esforzados con nota baja": comp.ATENCION, "Intermitentes": comp.SERIO,
-                 "Desconectados": comp.CRITICO, SIN_GRUPO: comp.NEUTRO}
-ICONOS_GRUPO = {"Comprometidos": "🟢", "Eficientes": "🔵", "Esforzados con nota baja": "🟡",
-                "Intermitentes": "🟠", "Desconectados": "🔴", SIN_GRUPO: "⚪"}
-DIVERGENTE = [comp.CATEGORICA[1], "#f4f3ef", comp.CATEGORICA[0]]   # abajo del promedio / promedio / arriba
+# Tono fijo por tipo de grupo (de mejor a peor perfil): color + forma + nombre.
+TONO_GRUPO = {"Comprometidos": "bajo", "Eficientes": "azul", "Esforzados con nota baja": "naranja",
+              "Intermitentes": "medio", "Desconectados": "alto", SIN_GRUPO: "neutro"}
+# Qué hacer con cada grupo (texto del recuadro de la tarjeta).
+ACCION = {
+    "Comprometidos": lambda g: (f"<strong>Sin acción.</strong> Ojo igual: {comp.pct(g.get('pct_libre'), 0)} queda "
+                                "libre; estar en este grupo no garantiza nada."),
+    "Eficientes": lambda g: "<strong>Sin acción.</strong> Rinden bien entrando poco: no hace falta empujarlos.",
+    "Esforzados con nota baja": lambda g: ("<strong>Necesitan apoyo con el contenido</strong> (tutoría, consultas), "
+                                           "no recordatorios: ya entran."),
+    "Intermitentes": lambda g: (f"<strong>Es el grupo que se puede dar vuelta:</strong> entran, avanzaron "
+                                f"{comp.pct(g['mediana_avance'], 0)} del material y no rinden."),
+    "Desconectados": lambda g: ("<strong>Abandono de hecho.</strong> Un mail masivo no alcanza: contacto individual "
+                                "o baja formal."),
+}
 
 
 def tipo(nombre: str) -> str:
@@ -34,12 +44,30 @@ def tipo(nombre: str) -> str:
     return re.sub(r" \(\d+\)$", "", nombre)
 
 
+def tono(nombre: str) -> str:
+    return TONO_GRUPO.get(tipo(nombre), "neutro")
+
+
+CORTOS = {"sesiones": "Sesiones", "minutos": "Minutos", "semanas_activas": "Semanas activas",
+          "avance": "Avance", "nota_pct": "Nota"}
+
+
 # --- Cantidad de grupos -----------------------------------------------------
-AUTO = "Automático (silhouette)"
-eleccion = st.segmented_control("Cantidad de grupos", [AUTO, *[str(k) for k in GRUPOS_K]], default=AUTO,
-                                key="ml_k", help="Por defecto se elige el k con mayor silhouette entre 3 y 6. "
-                                                 "Se puede forzar otro para comparar.")
+try:   # antes de la primera evaluación no hay con qué armar grupos (se avisa más abajo)
+    evaluacion = comp.metrica("evaluar_k")
+except ValueError:
+    evaluacion = pd.DataFrame(columns=["k", "silhouette", "inercia", "candidato"])
+cand = evaluacion[evaluacion["candidato"].astype(bool)]
+k_auto = int(cand.loc[cand["silhouette"].idxmax(), "k"]) if not cand.empty else None
+AUTO = "Automático"
+st.html('<p class="tfi tfi-et" style="margin:4px 0 -6px">Cantidad de grupos</p>')
+eleccion = st.segmented_control(
+    "Cantidad de grupos", [AUTO, *[str(k) for k in GRUPOS_K if k != k_auto]], default=AUTO, key="ml_k",
+    label_visibility="collapsed", format_func=lambda x: f"Automático · {k_auto}" if x == AUTO and k_auto else x)
 k = None if eleccion in (None, AUTO) else int(eleccion)
+if k_auto:
+    st.caption(f"{k_auto} es lo que elige el criterio de silhouette (el k entre 3 y 6 con grupos más separados). "
+               "Se puede forzar otro para comparar.")
 
 alumnos = comp.metrica("grupos_alumnos", k=k)
 if alumnos.empty or alumnos["grupo"].eq(0).all():
@@ -51,181 +79,240 @@ if alumnos.empty or alumnos["grupo"].eq(0).all():
 perfil = comp.metrica("perfil_grupos", k=k)
 perfil_materia = comp.metrica("perfil_grupos", k=k, por_materia=True)
 centros = comp.metrica("centroides", k=k)
-evaluacion = comp.metrica("evaluar_k")
 k_usado = int(perfil["grupo"].max())
-colores = {n: COLORES_GRUPO.get(tipo(n), comp.NEUTRO) for n in perfil["nombre_grupo"]}
+colores = {n: T[tono(n)]["fuerte"] for n in perfil["nombre_grupo"]}
 orden = perfil.sort_values("grupo")["nombre_grupo"].tolist()
+con_grupo = perfil[perfil["grupo"] > 0]
 
 sin_grupo = alumnos["grupo"].eq(0).sum()
 if sin_grupo:
     materias_sin = ", ".join(alumnos.loc[alumnos["grupo"].eq(0), "asignatura"].map(comp.SIGLAS).unique())
-    st.warning(f"{comp.num(sin_grupo)} alumnos quedan **sin grupo**: su materia ({materias_sin}) todavía no "
-               "tiene evaluaciones a esta fecha de corte.", icon=":material/warning:")
+    st.html(f'<div class="tfi tfi-card" style="background:{T["medio"]["fondo"]};border-color:{T["medio"]["borde"]};'
+            f'padding:12px 16px"><p class="tfi-p" style="color:{T["medio"]["texto"]};display:flex;gap:8px;'
+            f'align-items:center">{comp.icono("medio", 13)}{comp.num(sin_grupo)} alumnos quedan sin grupo: su '
+            f"materia ({materias_sin}) todavía no tiene evaluaciones a esta fecha de corte.</p></div>")
+
+
+def _ver(nombre: str) -> None:
+    st.session_state["ml_grupos"] = [nombre]
+
 
 # --- Los grupos ---------------------------------------------------------------
-st.subheader(f"Los {k_usado} grupos")
-con_grupo = perfil[perfil["grupo"] > 0]
-cols = st.columns(len(con_grupo))
-for col, (_, g) in zip(cols, con_grupo.iterrows()):
-    with col.container(border=True):
-        st.markdown(f"**{ICONOS_GRUPO.get(tipo(g['nombre_grupo']), '⚪')} {g['nombre_grupo']}**")
-        st.metric(f"Alumnos · {comp.pct(g['pct'])} de la base", comp.num(g["alumnos"]))
-        st.caption(g["descripcion_grupo"])
-        st.markdown(
-            f"- **{comp.num(g['mediana_sesiones'])}** sesiones · **{comp.num(g['mediana_minutos'])}** min\n"
-            f"- **{comp.num(g['mediana_semanas_activas'])}** semanas con actividad\n"
-            f"- Avance **{comp.pct(g['mediana_avance'], 0)}** · nota **{comp.num(g['mediana_nota_pct'])}**\n"
-            f"- Libre **{comp.pct(g.get('pct_libre'), 0)}** · activos hoy **{comp.pct(g['pct_activos'], 0)}**")
-st.caption("Medianas de cada grupo. Nota sobre 100 a la fecha de corte; el avance es el del reporte de "
-           "participación (foto al 24/10).")
+semanas_max = int(alumnos["semanas_activas"].max() or 0)
+for fila in range(0, len(con_grupo), 3):
+    cols = st.columns(3, gap="small")
+    for col, (_, g) in zip(cols, con_grupo.iloc[fila:fila + 3].iterrows()):
+        nombre, tn = g["nombre_grupo"], tono(g["nombre_grupo"])
+        t = T[tn]
+        datos = [("Sesiones · minutos", f"{comp.num(g['mediana_sesiones'])} · {comp.num(g['mediana_minutos'])}"),
+                 ("Semanas con actividad", f"{comp.num(g['mediana_semanas_activas'])} de {semanas_max}"),
+                 ("Avance · nota", f"{comp.pct(g['mediana_avance'], 0)} · {comp.num(g['mediana_nota_pct'])}"),
+                 ("Activos hoy", f'<span style="color:{t["texto"]}">{comp.pct(g["pct_activos"], 0)}</span>')]
+        accion = ACCION.get(tipo(nombre), lambda g: "")(g)
+        with col, comp.tarjeta_color(f"g{int(g['grupo'])}", tn):
+            st.html(comp.encabezado_color(nombre, comp.num(g["alumnos"]), f"{comp.pct(g['pct'])} de la base", tn)
+                    + f'<div class="tfi"><p class="tfi-p" style="font-size:13px;color:{comp.TOKENS["texto"]};'
+                      f'margin-bottom:10px">{comp.esc(g["descripcion_grupo"]).split(". ")[0].rstrip(".")}.</p>'
+                    + "".join(f'<div class="tfi-dato"><span>{a}</span><b>{b}</b></div>' for a, b in datos)
+                    + (f'<div class="tfi-accion" style="background:{t["fondo"]};color:{t["texto"]}">{accion}</div>'
+                       if accion else "") + "</div>")
+            if tipo(nombre) not in ("Comprometidos", "Eficientes"):
+                st.button(f"Ver los {comp.num(g['alumnos'])}", key=f"ml_ver_{int(g['grupo'])}",
+                          on_click=_ver, args=(nombre,))
+st.html('<p class="tfi tfi-pie" style="margin:-4px 0 4px">Medianas de cada grupo. Nota sobre 100 a la fecha de '
+        "corte; el avance sale del reporte de participación, que es una foto al 24/10.</p>")
 
-izq, der = st.columns(2)
+# --- Qué distingue + por materia --------------------------------------------------
+izq, der = st.columns([1.15, 1], gap="small")
 with izq:
-    st.markdown("**Qué distingue a cada grupo**")
-    mapa = (centros.pivot(index="nombre_grupo", columns="descripcion", values="desvios")
-                   .reindex([n for n in orden if n in set(centros["nombre_grupo"])]))
-    fig = px.imshow(mapa, text_auto=".1f", aspect="auto", zmin=-2, zmax=2, color_continuous_scale=DIVERGENTE,
-                    labels={"x": "", "y": "", "color": "Desvíos"})
-    fig.update_layout(height=320, coloraxis_colorbar=dict(title="Desvíos"))
-    fig.update_xaxes(tickangle=-20)
-    st.plotly_chart(fig, width="stretch")
-    st.caption("Centro de cada grupo, en desvíos respecto del promedio de su materia: 0 = el promedio, "
-               "+1 = bastante por encima, −1 = bastante por debajo.")
+    bloques, cercano = [], None
+    for nombre in [n for n in orden if n in set(centros["nombre_grupo"])]:
+        c = centros[centros["nombre_grupo"].eq(nombre)].assign(a=lambda x: x["desvios"].abs())
+        c = c.sort_values("a", ascending=False)
+        if cercano is None or c["a"].mean() < cercano[1]:
+            cercano = (nombre, c["a"].mean(), c.iloc[0])
+        t = T[tono(nombre)]
+        bloques.append(f'<p class="tfi-h3" style="font-size:13px;margin:6px 0 8px;color:{t["texto"]}">'
+                       f'<span style="color:{t["fuerte"]};display:flex">{comp.icono(tono(nombre))}</span>'
+                       f'{comp.esc(nombre)}</p>'
+                       + "".join(comp.barra_divergente(CORTOS.get(r["variable"], r["descripcion"]), r["desvios"], t["fuerte"])
+                                 for _, r in c.iterrows())
+                       + '<div style="height:10px"></div>')
+    nota = ""
+    if cercano is not None:
+        nombre, _, mayor = cercano
+        nota = (f'<p class="tfi-nota">Los <strong>{comp.esc(nombre)}</strong> son los más cercanos al promedio: su '
+                f'diferencia más grande es {CORTOS.get(mayor["variable"], mayor["descripcion"]).lower()} '
+                f'({comp.num(mayor["desvios"], 1).replace("-", "−")} desvíos).</p>')
+    st.html('<div class="tfi tfi-card" style="height:100%">'
+            + comp.titulo_tarjeta("Qué distingue a cada grupo", "Centro de cada grupo en desvíos respecto del "
+                                  "promedio de su materia: 0 es el promedio (la línea del medio), +1 bastante por "
+                                  "encima, −1 bastante por debajo.")
+            + "".join(bloques) + nota + "</div>")
+
 with der:
-    st.markdown("**Cuántos hay de cada grupo en cada materia**")
-    pm = perfil_materia.assign(materia=perfil_materia["asignatura"].map(comp.SIGLAS))
-    fig = px.bar(pm, x="pct", y="materia", color="nombre_grupo", orientation="h", text="pct",
-                 color_discrete_map=colores, category_orders={"nombre_grupo": orden},
-                 labels={"pct": "% de la base", "materia": "", "nombre_grupo": "Grupo"},
-                 hover_data={"alumnos": True})
-    fig.update_traces(texttemplate="%{text:.0f} %", textposition="inside")
-    fig.update_layout(height=320, xaxis_range=[0, 100])
-    st.plotly_chart(fig, width="stretch")
+    filas = []
+    pm = perfil_materia[perfil_materia["grupo"] > 0]
+    for asig, sub in pm.groupby("asignatura"):
+        sub = sub.set_index("nombre_grupo").reindex([n for n in orden if n in set(sub["nombre_grupo"])])
+        filas.append(comp.fila_barra(asig.split(" ")[0], [(n, r["pct"], colores[n], comp.pct(r["pct"], 0))
+                                                           for n, r in sub.iterrows()]))
+    nota_mat = ""
+    desc = pm[pm["nombre_grupo"].map(tipo).eq("Desconectados")]
+    if len(desc) > 1:
+        lo, hi = desc["pct"].min(), desc["pct"].max()
+        frase = (f"El {comp.pct(hi, 0)} de desconectados es casi igual en las tres." if hi - lo <= 3 else
+                 f"Los desconectados van del {comp.pct(lo, 0)} al {comp.pct(hi, 0)} según la materia.")
+        nota_mat = (f'<p class="tfi-nota" style="margin-bottom:16px"><strong>{frase}</strong> Lo que más cambia entre '
+                    "materias es el reparto entre los otros grupos.</p>")
+    cond_filas = []
+    for _, g in con_grupo.iterrows():
+        segs = [("Promociona", g.get("pct_promociona", 0) or 0, T["bajo"]["fuerte"]),
+                ("Regular", g.get("pct_regular", 0) or 0, T["medio"]["fuerte"]),
+                ("Libre", g.get("pct_libre", 0) or 0, T["alto"]["fuerte"])]
+        cond_filas.append(comp.fila_barra(g["nombre_grupo"], [
+            (n, v, c, comp.pct(v, 0) + (" libre" if n == "Libre" and v >= 60 else "")) for n, v, c in segs], chica=True))
+    st.html('<div class="tfi tfi-card" style="height:100%">'
+            + comp.titulo_tarjeta("Cuántos hay en cada materia", "En % de la base de cada materia.")
+            + "".join(filas) + nota_mat
+            + '<h4 class="tfi-h3" style="font-size:13px;margin:0 0 4px">Los grupos no son la condición</h4>'
+            + '<p class="tfi-sub" style="margin-bottom:10px">Condición dentro de cada grupo.</p>'
+            + "".join(cond_filas)
+            + comp.leyenda([("Promociona", "bajo"), ("Regular", "medio"), ("Libre", "alto")])
+            + f'<p class="tfi-pie">Hay comprometidos que igual quedan libres y alumnos que entran mucho y están '
+              f"libres: el grupo describe el comportamiento, no el resultado.</p></div>")
 
 # --- Mapa de los grupos (PCA) ---------------------------------------------------
-st.subheader("Mapa de los grupos")
-st.markdown("El K-Means mira las 5 variables a la vez. Para poder dibujarlo, las resumimos en **2 ejes** con "
-            "PCA (análisis de componentes principales): cada punto es un alumno y alumnos parecidos quedan cerca. "
-            "La ✕ marca el centro de cada grupo.")
 mapa = comp.metrica("mapa_grupos", k=k)
 var1, var2 = mapa["varianza"]
 pts = mapa["alumnos"].assign(materia=lambda t: t["asignatura"].map(comp.SIGLAS))
-izq, der = st.columns([2, 1])
-with izq:
-    fig = px.scatter(pts, x="eje1", y="eje2", color="nombre_grupo", color_discrete_map=colores,
-                     category_orders={"nombre_grupo": orden}, opacity=0.65,
-                     hover_data={"id_alumno": True, "nombre_completo": True, "materia": True, "condicion": True,
-                                 "nota_pct": ":.1f", "minutos": ":.0f", "avance": True, "eje1": False, "eje2": False},
-                     labels={"eje1": f"Eje 1 · compromiso general ({comp.pct(var1, 0)} de la variación)",
-                             "eje2": f"Eje 2 · rinde más de lo que entra ({comp.pct(var2, 0)})",
-                             "nombre_grupo": "Grupo", "nombre_completo": "Alumno", "id_alumno": "ID",
-                             "materia": "Materia", "condicion": "Condición", "nota_pct": "Nota",
-                             "minutos": "Minutos", "avance": "Avance (%)"})
-    c = mapa["centros"]
-    fig.add_scatter(x=c["eje1"], y=c["eje2"], mode="markers", text=c["nombre_grupo"],
-                    marker=dict(symbol="x", size=16, color=[colores.get(n, comp.NEUTRO) for n in c["nombre_grupo"]],
-                                line=dict(width=2, color="#0b0b0b")),
-                    name="Centro", showlegend=False, hovertemplate="%{text}<extra>centro</extra>")
-    for _, centro in c.iterrows():   # etiqueta con fondo para que se lea sobre los puntos
-        fig.add_annotation(x=centro["eje1"], y=centro["eje2"], text=f"<b>{centro['nombre_grupo']}</b>",
-                           yshift=18, showarrow=False, bgcolor="rgba(255,255,255,0.85)",
-                           bordercolor=colores.get(centro["nombre_grupo"], comp.NEUTRO), borderpad=3)
-    fig.update_layout(height=460)
-    st.plotly_chart(fig, width="stretch")
-with der:
-    st.markdown("**Cómo leer los ejes**")
-    cargas = mapa["cargas"].melt(id_vars=["variable", "descripcion"], value_vars=["eje1", "eje2"],
-                                 var_name="eje", value_name="peso")
-    cargas["eje"] = cargas["eje"].map({"eje1": "Eje 1", "eje2": "Eje 2"})
-    cortos = {"sesiones": "Sesiones", "minutos": "Minutos", "semanas_activas": "Semanas activas",
-              "avance": "Avance", "nota_pct": "Nota"}
-    cargas["nombre"] = cargas["variable"].map(cortos)
-    fig = px.bar(cargas, x="peso", y="nombre", color="eje", barmode="group", orientation="h", text="peso",
-                 color_discrete_sequence=[comp.CATEGORICA[0], comp.CATEGORICA[1]],
-                 category_orders={"nombre": list(cortos.values())},
-                 hover_data={"descripcion": True, "nombre": False},
-                 labels={"peso": "Peso en el eje", "nombre": "", "eje": "", "descripcion": "Variable"})
-    fig.update_traces(texttemplate="%{text:.2f}", textposition="outside", cliponaxis=False)
-    fig.update_layout(height=320, xaxis_range=[-1, 1.15], margin=dict(l=8, r=24))
-    st.plotly_chart(fig, width="stretch")
-    st.markdown(
-        f"- **Eje 1 (horizontal, {comp.pct(var1, 0)}):** todas las variables pesan casi igual. A la derecha, los "
-        "que entran más, avanzan más y tienen mejor nota; a la izquierda, lo contrario.\n"
-        f"- **Eje 2 (vertical, {comp.pct(var2, 0)}):** contrapone nota y avance contra sesiones y minutos. Arriba, "
-        "los que rinden más de lo que entran; abajo, los que entran mucho para la nota que tienen.\n\n"
-        f"Entre los dos ejes resumen el **{comp.pct(var1 + var2, 0)}** de la información de las 5 variables, así "
-        "que el mapa representa bien lo que ve el modelo.")
-st.caption("Las variables están en desvíos respecto del promedio de cada materia (con logaritmo en sesiones y "
-           "minutos), igual que en el modelo: por eso los ejes no tienen unidades.")
+leyenda_grupos = comp.leyenda([(n, tono(n)) for n in orden if n in colores and tipo(n) != SIN_GRUPO])
+with comp.tarjeta("mapa"):
+    st.html('<div class="tfi">' + comp.titulo_tarjeta(
+        "Mapa de los grupos", "El modelo mira cinco variables a la vez. Para poder dibujarlo, se resumen en dos ejes "
+        "con PCA: cada punto es un alumno y los parecidos quedan cerca. La × es el centro de cada grupo.") + "</div>")
+    izq, der = st.columns([1.6, 1], gap="medium")
+    with izq:
+        st.html(f'<div class="tfi">{leyenda_grupos}</div>')
+        fig = px.scatter(pts, x="eje1", y="eje2", color="nombre_grupo", color_discrete_map=colores,
+                         category_orders={"nombre_grupo": orden}, opacity=0.7,
+                         hover_data={"id_alumno": True, "nombre_completo": True, "materia": True, "condicion": True,
+                                     "nota_pct": ":.1f", "minutos": ":.0f", "avance": True, "eje1": False,
+                                     "eje2": False},
+                         labels={"eje1": "− compromiso   ·   eje 1   ·   + compromiso", "eje2": "Eje 2",
+                                 "nombre_grupo": "Grupo", "nombre_completo": "Alumno", "id_alumno": "ID",
+                                 "materia": "Materia", "condicion": "Condición", "nota_pct": "Nota",
+                                 "minutos": "Minutos", "avance": "Avance (%)"})
+        fig.update_traces(marker=dict(size=6))
+        c = mapa["centros"]
+        fig.add_scatter(x=c["eje1"], y=c["eje2"], mode="markers", text=c["nombre_grupo"],
+                        marker=dict(symbol="x-thin", size=18, line=dict(width=4, color=[
+                            colores.get(n, comp.NEUTRO) for n in c["nombre_grupo"]])),
+                        name="Centro", showlegend=False, hovertemplate="%{text}<extra>centro</extra>")
+        fig.update_layout(height=420, showlegend=False, margin=dict(t=8, l=4, r=4, b=4),
+                          xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                          yaxis=dict(showgrid=False, zerolinecolor=comp.TOKENS["borde"], showticklabels=False))
+        st.plotly_chart(fig, width="stretch", theme=None, config={"displayModeBar": False})
+    with der:
+        st.html(f'<div class="tfi"><p class="tfi-et">Cómo leer los ejes</p>'
+                f'<div class="tfi-eje"><p class="t">Eje horizontal · {comp.pct(var1, 0)} de la variación</p><p>'
+                "Compromiso general: las cinco variables pesan casi igual. A la derecha, los que entran más, avanzan "
+                "más y tienen mejor nota.</p></div>"
+                f'<div class="tfi-eje"><p class="t">Eje vertical · {comp.pct(var2, 0)}</p><p>Contrapone nota y '
+                "avance contra sesiones y minutos. Arriba, los que rinden más de lo que entran; abajo, los que entran "
+                "mucho para la nota que sacan.</p></div>"
+                f'<p class="tfi-nota" style="margin-bottom:14px">Entre los dos resumen el <strong>'
+                f"{comp.pct(var1 + var2, 0)}</strong> de la información de las cinco variables, así que el mapa "
+                "representa bien lo que ve el modelo.</p>"
+                '<p class="tfi-pie">Las variables están en desvíos respecto del promedio de cada materia (con '
+                "logaritmo en sesiones y minutos), igual que en el modelo: por eso los ejes no tienen unidades.</p>"
+                "</div>")
 
 # --- Alumnos en las variables originales -----------------------------------------
-st.subheader("Cómo se ven los grupos en las variables originales")
-st.caption("Acá se ven solo 2 de las 5 variables y en sus unidades reales, así que los grupos se superponen: "
-           "un alumno puede estar cerca de otro grupo en minutos y nota, pero lejos en avance o semanas activas.")
 VARIABLES = {"minutos": "Minutos en la plataforma", "sesiones": "Sesiones",
              "semanas_activas": "Semanas con actividad", "avance": "Avance (%)"}
-variable = st.selectbox("Actividad (eje horizontal)", list(VARIABLES), format_func=VARIABLES.get, key="ml_var")
-puntos = alumnos[alumnos["grupo"] > 0].assign(materia=lambda t: t["asignatura"].map(comp.SIGLAS))
-fig = px.scatter(puntos, x=variable, y="nota_pct", color="nombre_grupo", facet_col="materia" if not f.asignatura else None,
-                 color_discrete_map=colores, category_orders={"nombre_grupo": orden}, opacity=0.75,
-                 log_x=variable in ("minutos", "sesiones"),
-                 hover_data={"id_alumno": True, "nombre_completo": True, "condicion": True, "materia": False},
-                 labels={variable: VARIABLES[variable], "nota_pct": "Nota (sobre 100)", "nombre_grupo": "Grupo",
-                         "nombre_completo": "Alumno", "id_alumno": "ID", "condicion": "Condición"})
-fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
-fig.update_layout(height=420)
-st.plotly_chart(fig, width="stretch")
-if variable in ("minutos", "sesiones"):
-    st.caption("Eje horizontal en escala logarítmica (los alumnos con 0 no se ven).")
-
-izq, der = st.columns(2)
-with izq:
-    st.markdown("**Condición de cada grupo**")
-    cond = (alumnos[alumnos["grupo"] > 0].groupby(["nombre_grupo", "condicion"]).size()
-            .rename("alumnos").reset_index())
-    cond["pct"] = 100 * cond["alumnos"] / cond.groupby("nombre_grupo")["alumnos"].transform("sum")
-    fig = px.bar(cond, x="pct", y="nombre_grupo", color="condicion", orientation="h", text="pct",
-                 color_discrete_map=comp.COLORES_CONDICION,
-                 category_orders={"nombre_grupo": orden, "condicion": ["Libre", "Regular", "Promociona"]},
-                 labels={"pct": "% del grupo", "nombre_grupo": "", "condicion": "Condición"},
-                 hover_data={"alumnos": True})
-    fig.update_traces(texttemplate="%{text:.0f} %", textposition="inside")
-    fig.update_layout(height=280, xaxis_range=[0, 100])
-    st.plotly_chart(fig, width="stretch")
-with der:
-    st.markdown("**Estado de actividad de cada grupo**")
-    act = (alumnos[alumnos["grupo"] > 0].groupby(["nombre_grupo", "estado_actividad"]).size()
-           .rename("alumnos").reset_index())
-    act["pct"] = 100 * act["alumnos"] / act.groupby("nombre_grupo")["alumnos"].transform("sum")
-    fig = px.bar(act, x="pct", y="nombre_grupo", color="estado_actividad", orientation="h", text="pct",
-                 color_discrete_map=comp.COLORES_ACTIVIDAD, category_orders={"nombre_grupo": orden},
-                 labels={"pct": "% del grupo", "nombre_grupo": "", "estado_actividad": "Actividad"},
-                 hover_data={"alumnos": True})
-    fig.update_traces(texttemplate="%{text:.0f} %", textposition="inside")
-    fig.update_layout(height=280, xaxis_range=[0, 100])
-    st.plotly_chart(fig, width="stretch")
-st.caption(f"Los grupos no son lo mismo que la condición ni que el estado de actividad (inactivo = más de "
-           f"{f.umbral} días sin entrar): hay alumnos que entran mucho y están libres, y otros comprometidos "
-           "que dejaron de entrar hace poco.")
+with comp.tarjeta("variables"):
+    izq, der = st.columns([3, 1], vertical_alignment="bottom")
+    izq.html('<div class="tfi">' + comp.titulo_tarjeta(
+        "Los grupos en las variables reales", "Acá se ven solo 2 de las 5 variables, así que los grupos se "
+        "superponen: un alumno puede estar cerca de otro grupo en minutos y nota, y lejos en avance o semanas "
+        "activas.").replace('class="tfi-sub"', 'class="tfi-sub" style="margin-bottom:0"') + "</div>")
+    variable = der.selectbox("Variable del eje horizontal", list(VARIABLES), format_func=VARIABLES.get,
+                             key="ml_var", label_visibility="collapsed")
+    puntos = alumnos[alumnos["grupo"] > 0].assign(materia=lambda t: t["asignatura"])
+    log = variable in ("minutos", "sesiones")
+    if log:
+        puntos = puntos[puntos[variable] > 0]
+    fig = px.scatter(puntos, x=variable, y="nota_pct", color="nombre_grupo",
+                     facet_col="materia" if not f.asignatura else None, facet_col_spacing=0.05,
+                     color_discrete_map=colores, category_orders={"nombre_grupo": orden}, opacity=0.75, log_x=log,
+                     hover_data={"id_alumno": True, "nombre_completo": True, "condicion": True, "materia": False},
+                     labels={variable: VARIABLES[variable], "nota_pct": "Nota", "nombre_grupo": "Grupo",
+                             "nombre_completo": "Alumno", "id_alumno": "ID", "condicion": "Condición"})
+    fig.for_each_annotation(lambda a: a.update(text=f"<b>{a.text.split('=')[-1]}</b>", font=dict(
+        family=comp.FUENTE, size=12, color=comp.TOKENS["tinta"])))
+    fig.update_traces(marker=dict(size=6))
+    fig.update_layout(height=330, showlegend=False, margin=dict(t=30, l=4, r=4, b=4))
+    fig.update_yaxes(range=[-5, 105])
+    st.plotly_chart(fig, width="stretch", theme=None, config={"displayModeBar": False})
+    st.html(leyenda_grupos + ('<p class="tfi tfi-pie">Eje horizontal en escala logarítmica; los alumnos con 0 no se '
+                              "ven.</p>" if log else ""))
 
 # --- Lista de alumnos ------------------------------------------------------------
-st.subheader("Alumnos por grupo")
-elegidos = st.multiselect("Grupos", orden, default=[n for n in orden if tipo(n) != "Comprometidos"], key="ml_grupos",
-                          help="Por defecto, los grupos que piden alguna acción.")
-lista = alumnos[alumnos["nombre_grupo"].isin(elegidos)]
-tabla = pd.DataFrame({
-    "Materia": lista["asignatura"].map(comp.SIGLAS), "ID": lista["id_alumno"], "Alumno": lista["nombre_completo"],
-    "Grupo": lista["nombre_grupo"].map(lambda n: f"{ICONOS_GRUPO.get(tipo(n), '⚪')} {n}"),
-    "Condición": comp.con_icono(lista["condicion"], comp.ICONOS_CONDICION),
-    "Nota": lista["nota_pct"], "Sesiones": lista["sesiones"], "Minutos": lista["minutos"],
-    "Semanas activas": lista["semanas_activas"], "Avance (%)": lista["avance"],
-    "Días sin entrar": lista["dias_sin_actividad"],
-})
-st.dataframe(tabla, hide_index=True, width="stretch",
-             column_config={"Nota": st.column_config.NumberColumn(format="%.1f"),
-                            "Minutos": st.column_config.NumberColumn(format="%.0f")})
-st.caption(f"{comp.num(len(tabla))} alumnos.")
-comp.boton_csv(tabla, "grupos_alumnos")
+with comp.tarjeta("lista"):
+    st.session_state.setdefault("ml_grupos", [n for n in orden if tipo(n) not in ("Comprometidos", "Eficientes")])
+    st.session_state["ml_grupos"] = [n for n in st.session_state["ml_grupos"] if n in orden]
+    elegidos = st.session_state["ml_grupos"]
+    lista = alumnos[alumnos["nombre_grupo"].isin(elegidos)].sort_values(["nombre_completo", "asignatura"])
+    st.html('<div class="tfi">' + comp.titulo_tarjeta(
+        "Alumnos por grupo", f"{comp.num(len(lista))} alumnos en los grupos seleccionados.") + "</div>")
+    st.pills("Grupos", orden, selection_mode="multi", key="ml_grupos", label_visibility="collapsed",
+             format_func=lambda n: f"{n} ({comp.num(int(alumnos['nombre_grupo'].eq(n).sum()))})")
+    COLOR_COND = {"Libre": T["alto"]["texto"], "Regular": T["medio"]["texto"], "Promociona": T["bajo"]["texto"]}
+    if lista.empty:
+        st.caption("Elegí al menos un grupo para ver la lista.")
+    else:
+        filas = []
+        for _, r in lista.head(300).iterrows():
+            tg = T[tono(r["nombre_grupo"])]
+            filas.append([
+                f'<strong style="font-weight:600">{comp.esc(r["nombre_completo"])}</strong><br>'
+                f'<span class="sec num">{comp.esc(r["id_alumno"])}</span>',
+                comp.insignia_materia(r["asignatura"]),
+                f'<span style="display:inline-flex;align-items:center;gap:6px;font-weight:500;color:{tg["texto"]}">'
+                f'<span style="color:{tg["fuerte"]};display:flex">{comp.icono(tono(r["nombre_grupo"]))}</span>'
+                f'{comp.esc(r["nombre_grupo"])}</span>',
+                f'<span style="font-weight:500;color:{COLOR_COND.get(r["condicion"], comp.TOKENS["texto_2"])}">'
+                f'{comp.esc(r["condicion"])}</span>',
+                comp.num(r["nota_pct"], 1), comp.num(r["sesiones"]), comp.num(r["minutos"]),
+                comp.num(r["semanas_activas"]),
+                (f'<span style="font-weight:600;color:{T["bajo"]["texto"]}">{comp.pct(r["avance"], 0)}</span>'
+                 if pd.notna(r["avance"]) and r["avance"] >= 80 else comp.pct(r["avance"], 0)),
+                f'{comp.num(r["dias_sin_actividad"])} d' if pd.notna(r["dias_sin_actividad"]) else "–",
+            ])
+        st.html(comp.tabla_html(["Alumno", "Materia", "Grupo", "Condición", "Nota", "Sesiones", "Minutos",
+                                 "Semanas", "Avance", "Sin entrar"], filas,
+                                ["", "", "", "", "num", "num", "num", "num", "num", "num"]))
+        # Una frase sobre el caso más llamativo: mucho avance y nota baja (leyó y no rinde).
+        caso = lista[(lista["avance"] >= 70) & (lista["nota_pct"] < 40)].assign(
+            gap=lambda t: t["avance"] - t["nota_pct"]).sort_values("gap", ascending=False)
+        pie = (f"Se muestran los primeros 300 de {comp.num(len(lista))}; el CSV tiene todos. " if len(lista) > 300
+               else "")
+        if not caso.empty:
+            c0 = caso.iloc[0]
+            pie += (f"{comp.esc(c0['nombre_completo'])} tiene {comp.pct(c0['avance'], 0)} de avance y nota "
+                    f"{comp.num(c0['nota_pct'])}: leyó casi toda la materia y no rinde. Es el perfil que más "
+                    "justifica un mensaje antes del cierre.")
+        if pie:
+            st.html(f'<p class="tfi tfi-pie">{pie}</p>')
+        tabla = pd.DataFrame({
+            "Materia": lista["asignatura"].map(comp.SIGLAS), "ID": lista["id_alumno"],
+            "Alumno": lista["nombre_completo"], "Grupo": lista["nombre_grupo"], "Condición": lista["condicion"],
+            "Nota": lista["nota_pct"], "Sesiones": lista["sesiones"], "Minutos": lista["minutos"],
+            "Semanas activas": lista["semanas_activas"], "Avance (%)": lista["avance"],
+            "Días sin entrar": lista["dias_sin_actividad"],
+        })
+        comp.boton_csv(tabla, "grupos_alumnos", f"Descargar CSV ({comp.num(len(tabla))})")
 
 # --- Cómo se eligió k ------------------------------------------------------------
 with st.expander("Cómo se armaron los grupos y qué tan confiables son", icon=":material/science:"):
@@ -238,17 +325,21 @@ with st.expander("Cómo se armaron los grupos y qué tan confiables son", icon="
         "cada alumno de su grupo comparado con el grupo más cercano (de −1 a 1). k = 2 se muestra como "
         "referencia, pero no se elige: solo separa \"entran / no entran\", que ya lo dice el estado de actividad.\n"
         "5. **Nombres:** salen del centro de cada grupo (cuánta actividad y qué nota tiene respecto de su materia).")
-    ev = evaluacion.assign(tipo=evaluacion["candidato"].map({True: "Candidato", False: "Referencia"}))
+    azul, rojo = comp.TOKENS["azul"], T["alto"]["fuerte"]
     c1, c2 = st.columns(2)
-    fig = px.line(ev, x="k", y="silhouette", markers=True, title="Silhouette (más alto = grupos más separados)")
-    fig.add_scatter(x=[k_usado], y=ev.loc[ev["k"].eq(k_usado), "silhouette"], mode="markers",
-                    marker=dict(size=14, color=comp.CATEGORICA[1]), name="Usado")
-    fig.update_layout(height=300, showlegend=False, xaxis_dtick=1)
-    c1.plotly_chart(fig, width="stretch")
-    fig = px.line(ev, x="k", y="inercia", markers=True, title="Inercia (dónde deja de bajar mucho = codo)")
-    fig.update_layout(height=300, xaxis_dtick=1)
-    c2.plotly_chart(fig, width="stretch")
-    sil = ev.loc[ev["k"].eq(k_usado), "silhouette"].item()
+    fig = go.Figure(go.Scatter(x=evaluacion["k"], y=evaluacion["silhouette"], mode="lines+markers",
+                               line=dict(color=azul, width=2), marker=dict(size=7)))
+    fig.add_scatter(x=[k_usado], y=evaluacion.loc[evaluacion["k"].eq(k_usado), "silhouette"], mode="markers",
+                    marker=dict(size=14, color=rojo), name="Usado")
+    fig.update_layout(height=300, showlegend=False, xaxis_dtick=1, xaxis_title="k", yaxis_title="Silhouette",
+                      title="Silhouette (más alto = grupos más separados)")
+    c1.plotly_chart(fig, width="stretch", theme=None)
+    fig = go.Figure(go.Scatter(x=evaluacion["k"], y=evaluacion["inercia"], mode="lines+markers",
+                               line=dict(color=azul, width=2), marker=dict(size=7)))
+    fig.update_layout(height=300, xaxis_dtick=1, xaxis_title="k", yaxis_title="Inercia",
+                      title="Inercia (dónde deja de bajar mucho = codo)")
+    c2.plotly_chart(fig, width="stretch", theme=None)
+    sil = evaluacion.loc[evaluacion["k"].eq(k_usado), "silhouette"].item()
     st.markdown(
         f"Con k = {k_usado} el silhouette es **{comp.num(sil, 2)}**: una estructura moderada. Los alumnos no "
         "forman tipos bien separados sino un continuo de \"más o menos enganchados\", y los grupos son una forma "

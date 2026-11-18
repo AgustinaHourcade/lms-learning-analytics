@@ -13,7 +13,6 @@ st.set_page_config(page_title="LMS Learning Analytics", page_icon=":material/sch
 
 import componentes as comp  # noqa: E402  (después de set_page_config)
 
-comp.estilos()
 comp.asegurar_gold()
 
 PAGINAS = {
@@ -42,5 +41,6 @@ PAGINAS = {
 }
 
 pagina = st.navigation(PAGINAS)
+comp.estilos()   # después de st.navigation: lo que se dibuja antes se pierde al cambiar de página
 comp.barra_lateral()
 pagina.run()
