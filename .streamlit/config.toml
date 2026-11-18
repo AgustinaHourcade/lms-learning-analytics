@@ -1,58 +1,40 @@
 # Configuración de Streamlit (se lee desde la raíz del repo, también en Streamlit Cloud).
-# Tema del rediseño (D56): mismos valores que los tokens de app/componentes.py.
 
 [theme]
+# Sistema de diseño (rediseño del predictor de abandono): fondo cálido, azul institucional,
+# Inter para el texto, Space Grotesk para los títulos y
+# JetBrains Mono para código e IDs (D52). Los mismos valores están en
+# app/componentes.py (TOKENS) para el HTML propio y los gráficos de plotly.
 base = "light"
-primaryColor = "#1B4B8F"            # azul de acción
-backgroundColor = "#F7F6F3"         # fondo cálido
+primaryColor = "#1B4B8F"
+backgroundColor = "#F7F6F3"
 secondaryBackgroundColor = "#F1EFEA"
 textColor = "#1A1917"
 linkColor = "#1B4B8F"
+linkUnderline = false
 borderColor = "#E3E1DC"
 dataframeBorderColor = "#EFEDE8"
-dataframeHeaderBackgroundColor = "#FBFAF8"
+dataframeHeaderBackgroundColor = "#FCFBF9"
 dataframeHeaderTextColor = "#6B6861"
 showWidgetBorder = true
-showSidebarBorder = true
 baseRadius = "9px"
 buttonRadius = "9px"
-# Inter para el texto y Space Grotesk para títulos y números grandes (si no hay internet, cae en sans-serif).
-font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap, sans-serif"
-headingFont = "Space Grotesk:https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap, sans-serif"
-headingFontSizes = ["1.7rem", "1.2rem", "0.95rem", "0.9rem", "0.85rem", "0.8rem"]
-headingFontWeights = [600, 600, 600, 600, 600, 600]
 baseFontSize = 14
-metricValueFontSize = "1.75rem"
-metricValueFontWeight = 600
-# Semáforo (st.success / st.warning / st.error usan estos colores).
-greenColor = "#16734A"
-greenBackgroundColor = "#E6F2EB"
-greenTextColor = "#116040"
-yellowColor = "#C98A12"
-yellowBackgroundColor = "#FBF0DC"
-yellowTextColor = "#6B4700"
-redColor = "#B02A20"
-redBackgroundColor = "#FBE9E6"
-redTextColor = "#93241C"
-orangeColor = "#C2581A"
-orangeBackgroundColor = "#FBEFE6"
-orangeTextColor = "#8A4415"
-blueColor = "#1B4B8F"
-blueBackgroundColor = "#EAF0F8"
-blueTextColor = "#164279"
-grayColor = "#8A867C"
-grayBackgroundColor = "#EBE9E4"
-grayTextColor = "#35332D"
-# Misma paleta categórica que app/componentes.py (las 3 primeras son las materias: ALG, AED, PYE).
-chartCategoricalColors = ["#2563C9", "#D4661F", "#0E8F62", "#C98A12", "#8E5BB5", "#5E7D1E", "#C2417A", "#5B6B7A"]
-chartSequentialColors = ["#EEF3F9", "#D4E1F1", "#A9C4E6", "#7FA6D9", "#4B7FC4", "#2C63AA", "#1B4B8F", "#163E77", "#123663", "#0C2547"]
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap, sans-serif"
+headingFont = "Space Grotesk:https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap, Inter, sans-serif"
+codeFont = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap, monospace"
+headingFontWeights = [600, 600, 600, 600, 600, 600]
+# Misma paleta categórica que app/componentes.py (CATEGORICA): los colores de las materias primero
+# (Álgebra, AED, PyE), para los gráficos nativos (st.bar_chart, etc.)
+chartCategoricalColors = ["#2563C9", "#D4661F", "#0E8F62", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
 
 [theme.sidebar]
 backgroundColor = "#FCFBF9"
-secondaryBackgroundColor = "#F1EFEA"
+secondaryBackgroundColor = "#FFFFFF"
+borderColor = "#E3E1DC"
 
 [server]
-maxUploadSize = 50                  # MB; la trazabilidad completa pesa unos pocos MB
+maxUploadSize = 50                  # MB por archivo; la trazabilidad completa pesa unos pocos MB
 
 [browser]
 gatherUsageStats = false

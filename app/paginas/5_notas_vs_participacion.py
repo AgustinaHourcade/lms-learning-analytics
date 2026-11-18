@@ -1,4 +1,4 @@
-"""Dashboard 5 (del plan): Notas vs. participación. Diseño: rediseño D56.
+"""Dashboard 5 (del plan): Notas vs. participación. Diseño: componentes_notas.py.
 
 Responde, a la fecha de corte: ¿a los alumnos que más usan el aula les va
 mejor?, ¿qué forma de participar se asocia más con la nota? y ¿quiénes están
@@ -26,7 +26,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-import componentes as comp
+import componentes_notas as comp
 from src.config import CONDICIONES, ESQUEMA, SIN_EVALUACIONES
 from src.metricas import SIN_ACTIVIDAD, VARIABLES_CRUCE
 

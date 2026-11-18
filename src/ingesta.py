@@ -75,6 +75,7 @@ class InfoArchivo:
     fila_encabezado: int | None = None   # número de fila de Excel (empieza en 1)
     fecha_exportacion: datetime | None = None
     instrumento: str | None = None       # solo calificaciones
+    filas: int | None = None             # filas de datos (lo completa la validación)
     errores: list[str] = field(default_factory=list)
     avisos: list[str] = field(default_factory=list)
 
