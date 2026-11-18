@@ -14,7 +14,7 @@ cuánta gente sigue entrando y qué se movió desde 7 días antes?
 
 Todo sale de src.metricas vía comp.metrica() (D29, D47): la página no calcula
 reglas de negocio, solo agrega y dibuja. El diseño sigue el sistema visual de
-app/componentes.py (D51).
+app/componentes_general.py (D60).
 """
 from datetime import timedelta
 
@@ -22,7 +22,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-import componentes as comp
+import componentes_general as comp   # sistema visual propio de esta página (ver el módulo)
 from src.config import DIAS_INACTIVIDAD_LARGA, ESQUEMA, SIN_EVALUACIONES
 
 f = comp.encabezado(
@@ -86,24 +86,24 @@ with col_cond:
         f'{comp.delta(dif("", c), "pp", mejor[c]) or comp.pct(hoy["cond"][c])}</span>'
         for c in CONDICIONES[:3])
     sin_eval = hoy["base"] - hoy["con_nota"]
-    nota_sin = (f'<p class="tfi-txt" style="margin-top:10px">{comp.num(sin_eval)} alumnos todavía sin '
+    nota_sin = (f'<p class="gr-txt" style="margin-top:10px">{comp.num(sin_eval)} alumnos todavía sin '
                 f'evaluaciones a la fecha no entran en el reparto.</p>') if sin_eval else ""
     libre = hoy["cond"]["Libre"]
     lectura_cond = ""
     if hoy["con_nota"] and not pd.isna(libre):
         uno_de = round(100 / libre) if libre >= 20 else None
-        lectura_cond = (f'<p class="tfi-txt" style="margin-top:12px">Hoy {comp.pct(libre)} de los alumnos con nota '
+        lectura_cond = (f'<p class="gr-txt" style="margin-top:12px">Hoy {comp.pct(libre)} de los alumnos con nota '
                         f'queda libre'
                         + (f": aproximadamente uno de cada {uno_de} no llega a regularizar." if uno_de else ".")
                         + "</p>")
     comp.html(
-        f'<div class="tfi-tarjeta" style="padding:18px 20px">'
+        f'<div class="gr-tarjeta" style="padding:18px 20px">'
         f'<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between;'
-        f'margin-bottom:12px"><p class="tfi-etq">Condición proyectada · {comp.num(hoy["con_nota"])} '
+        f'margin-bottom:12px"><p class="gr-etq">Condición proyectada · {comp.num(hoy["con_nota"])} '
         f'{"alumnos" if f.asignatura else "alumnos × materia"}</p>'
-        f'<span class="tfi-tenue">variaciones contra el {fecha_ant}</span></div>',
+        f'<span class="gr-tenue">variaciones contra el {fecha_ant}</span></div>',
         comp.barra_apilada(segmentos, alto=34) if segmentos else
-        '<p class="tfi-txt">Todavía no hay evaluaciones a esta fecha.</p>',
+        '<p class="gr-txt">Todavía no hay evaluaciones a esta fecha.</p>',
         f'<div style="display:flex;flex-wrap:wrap;gap:20px;margin-top:12px">{variaciones}</div>',
         lectura_cond, nota_sin, "</div>",
     )
@@ -128,9 +128,9 @@ with col_kpis:
         no_rinden = int((arranque["tipo"] == "sin_notas").sum())
         with comp.tarjeta("alerta", gap="small"):
             comp.html(
-                f'<p class="tfi-etq" style="color:#8A3A31;margin-bottom:8px">Inscriptos sin arrancar</p>'
-                f'<p class="tfi-grande" style="color:#93241C">{comp.num(arranque[["asignatura", "id_alumno"]].drop_duplicates().shape[0])}</p>'
-                f'<p class="tfi-txt num" style="color:#8A3A31;margin-top:4px">{comp.num(nunca)} nunca entraron · '
+                f'<p class="gr-etq" style="color:#8A3A31;margin-bottom:8px">Inscriptos sin arrancar</p>'
+                f'<p class="gr-grande" style="color:#93241C">{comp.num(arranque[["asignatura", "id_alumno"]].drop_duplicates().shape[0])}</p>'
+                f'<p class="gr-txt num" style="color:#8A3A31;margin-top:4px">{comp.num(nunca)} nunca entraron · '
                 f'{comp.num(no_rinden)} entran y no rinden</p>')
             st.page_link("paginas/7_matricula_y_alertas.py", label="Ver a quiénes", icon=":material/arrow_forward:")
 
@@ -190,8 +190,8 @@ with tab_act:
         ]
         tramos = [t for t in tramos if t[2].any() or t[0] == "Activo"]
         partes = [
-            '<p class="tfi-h3">Quién sigue entrando</p>',
-            f'<p class="tfi-txt" style="margin-bottom:18px">Activo: entró en los últimos {f.umbral} días. '
+            '<p class="gr-h3">Quién sigue entrando</p>',
+            f'<p class="gr-txt" style="margin-bottom:18px">Activo: entró en los últimos {f.umbral} días. '
             f'El resto se abre según hace cuánto dejó de entrar.</p>',
         ]
         for m in materias:
@@ -203,9 +203,9 @@ with tab_act:
             activos = cuentas[0][2]
             partes += [
                 f'<p style="display:flex;justify-content:space-between;margin-bottom:7px;font:600 12px '
-                f'{comp.FUENTE}">{m}<span class="num tfi-tenue" style="color:{comp.TEXTO_3}">{comp.num(n)}</span></p>',
+                f'{comp.FUENTE}">{m}<span class="num gr-tenue" style="color:{comp.TEXTO_3}">{comp.num(n)}</span></p>',
                 comp.barra_apilada([(c / n * 100, color, comp.num(c)) for _, color, c in cuentas], alto=28, min_etiqueta=6),
-                f'<p class="num tfi-tenue" style="margin:6px 0 16px;color:{comp.TEXTO_3}">'
+                f'<p class="num gr-tenue" style="margin:6px 0 16px;color:{comp.TEXTO_3}">'
                 f'{comp.pct(activos / n * 100, 0)} activos</p>',
             ]
         partes.append(f'<div style="padding-top:14px;border-top:1px solid {comp.BORDE_SUAVE}">'
@@ -217,8 +217,8 @@ with tab_act:
                    "Minutos en la plataforma": "minutos"}
         c1, c2 = st.columns([1.6, 1], vertical_alignment="bottom")
         with c1:
-            comp.html('<p class="tfi-h3">Tendencia semanal</p>'
-                      '<p class="tfi-txt">Las líneas punteadas verticales son las evaluaciones ya tomadas, '
+            comp.html('<p class="gr-h3">Tendencia semanal</p>'
+                      '<p class="gr-txt">Las líneas punteadas verticales son las evaluaciones ya tomadas, '
                       'del color de su materia.</p>')
         medida = c2.selectbox("Medida", list(medidas), label_visibility="collapsed")
         evo = comp.metrica("evolucion_actividad", frecuencia="W")
@@ -234,7 +234,7 @@ with tab_act:
         fig.update_layout(height=330, hovermode="x unified", yaxis_rangemode="tozero",
                           xaxis=dict(showgrid=False, tickformat="%d/%m"), margin=dict(t=36, l=4, r=4, b=4))
         comp.grafico(fig)
-        comp.html(f'<p class="tfi-txt" style="padding:12px 14px;border-radius:10px;background:#FBFAF8">'
+        comp.html(f'<p class="gr-txt" style="padding:12px 14px;border-radius:10px;background:#FBFAF8">'
                   f'La fecha de cada evaluación es la mediana de los intentos registrados. La última semana '
                   f'puede estar incompleta si el corte cae a mitad de semana.</p>')
 
@@ -249,8 +249,8 @@ with tab_notas:
     col1, col2 = st.columns(2, gap="medium")
     with col1, comp.tarjeta("condicion"):
         orden = (resumen.reindex(materias)["pct_libre"].sort_values().index.tolist())
-        partes = ['<p class="tfi-h3">Condición por materia</p>',
-                  '<p class="tfi-txt" style="margin-bottom:18px">Ordenado de mejor a peor (menos libres primero). '
+        partes = ['<p class="gr-h3">Condición por materia</p>',
+                  '<p class="gr-txt" style="margin-bottom:18px">Ordenado de mejor a peor (menos libres primero). '
                   'Mismos colores y formas que el semáforo del resto de la app.</p>']
         for m in orden:
             dm = dist[dist["asignatura"] == m].set_index("condicion")["pct"]
@@ -267,8 +267,8 @@ with tab_notas:
         comp.html(*partes)
 
     with col2, comp.tarjeta("nota_promedio"):
-        comp.html('<p class="tfi-h3">Nota promedio</p>'
-                  '<p class="tfi-txt" style="margin-bottom:10px">Todo llevado a escala 100 para poder comparar; '
+        comp.html('<p class="gr-h3">Nota promedio</p>'
+                  '<p class="gr-txt" style="margin-bottom:10px">Todo llevado a escala 100 para poder comparar; '
                   'al lado, la nota en la escala real de cada materia.</p>')
         lugar_barras = st.empty()
         lugar_aviso = st.empty()
@@ -287,7 +287,7 @@ with tab_notas:
                 f'<span style="flex:0 0 96px;font:500 12px {comp.FUENTE}">{comp.NOMBRES_CORTOS[m]}</span>'
                 f'{comp.barra_simple(sobre_100, comp.COLORES_MATERIA[m])}'
                 f'<span class="num" style="flex:0 0 110px;text-align:right;font:600 13px {comp.FUENTE}">'
-                f'{comp.num(sobre_100, 1)} <span class="tfi-tenue" style="color:{comp.TEXTO_3}">· '
+                f'{comp.num(sobre_100, 1)} <span class="gr-tenue" style="color:{comp.TEXTO_3}">· '
                 f'{comp.num(real, 1)}/{comp.num(r["escala"])}</span></span></div>')
         with lugar_barras:
             comp.html(*filas)
@@ -307,9 +307,9 @@ with tab_notas:
                          f'display:inline-block"></span>{{}}</span>')
         comp.html(
             '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;justify-content:space-between">'
-            '<p class="tfi-h3">Distribución de notas</p><div style="display:flex;gap:14px">'
+            '<p class="gr-h3">Distribución de notas</p><div style="display:flex;gap:14px">'
             + corte_leyenda.format("dotted", "Corte de Regular") + corte_leyenda.format("dashed", "Corte de Promociona")
-            + '</div></div><p class="tfi-txt" style="max-width:88ch">Todas las notas llevadas a escala 100 '
+            + '</div></div><p class="gr-txt" style="max-width:88ch">Todas las notas llevadas a escala 100 '
             '(en Álgebra, 60 y 85 sobre 120 quedan en 50 y 70,8). Misma escala vertical en las tres, para que '
             'las alturas se puedan comparar.</p>')
         hist = notas[notas["rendidos"] > 0] if excluir else notas
@@ -344,7 +344,7 @@ with tab_notas:
                     n0 = int(sin_rendir.get(m, 0))
                     n_m = int((notas["asignatura"] == m).sum())
                     if n0:
-                        col.html(f'<p class="tfi" style="font:400 12px/1.5 {comp.FUENTE};color:{comp.TEXTO_2};margin:0">'
+                        col.html(f'<p class="gr" style="font:400 12px/1.5 {comp.FUENTE};color:{comp.TEXTO_2};margin:0">'
                                  f'{comp.num(n0)} alumnos en 0 por no rendir nada '
                                  f'({comp.pct(n0 / n_m * 100, 0)} de la materia).</p>')
         else:
@@ -366,23 +366,23 @@ with tab_mat:
         color_nota = comp.TONOS[tono_nota][2] if tono_nota else comp.TEXTO
         with col:
             comp.html(
-                f'<div class="tfi-tarjeta"><div style="display:flex;align-items:center;gap:9px;margin-bottom:14px;'
+                f'<div class="gr-tarjeta"><div style="display:flex;align-items:center;gap:9px;margin-bottom:14px;'
                 f'min-height:42px">'
                 f'{comp.cuadradito(comp.COLORES_MATERIA[m], 11)}'
                 f'<p style="flex:1 1 auto;font:600 16px {comp.FUENTE_TITULOS}">{m}</p>'
-                f'<span class="num tfi-tenue" style="color:{comp.TEXTO_3};white-space:nowrap">'
+                f'<span class="num gr-tenue" style="color:{comp.TEXTO_3};white-space:nowrap">'
                 f'{comp.num(r["base"])} alumnos</span></div>',
                 comp.barra_apilada(segs, alto=26),
-                f'<p class="num tfi-tenue" style="margin:7px 0 16px;color:{comp.TEXTO_3}">'
+                f'<p class="num gr-tenue" style="margin:7px 0 16px;color:{comp.TEXTO_3}">'
                 f'{comp.pct(r["pct_promociona"])} promociona · {comp.pct(r["pct_regular"])} regular · '
                 f'{comp.pct(r["pct_libre"])} libre</p>',
-                f'<div class="tfi-fila"><span>Nota promedio</span><b style="color:{color_nota}">'
-                f'{comp.num(r["nota_promedio"] / r["escala"] * 100, 1)} <span class="tfi-tenue">· '
+                f'<div class="gr-fila"><span>Nota promedio</span><b style="color:{color_nota}">'
+                f'{comp.num(r["nota_promedio"] / r["escala"] * 100, 1)} <span class="gr-tenue">· '
                 f'{comp.num(r["nota_promedio"], 1)} / {comp.num(r["escala"])}</span></b></div>',
-                f'<div class="tfi-fila"><span>Activos</span><b>{comp.pct(r["pct_activos"])} '
-                f'<span class="tfi-tenue">· {comp.num(r["activos"])}</span></b></div>',
-                f'<div class="tfi-fila"><span>Avance promedio</span><b>{comp.pct(r["avance_promedio"])}</b></div>',
-                f'<div class="tfi-fila"><span>Sesiones · minutos por alumno</span><b>'
+                f'<div class="gr-fila"><span>Activos</span><b>{comp.pct(r["pct_activos"])} '
+                f'<span class="gr-tenue">· {comp.num(r["activos"])}</span></b></div>',
+                f'<div class="gr-fila"><span>Avance promedio</span><b>{comp.pct(r["avance_promedio"])}</b></div>',
+                f'<div class="gr-fila"><span>Sesiones · minutos por alumno</span><b>'
                 f'{comp.num(r["sesiones_promedio"], 1)} · {comp.num(r["minutos_promedio"])}</b></div></div>',
             )
 
@@ -405,10 +405,10 @@ with tab_mat:
 
     st.space("small")
     comp.html(
-        f'<div class="tfi-tarjeta"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">'
+        f'<div class="gr-tarjeta"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">'
         f'<span style="color:{comp.ATENCION};display:inline-flex">{comp.forma("atencion", 16)}</span>'
-        f'<p class="tfi-h3" style="margin:0 !important">Integridad de los datos</p></div>'
-        f'<p class="tfi-txt" style="margin-bottom:16px;max-width:88ch">Quiénes entran en la base de cada materia: '
+        f'<p class="gr-h3" style="margin:0 !important">Integridad de los datos</p></div>'
+        f'<p class="gr-txt" style="margin-bottom:16px;max-width:88ch">Quiénes entran en la base de cada materia: '
         f'inscriptos (último estado Aceptada) más quienes tienen alguna nota sin estar inscriptos.</p>'
         f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px">',
         caja(no_insc, "alumnos con nota pero sin inscripción",
@@ -425,8 +425,8 @@ with tab_mat:
     st.space("small")
     with comp.tarjeta("tabla"):
         c1, c2 = st.columns([3, 1], vertical_alignment="center")
-        c1.html(f'<div class="tfi"><p class="tfi-h3">Tabla completa</p>'
-                f'<p class="tfi-txt" style="margin:0">Todas las columnas, para auditar o exportar.</p></div>')
+        c1.html(f'<div class="gr"><p class="gr-h3">Tabla completa</p>'
+                f'<p class="gr-txt" style="margin:0">Todas las columnas, para auditar o exportar.</p></div>')
         columnas = {
             "asignatura": "Materia", "base": "En la base", "inscriptos": "Inscriptos",
             "no_inscriptos_cursando": "Con nota sin inscripción", "inscriptos_sin_actividad": "Sin actividad",
