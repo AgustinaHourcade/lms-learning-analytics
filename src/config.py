@@ -73,6 +73,7 @@ CATEGORIA_SIN_MAPEO = "Otros"  # acciones nuevas que no están en el CSV
 # --- Métricas (gold -> KPIs, dependen de la fecha de corte) -----------------
 FECHA_CORTE_DEFECTO = "2025-10-24"   # fecha de exportación de los Excel
 UMBRAL_INACTIVIDAD_DIAS = 7          # D35: más de 7 días sin entrar -> inactivo
+DIAS_INACTIVIDAD_LARGA = 21          # D60: solo visual; los inactivos se abren en "hasta 21 días" y "22 o más"
 CONDICIONES = ["Libre", "Regular", "Promociona"]
 SIN_EVALUACIONES = "Sin evaluaciones"  # todavía no hay instrumentos a la fecha de corte
 
