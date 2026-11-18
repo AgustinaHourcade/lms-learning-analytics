@@ -13,9 +13,7 @@ st.set_page_config(page_title="LMS Learning Analytics", page_icon=":material/sch
 
 import componentes as comp  # noqa: E402  (después de set_page_config)
 
-comp.estilos()
 comp.asegurar_gold()
-st.logo(comp.LOGO_SVG, size="large", icon_image=comp.ICONO_LOGO_SVG)
 
 PAGINAS = {
     "": [
@@ -32,6 +30,10 @@ PAGINAS = {
         st.Page("paginas/7_matricula_y_alertas.py", title="Matrícula y alertas",
                 icon=":material/notification_important:"),
     ],
+    "Machine learning": [
+        st.Page("paginas/ml_grupos.py", title="Grupos de alumnos", icon=":material/bubble_chart:"),
+        st.Page("paginas/ml_abandono.py", title="Predictor de abandono", icon=":material/trending_down:"),
+    ],
     "Datos": [
         st.Page("paginas/cargar_archivo.py", title="Cargar archivo", icon=":material/upload_file:"),
         st.Page("paginas/explorar_datos.py", title="Explorar datos", icon=":material/table_view:"),
@@ -47,7 +49,8 @@ SIN_FILTROS = {
 }
 
 pagina = st.navigation(PAGINAS)
-f = comp.barra_lateral(sin_filtros=SIN_FILTROS.get(pagina.title))
-comp.barra_superior([f"Último recálculo: {comp.ultimo_recalculo()}"] if pagina.title in SIN_FILTROS
-                    else [f"Datos al {comp.fmt_fecha(f.fecha_corte)}"])
+comp.estilos()   # después de st.navigation: lo que se dibuja antes se pierde al cambiar de página
+comp.barra_lateral(sin_filtros=SIN_FILTROS.get(pagina.title))
+if pagina.title in SIN_FILTROS:   # en los dashboards la fecha ya está en la cabecera de la página
+    comp.barra_superior([f"Último recálculo: {comp.ultimo_recalculo()}"])
 pagina.run()
