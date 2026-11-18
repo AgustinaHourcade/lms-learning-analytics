@@ -1,14 +1,25 @@
 # Configuración de Streamlit (se lee desde la raíz del repo, también en Streamlit Cloud).
 
 [theme]
+# Sistema visual (D48; mismos valores que app/componentes.py): base cálida, azul de acción e Inter / Space Grotesk.
 base = "light"
-primaryColor = "#2a78d6"            # azul de la paleta (D48)
-backgroundColor = "#fcfcfb"
-secondaryBackgroundColor = "#f0efec"
-textColor = "#0b0b0b"
-font = "sans-serif"
-# Misma paleta categórica que app/componentes.py, para los gráficos nativos (st.bar_chart, etc.)
-chartCategoricalColors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
+primaryColor = "#1B4B8F"            # acción
+backgroundColor = "#F7F6F3"         # fondo
+secondaryBackgroundColor = "#F1EFEA"
+textColor = "#1A1917"
+linkColor = "#1B4B8F"
+borderColor = "#E3E1DC"
+baseRadius = "9px"
+baseFontSize = 14
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "'Space Grotesk':https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap"
+# Misma paleta categórica que app/componentes.py (las 3 primeras = materias), para los gráficos nativos.
+chartCategoricalColors = ["#2563C9", "#D4661F", "#0E8F62", "#C98A12", "#9B5BB5", "#2F8F9D", "#C2456E", "#6B6861"]
+
+[theme.sidebar]
+backgroundColor = "#FCFBF9"
+secondaryBackgroundColor = "#FFFFFF"
+borderColor = "#E3E1DC"
 
 [server]
 maxUploadSize = 50                  # MB; la trazabilidad completa pesa unos pocos MB

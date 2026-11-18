@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from src.config import ASIGNATURAS
+
 INICIO = str(Path(__file__).resolve().parents[1] / "app" / "Inicio.py")
 PAGINAS = ["paginas/1_general.py", "paginas/2_participacion.py", "paginas/3_trazabilidad.py",
            "paginas/4_rendimiento.py", "paginas/5_notas_vs_participacion.py", "paginas/6_ficha_individual.py",
@@ -57,13 +59,15 @@ def test_cada_pagina_corre_y_conserva_los_filtros(app, pagina):
 
 
 def test_rendimiento(app):
-    """Dashboard de Rendimiento: con todas las materias, sin evaluaciones a la fecha y con el toggle."""
+    """Dashboard de Rendimiento: con todas las materias, sin evaluaciones a la fecha y con el checkbox."""
     app.switch_page("paginas/4_rendimiento.py").run()
     assert not app.exception, app.exception
-    assert len(app.metric) == 7  # 4 de notas + Libre / Regular / Promociona
-    assert [m.label for m in app.metric][-3:] == ["🔴 Libre", "🟡 Regular", "🟢 Promociona"]
+    html = " ".join(m.value for m in app.markdown)
+    for texto in ["Lo que explica la nota", "Condición al corte", "Instrumento más flojo",
+                  "Promociona", "Regular", "Libre", *ASIGNATURAS]:
+        assert texto in html, texto
     assert len(app.tabs) == 4
-    app.toggle[0].set_value(False).run()
+    app.checkbox[0].set_value(False).run()
     assert not app.exception, app.exception
     app.date_input(key="fecha_corte").set_value("2025-08-10").run()
     assert not app.exception, app.exception
