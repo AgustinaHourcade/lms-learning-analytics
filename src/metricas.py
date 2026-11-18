@@ -420,12 +420,20 @@ def _fuerza(rho: float) -> str:
     return "nula" if r < 0.1 else "débil" if r < 0.3 else "moderada" if r < 0.5 else "fuerte"
 
 
+def _tabla_cruce(d: Datos, fecha_corte, asignatura, umbral, solo_rindieron: bool) -> pd.DataFrame:
+    """tabla_alumnos, opcionalmente solo con quienes rindieron al menos una
+    evaluación a la fecha de corte (D55: sin los que tienen 0 por no rendir)."""
+    t = tabla_alumnos(d, fecha_corte, asignatura, umbral)
+    return t[t["rendidos"] > 0].reset_index(drop=True) if solo_rindieron else t
+
+
 def correlaciones(d: Datos, fecha_corte=None, asignatura=None, umbral: int = UMBRAL_INACTIVIDAD_DIAS,
-                  variables: list[str] | None = None) -> pd.DataFrame:
+                  variables: list[str] | None = None, solo_rindieron: bool = False) -> pd.DataFrame:
     """Correlación de Spearman entre cada variable de actividad y la nota (sobre
     100), por materia. Spearman porque las variables son asimétricas y con
-    muchos ceros: mide si a más actividad hay más nota, sin suponer una recta."""
-    t = tabla_alumnos(d, fecha_corte, asignatura, umbral)
+    muchos ceros: mide si a más actividad hay más nota, sin suponer una recta.
+    solo_rindieron=True deja afuera a quienes no rindieron nada (D55)."""
+    t = _tabla_cruce(d, fecha_corte, asignatura, umbral, solo_rindieron)
     filas = []
     for materia, g in t.groupby("asignatura"):
         for var in variables or list(VARIABLES_CRUCE):
@@ -455,6 +463,42 @@ def cuadrante_riesgo(d: Datos, fecha_corte=None, asignatura=None, umbral: int = 
                                 "Poca actividad con buena nota"], default="Activo con buena nota")
     t["en_riesgo"] = poca & baja
     return t
+
+
+NIVELES_ACTIVIDAD = ["Muy baja", "Baja", "Media", "Alta", "Muy alta"]
+
+
+def nota_por_nivel_actividad(d: Datos, fecha_corte=None, asignatura=None, umbral: int = UMBRAL_INACTIVIDAD_DIAS,
+                             variable: str = "minutos", solo_rindieron: bool = False) -> pd.DataFrame:
+    """Los alumnos de cada materia partidos en 5 grupos del mismo tamaño
+    (quintiles) según `variable`, de la que menos a la que más actividad, con
+    la nota promedio y el % por condición de cada grupo (D55). Es la "tendencia"
+    del gráfico de dispersión, en una forma que se lee sin estadística: "del 20 %
+    que menos entra, tantos están libres". Sin evaluaciones a la fecha de corte,
+    la nota queda vacía y todos cuentan en 'Sin evaluaciones'."""
+    t = _tabla_cruce(d, fecha_corte, asignatura, umbral, solo_rindieron)
+    filas = []
+    for materia, g in t.groupby("asignatura"):
+        g = g.dropna(subset=[variable])
+        k = min(len(NIVELES_ACTIVIDAD), len(g))
+        if k == 0:
+            continue
+        # rank(method="first") parte los empates (muchos ceros) para que los grupos sean parejos
+        niveles = NIVELES_ACTIVIDAD if k == len(NIVELES_ACTIVIDAD) else [f"Grupo {i + 1}" for i in range(k)]
+        g = g.assign(nivel=pd.qcut(g[variable].rank(method="first"), k, labels=niveles))
+        for orden, (nivel, q) in enumerate(g.groupby("nivel", observed=True)):
+            fila = {"asignatura": materia, "orden": orden, "nivel": str(nivel), "alumnos": len(q),
+                    "desde": float(q[variable].min()), "hasta": float(q[variable].max()),
+                    "mediana_actividad": float(q[variable].median()),
+                    "nota_pct": q["nota_pct"].mean(), "nota_final": q["nota_final"].mean()}
+            for cond in [*CONDICIONES, SIN_EVALUACIONES]:
+                fila[f"pct_{_sin_tildes(cond).lower().replace(' ', '_')}"] = (q["condicion"] == cond).mean() * 100
+            filas.append(fila)
+    df = pd.DataFrame(filas)
+    if df.empty:
+        return df
+    df["variable"] = variable
+    return df.round(2)
 
 
 # ---------------------------------------------------------------------------

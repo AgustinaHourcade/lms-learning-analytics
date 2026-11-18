@@ -65,6 +65,30 @@ def test_cada_pagina_corre_y_conserva_los_filtros(app, pagina):
     assert app.selectbox(key="materia").value == "Álgebra"
 
 
+def test_notas_vs_participacion_controles(app):
+    app.switch_page("paginas/5_notas_vs_participacion.py").run()
+    assert not app.exception, app.exception
+    def titular():  # el bloque HTML con el ρ de cada materia y la tarjeta de riesgo
+        return next(m.value for m in app.markdown if "tfi-rho" in m.value)
+
+    antes = titular()
+    assert antes.count('class="tfi-rho"') == 3
+    for materia in ["Álgebra", "Algoritmos y Estructuras de Datos", "Probabilidad y Estadística"]:
+        assert materia in antes
+    app.selectbox(key="nvp_variable").set_value("avance").run()
+    app.toggle(key="nvp_solo_rindieron").set_value(True).run()
+    app.toggle(key="nvp_log").set_value(True).run()
+    app.selectbox(key="nvp_riesgo_materia").set_value("Álgebra").run()
+    assert not app.exception, app.exception
+    assert titular() != antes
+
+
+def test_notas_vs_participacion_sin_evaluaciones(app):
+    app.date_input(key="fecha_corte").set_value("2025-08-06").run()
+    app.switch_page("paginas/5_notas_vs_participacion.py").run()
+    assert not app.exception, app.exception
+
+
 def test_matricula_y_alertas(app):
     """Dashboard de Matrícula y alertas: tarjetas, pestañas, filtros de la lista y una fecha temprana."""
     app.switch_page("paginas/7_matricula_y_alertas.py").run()
