@@ -18,7 +18,7 @@ El estado siempre va con color + forma + palabra (●▲⬣■ en tablas, SVG en
 """
 from __future__ import annotations
 
-import html
+import html as html_lib  # con alias: componentes define una función html() que el import * pisaría
 import re
 from urllib.parse import quote
 
@@ -196,7 +196,7 @@ def fmt_dias(x) -> str:
 
 def esc(texto) -> str:
     """Escapa texto que viene de los datos antes de meterlo en HTML."""
-    return html.escape("" if texto is None else str(texto))
+    return html_lib.escape("" if texto is None else str(texto))
 
 
 # ---------------------------------------------------------------------------
