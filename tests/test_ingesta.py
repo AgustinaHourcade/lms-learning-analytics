@@ -183,3 +183,44 @@ def test_si_el_pipeline_falla_se_descarta_el_archivo(tmp_path, raw_chico, monkey
     assert not r.ok and "falla simulada" in r.errores[0]
     assert not list(raw_chico.rglob("p2.xlsx"))
     assert len(llamadas) == 2 and (salidas["silver"] / "calificaciones.parquet").exists()
+
+
+# ---------------------------------------------------------------------------
+# Varios archivos a la vez (D52)
+# ---------------------------------------------------------------------------
+def test_validar_lote_compara_los_archivos_entre_si(tmp_path, raw_chico):
+    from src.validacion import validar_lote
+    p2 = copia_modificada(PARCIAL_ALG, tmp_path / "a" / "p2.xlsx", {"A3": "Calificación: 2° Parcial"})
+    repetido = tmp_path / "b" / "p2_copia.xlsx"
+    repetido.parent.mkdir()
+    shutil.copy(p2, repetido)
+    viejo = copia_modificada(PARCIAL_ALG, tmp_path / "c" / "rec_viejo.xlsx",
+                             {"A3": "Calificación: Recuperatorio", "A1": "Fecha de exportación: 01/10/2025 10:00"})
+    nuevo = copia_modificada(PARCIAL_ALG, tmp_path / "d" / "rec_nuevo.xlsx",
+                             {"A3": "Calificación: Recuperatorio", "A1": "Fecha de exportación: 30/10/2025 10:00",
+                              "D8": "20.00/25.00"})
+    i_p2, i_rep, i_viejo, i_nuevo = validar_lote([p2, repetido, viejo, nuevo], raw_chico)
+    assert i_p2.ok and i_nuevo.ok
+    assert "mismo archivo" in i_rep.errores[0]
+    assert "más reciente" in i_viejo.errores[0]
+    assert i_p2.filas and i_p2.filas > 0
+
+
+def test_agregar_varios_archivos_recalcula_una_vez(tmp_path, raw_chico, monkeypatch):
+    import src.pipeline as pipeline
+    salidas = dict(bronze=tmp_path / "bronze", silver=tmp_path / "silver", reportes=tmp_path / "reports",
+                   gold=tmp_path / "gold")
+    llamadas = []
+    original = pipeline.procesar
+    monkeypatch.setattr(pipeline, "procesar", lambda *a, **k: llamadas.append(1) or original(*a, **k))
+    p2 = copia_modificada(PARCIAL_ALG, tmp_path / "p2.xlsx", {"A3": "Calificación: 2° Parcial"})
+    rec = copia_modificada(PARCIAL_ALG, tmp_path / "rec.xlsx", {"A3": "Calificación: Recuperatorio"})
+    malo = copia_modificada(PARCIAL_ALG, tmp_path / "malo.xlsx", {"A3": "Calificación: Otro", "D8": "99/25"})
+    r = pipeline.agregar_archivos([(p.read_bytes(), p.name) for p in (p2, rec, malo)], raw_chico, **salidas)
+    assert r.ok, r.errores
+    assert [i.nombre for i in r.cargados] == ["p2.xlsx", "rec.xlsx"]
+    assert [i.nombre for i in r.rechazados] == ["malo.xlsx"]
+    assert len(llamadas) == 1
+    assert (raw_chico / "Álgebra" / "rec.xlsx").exists() and not list(raw_chico.rglob("malo.xlsx"))
+    silver = pd.read_parquet(salidas["silver"] / "calificaciones.parquet")
+    assert {"2° Parcial", "Recuperatorio"} <= set(silver["instrumento"])

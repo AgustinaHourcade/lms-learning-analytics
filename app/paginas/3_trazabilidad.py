@@ -14,9 +14,9 @@ se mueve la actividad alrededor de cada evaluación?
                   tipo > sección > acción.
   Días y horarios mapa de calor día × hora y perfil por día o por hora de cada materia.
   Evaluaciones    actividad en los días anteriores y posteriores a cada evaluación,
-                  relativa a un día típico de la materia (D54), con un resumen por materia.
+                  relativa a un día típico de la materia (D62), con un resumen por materia.
 
-Diseño (D55): cada bloque es una tarjeta con título, explicación en una línea y, debajo
+Diseño (D63): cada bloque es una tarjeta con título, explicación en una línea y, debajo
 del gráfico, una nota con lo que se ve. Los textos de las notas se calculan con los datos.
 Todo sale de src.metricas vía comp.metrica() (D29, D47): la página solo filtra y dibuja.
 """
@@ -27,7 +27,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-import componentes as comp
+import componentes_trazabilidad as comp
 from src.metricas import CATEGORIAS, DIAS
 
 f = comp.encabezado(
@@ -44,10 +44,7 @@ NOMBRE_TODAS = "las tres materias" if f.asignatura is None else comp.CORTOS[f.as
 
 
 def grafico(fig: go.Figure, alto: int) -> None:
-    # Fondo fijado en el layout: si viene solo en la plantilla, Streamlit lo pinta de gris.
-    fig.update_layout(height=alto, plot_bgcolor=comp.TARJETA, paper_bgcolor=comp.TARJETA)
-    # theme=None: se usa la plantilla "tfi" de componentes tal cual (el tema de Streamlit la pisaría).
-    st.plotly_chart(fig, width="stretch", config=SIN_BARRA, theme=None)
+    comp.grafico(fig, alto, config=SIN_BARRA)   # con la plantilla tfi_trazabilidad
 
 
 def leyenda_materias(linea: bool = True) -> None:
@@ -289,7 +286,7 @@ with tab_tipos:
             masiva = vista.loc[vista["pct_alumnos"].idxmax()]
             comp.nota(f"La acción que más alumnos hicieron es **{masiva['accion']}** "
                       f"({masiva['seccion'] or 'sin sección'}): {comp.pct(masiva['pct_alumnos'], 0)} de la base. "
-                      "'Acceder' a Inicio y a Programa son filas distintas (D54).")
+                      "'Acceder' a Inicio y a Programa son filas distintas (D62).")
         comp.boton_csv(tabla, f"trazabilidad_acciones_{SUFIJO}", "Descargar")
 
     with st.expander("Ver el detalle tipo › sección › acción (mapa de árbol)", icon=":material/account_tree:"):
@@ -379,7 +376,7 @@ with tab_horarios:
                   "entre días no son significativas.")
 
 # ---------------------------------------------------------------------------
-# Alrededor de las evaluaciones (D54)
+# Alrededor de las evaluaciones (D62)
 # ---------------------------------------------------------------------------
 MEDIDAS_EVAL = {
     "Relativa a un día típico": ("relativo", "Veces un día típico", "%{y:.2f} × un día típico"),

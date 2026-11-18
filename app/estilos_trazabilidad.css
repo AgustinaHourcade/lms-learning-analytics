@@ -1,0 +1,77 @@
+/* Sistema visual del dashboard Trazabilidad (D63). Lo inyecta componentes_trazabilidad.encabezado(),
+   así que solo se aplica en esa página (el menú lateral y los filtros los estiliza componentes.estilos()).
+   Colores: fondo #F7F6F3 · tarjeta #FFFFFF · borde #E3E1DC · texto #1A1917 / #57544C / #6B6861
+   acción #1B4B8F (suave #EAF0F8) · títulos y números grandes en Space Grotesk.
+   Clases con prefijo tz-* y contenedores con key tz_tarjeta_* para no chocar con el CSS global. */
+
+[data-testid="stCaptionContainer"] {color: #6B6861;}
+h1 {letter-spacing: -.02em;}
+
+/* Encabezado de página */
+.tz-desc {margin: -.5rem 0 .2rem; max-width: 76ch; font-size: 13px; line-height: 1.55; color: #57544C;}
+.tz-desc strong {font-weight: 600; color: #1A1917;}
+
+/* Tarjetas: tarjeta() = st.container(border=True, key="tz_tarjeta_...") */
+[class*="st-key-tz_tarjeta_"] {background: #FFFFFF; border-color: #E3E1DC !important; border-radius: 13px !important;
+                               padding: 18px !important;}
+.tz-h3 {margin: 0 0 3px; font: 600 15px 'Space Grotesk', Inter, sans-serif; color: #1A1917;}
+.tz-sub {margin: 0; max-width: 86ch; font-size: 12px; line-height: 1.55; color: #57544C;}
+.tz-sub strong {font-weight: 600; color: #1A1917;}
+
+/* KPI: st.metric(border=True) */
+[data-testid="stMetric"] {background: #FFFFFF; border-color: #E3E1DC !important; border-radius: 13px !important;
+                          padding: 15px !important;}
+[data-testid="stMetricLabel"] p {font-size: 11px !important; font-weight: 600; letter-spacing: .06em;
+                                 text-transform: uppercase; color: #6B6861;}
+[data-testid="stMetricValue"] {font-family: 'Space Grotesk', Inter, sans-serif; letter-spacing: -.01em; color: #1A1917;}
+[data-testid="stMetricDelta"] {background: none !important; padding: 0 !important; color: #6B6861 !important;}
+[data-testid="stMetricDelta"] p, [data-testid="stMetricDelta"] div {font-size: 12px; font-weight: 400;}
+
+/* Lectura (el dato que hay que mirar) y notas debajo de un gráfico */
+.tz-lectura {display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; margin: 4px 0 8px;
+             border: 1px solid #DCE5F1; background: #EAF0F8; border-radius: 12px;
+             font-size: 13px; line-height: 1.6; color: #164279;}
+.tz-lectura svg {flex: 0 0 17px; margin-top: 2px;}
+.tz-lectura p {margin: 0;}
+.tz-lectura.atencion {border-color: #F1DFB8; background: #FBF0DC; color: #6B4700;}
+.tz-lectura strong, .tz-nota strong {font-weight: 600;}
+.tz-nota {margin: 2px 0 0; padding: 12px 14px; border-radius: 10px; background: #FBFAF8; font-size: 12px;
+          line-height: 1.6; color: #57544C;}
+.tz-nota strong {color: #1A1917;}
+.tz-nota.atencion {background: #FBF0DC; color: #6B4700;}
+.tz-nota.atencion strong {color: #6B4700;}
+
+/* Leyendas, chips y mini tarjetas */
+.tz-leyenda {display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 4px 0 0;}
+.tz-leyenda span {display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 500;
+                  color: #2C2A25;}
+.tz-leyenda i {display: inline-block; width: 11px; height: 11px; border-radius: 2px;}
+.tz-leyenda i.linea {width: 16px; height: 3px;}
+.tz-chip {display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 999px;
+          background: #EAF0F8; color: #164279; font-size: 12px; font-weight: 600; white-space: nowrap;}
+.tz-chip.gris {background: #F1EFEA; color: #57544C; font-weight: 500;}
+.tz-mini {height: 100%; border: 1px solid #E3E1DC; border-radius: 11px; padding: 14px; background: #FFFFFF;}
+.tz-mini .titulo {margin: 0 0 4px; display: flex; align-items: center; gap: 8px; font-size: 12px;
+                  font-weight: 600; color: #1A1917;}
+.tz-mini .titulo i {display: inline-block; width: 9px; height: 9px; border-radius: 3px;}
+.tz-mini .valor {margin: 0 0 6px; font: 600 20px 'Space Grotesk', Inter, sans-serif; color: #1A1917;
+                 font-variant-numeric: tabular-nums;}
+.tz-mini .texto {margin: 0; font-size: 12px; line-height: 1.5; color: #57544C;}
+
+/* Pestañas: subrayado azul, sin fondo */
+[data-baseweb="tab-list"] {gap: 4px; border-bottom: 1px solid #E3E1DC;}
+[data-baseweb="tab"] {height: 42px; padding: 0 14px;}
+[data-baseweb="tab"] p {font-size: 14px; font-weight: 500; color: #57544C;}
+[data-baseweb="tab"][aria-selected="true"] p {font-weight: 600; color: #1B4B8F;}
+[data-baseweb="tab-border"] {display: none;}
+
+/* Controles segmentados: píldora gris con la opción elegida en blanco */
+[data-testid="stButtonGroup"] > div {gap: 2px !important; padding: 3px; background: #F1EFEA; border-radius: 10px;
+                                     width: fit-content; flex-wrap: wrap;}
+[data-testid="stButtonGroup"] button {border: none !important; background: transparent !important;
+                                      border-radius: 8px !important; min-height: 34px; padding: 0 13px;
+                                      box-shadow: none; margin: 0 !important;}
+[data-testid="stButtonGroup"] button p {font-size: 13px; font-weight: 500; color: #57544C;}
+[data-testid="stButtonGroup"] button[aria-checked="true"] {background: #FFFFFF !important;
+                                                           box-shadow: 0 1px 2px rgba(26,25,23,.10);}
+[data-testid="stButtonGroup"] button[aria-checked="true"] p {font-weight: 600; color: #1A1917;}
