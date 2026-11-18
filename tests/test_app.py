@@ -59,13 +59,19 @@ def test_cada_pagina_corre_y_conserva_los_filtros(app, pagina):
 def test_notas_vs_participacion_controles(app):
     app.switch_page("paginas/5_notas_vs_participacion.py").run()
     assert not app.exception, app.exception
-    assert [m.label for m in app.metric] == ["ρ ALG", "ρ AED", "ρ PYE", "🔴 En riesgo"]
-    rho_antes = app.metric[0].value
+    def titular():  # el bloque HTML con el ρ de cada materia y la tarjeta de riesgo
+        return next(m.value for m in app.markdown if "tfi-rho" in m.value)
+
+    antes = titular()
+    assert antes.count('class="tfi-rho"') == 3
+    for materia in ["Álgebra", "Algoritmos y Estructuras de Datos", "Probabilidad y Estadística"]:
+        assert materia in antes
     app.selectbox(key="nvp_variable").set_value("avance").run()
     app.toggle(key="nvp_solo_rindieron").set_value(True).run()
     app.toggle(key="nvp_log").set_value(True).run()
+    app.selectbox(key="nvp_riesgo_materia").set_value("Álgebra").run()
     assert not app.exception, app.exception
-    assert app.metric[0].value != rho_antes
+    assert titular() != antes
 
 
 def test_notas_vs_participacion_sin_evaluaciones(app):
