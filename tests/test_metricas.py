@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 
 from src import metricas as m
-from src.config import FECHA_CORTE_DEFECTO, SIN_EVALUACIONES
+from src.config import DIAS_DESCONECTADO, DIAS_REGRESO, FECHA_CORTE_DEFECTO, SIN_EVALUACIONES
 
 ALG, PYE, AED = "Álgebra", "Probabilidad y Estadística", "Algoritmos y Estructuras de Datos"
 FECHAS = ["2025-08-10", "2025-09-15", "2025-09-23", "2025-09-24", "2025-10-11", FECHA_CORTE_DEFECTO]
@@ -153,10 +153,21 @@ def test_alertas(chicos):
     assert antes["tipo"].tolist() == ["sin_actividad"]
 
 
+def test_alertas_por_alumno_y_prioridad(chicos):
+    p = m.alertas_por_alumno(chicos, "2025-10-10", umbral=7).set_index("id_alumno")
+    assert p.loc["A2", "prioridad"] == "Administrativa"    # solo cursa sin inscripción
+    assert p.loc["P1", "prioridad"] == "Media"             # una sola alerta académica (Libre)
+    assert p.loc["A1", "prioridad"] == "Alta"              # inactivo + Libre
+    assert p.loc["A1", "cantidad"] == 2 and p.index[0] == "A1"  # la más urgente primero
+    assert m.alertas_por_alumno(chicos, "2025-09-05", PYE)["prioridad"].tolist() == ["Alta"]  # sin actividad
+
+
 def test_buscar_sin_tildes(chicos):
     assert m.buscar_alumnos(chicos, "nunez")["id_alumno"].tolist() == ["A1"]
     assert m.buscar_alumnos(chicos, "a2")["id_alumno"].tolist() == ["A2"]
     assert m.buscar_alumnos(chicos)["id_alumno"].tolist() == ["P1", "A1", "A2"]  # orden alfabético
+    assert m.buscar_alumnos(chicos, asignatura=PYE)["id_alumno"].tolist() == ["P1"]
+    assert m.buscar_alumnos(chicos, "a", asignatura=ALG)["id_alumno"].tolist() == ["A1", "A2"]
 
 
 def test_materia_desconocida(chicos):
@@ -268,12 +279,64 @@ def test_matricula_y_alertas(d):
     al = m.alertas(d)
     assert al[al["tipo"] == "no_inscripto"].groupby("asignatura").size().to_dict() == \
         r["no_inscriptos_cursando"].to_dict()
+    p = m.alertas_por_alumno(d)
+    assert not p.duplicated(["asignatura", "id_alumno"]).any()
+    assert len(p) == len(al.drop_duplicates(["asignatura", "id_alumno"]))
+    assert p["cantidad"].sum() == len(al)
+    # quien entra pero no rinde (y por eso es Libre) no pasa a Alta solo por eso
+    solo = p[p["tipos"].map(lambda ts: set(ts) == {"sin_notas", "libre"})]
+    assert (solo["prioridad"] == "Media").all()
+
+
+@pytest.mark.parametrize("fecha", ["2025-08-10", FECHA_CORTE_DEFECTO])
+def test_evolucion_matricula(d, fecha):
+    e = m.evolucion_matricula(d, fecha)
+    assert e["fecha"].max() == pd.Timestamp(fecha)
+    assert (e.groupby(["asignatura", "serie"])["alumnos"].diff().dropna() >= 0).all()  # acumulado
+    if fecha == FECHA_CORTE_DEFECTO:
+        final = e[e["fecha"] == e["fecha"].max()].set_index(["asignatura", "serie"])["alumnos"]
+        r = m.resumen_matricula(d).set_index("asignatura")
+        assert final.xs("Inscriptos", level="serie").to_dict() == r["inscriptos"].to_dict()
+        assert final.xs("Ya entraron al aula", level="serie").to_dict() == r["con_actividad"].to_dict()
+    assert m.evolucion_matricula(d, "2025-07-01").empty
 
 
 def test_correlaciones_validas(d):
     c = m.correlaciones(d)
     assert len(c) == 3 * len(m.VARIABLES_CRUCE)
     assert c["rho"].between(-1, 1).all() and (c["n"] > 100).all()
+
+
+def test_correlaciones_solo_rindieron(d):
+    todas = m.correlaciones(d)
+    solo = m.correlaciones(d, solo_rindieron=True)
+    t = m.tabla_alumnos(d)
+    esperado = t[t["rendidos"] > 0].groupby("asignatura").size()
+    n = solo.groupby("asignatura")["n"].max()
+    assert n.to_dict() == esperado.to_dict()
+    assert (solo["n"] <= todas["n"]).all()
+
+
+@pytest.mark.parametrize("fecha", FECHAS)
+def test_nota_por_nivel_actividad(d, fecha):
+    niveles = m.nota_por_nivel_actividad(d, fecha)
+    base = m.base(d).groupby("asignatura").size()
+    # cinco grupos parejos por materia, que suman toda la base y van de menos a más actividad
+    assert niveles.groupby("asignatura")["alumnos"].sum().to_dict() == base.to_dict()
+    assert (niveles.groupby("asignatura").size() == 5).all()
+    assert (niveles.groupby("asignatura")["alumnos"].agg(lambda s: s.max() - s.min()) <= 1).all()
+    for _, g in niveles.groupby("asignatura"):
+        assert list(g["nivel"]) == m.NIVELES_ACTIVIDAD
+        assert g["mediana_actividad"].is_monotonic_increasing
+    pcts = niveles.filter(like="pct_").sum(axis=1)
+    assert pcts.round(1).eq(100).all()
+
+
+def test_nota_por_nivel_actividad_sube_con_la_actividad(d):
+    # hallazgo de D55: el grupo que más entra tiene mejor nota que el que menos
+    niveles = m.nota_por_nivel_actividad(d, variable="avance", solo_rindieron=True)
+    for _, g in niveles.groupby("asignatura"):
+        assert g["nota_pct"].iloc[-1] > g["nota_pct"].iloc[0]
 
 
 def test_ficha_individual(d):
@@ -283,3 +346,125 @@ def test_ficha_individual(d):
     assert (f["instrumentos"]["id_alumno"] == primero).all()
     with pytest.raises(KeyError):
         m.ficha_alumno(d, "ALU_9999")
+
+
+# ---------------------------------------------------------------------------
+# Dashboard de Participación (D53)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("desde", [None, "2025-10-01"])
+def test_participacion_alumnos_respeta_el_rango(d, desde):
+    p = m.participacion_alumnos(d, desde=desde)
+    assert len(p) == len(d.matricula[d.matricula["en_base"]])
+    assert not p.duplicated(["asignatura", "id_alumno"]).any()
+    ev = d.interacciones[d.interacciones["en_base"] & (d.interacciones["fecha"] <= FECHA_CORTE_DEFECTO)]
+    if desde:
+        ev = ev[ev["fecha"] >= desde]
+    assert p["eventos"].sum() == len(ev)
+    assert p["avance"].between(0, 100).all()
+
+
+def test_evolucion_participacion_relativa_a_la_base(d):
+    e = m.evolucion_participacion(d, frecuencia="W")
+    n = m.base(d).groupby("asignatura").size()
+    fila = e.iloc[3]
+    assert fila["pct_base_activa"] == pytest.approx(fila["alumnos_activos"] / n[fila["asignatura"]] * 100, abs=0.01)
+    assert e["pct_base_activa"].between(0, 100).all()
+    assert e["eventos"].sum() == d.interacciones["en_base"].sum()
+
+
+def test_uso_herramientas(d):
+    h = m.uso_herramientas(d)
+    assert len(h) == 3 * len(m.HERRAMIENTAS)
+    assert h["pct_alumnos"].between(0, 100).all() and (h["alumnos"] <= h["base_reporte"]).all()
+    foros = h[h["herramienta"] == "Foros"].set_index("asignatura")
+    assert foros.loc[ALG, "recursos"] == 5 and foros.loc[AED, "alumnos"] == 0
+
+
+def test_concordancia_tiempo(d):
+    c = m.concordancia_tiempo(d)
+    assert len(c) == 3 and (c["rho"] > 0.9).all()
+
+
+# ---------------------------------------------------------------------------
+# Tramos de actividad y movimientos de la semana (D54)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("umbral", [3, 7, 30])
+def test_tramos_parten_a_los_inactivos(d, umbral):
+    a = m.actividad_alumnos(d, umbral=umbral)
+    assert set(a["tramo_actividad"]) <= set(m.TRAMOS_ACTIVIDAD)
+    # activos y sin actividad son los mismos; los inactivos se reparten en dos tramos
+    assert (a["tramo_actividad"] == m.ACTIVO).equals(a["estado_actividad"] == m.ACTIVO)
+    inactivos = a[a["estado_actividad"] == m.INACTIVO]
+    assert inactivos["tramo_actividad"].isin([m.ENFRIANDOSE, m.DESCONECTADO]).all()
+    lim = max(DIAS_DESCONECTADO, umbral)
+    assert (inactivos["tramo_actividad"] == m.DESCONECTADO).tolist() == (inactivos["dias_sin_actividad"] > lim).tolist()
+
+
+def test_movimientos_de_la_semana(d):
+    corte = T(FECHA_CORTE_DEFECTO)
+    mov = m.movimientos_semana(d, corte)
+    ahora = m.actividad_alumnos(d, corte).set_index(["asignatura", "id_alumno"])
+    antes = m.actividad_alumnos(d, corte - pd.Timedelta(days=7)).set_index(["asignatura", "id_alumno"])
+    for nombre, g in mov.groupby("movimiento", observed=True):
+        claves = list(zip(g["asignatura"], g["id_alumno"]))
+        if nombre == m.CRUZO_UMBRAL:
+            assert antes.loc[claves, "activo"].all() and not ahora.loc[claves, "activo"].any()
+        elif nombre == m.VOLVIO:
+            assert ahora.loc[claves, "activo"].all()
+            assert (antes.loc[claves, "dias_sin_actividad"] >= DIAS_REGRESO).all()
+        elif nombre in (m.ENTRA_NO_RINDE,):
+            assert ahora.loc[claves, "activo"].all() and (g["rendidos"] == 0).all()
+        else:
+            assert (ahora.loc[claves, "eventos"] == 0).all()
+    # cruzar el umbral cuadra con la caída de activos de una semana a la otra
+    cruzaron = (mov["movimiento"] == m.CRUZO_UMBRAL).sum()
+    assert cruzaron == (antes["activo"] & ~ahora["activo"]).sum()
+
+
+@pytest.mark.parametrize("fecha", ["2025-09-15", FECHA_CORTE_DEFECTO])
+def test_ficha_cierra_con_las_otras_metricas(d, fecha):
+    """La ficha de un alumno de la base muestra los mismos números que las tablas generales (D56)."""
+    primero = m.buscar_alumnos(d, solo_base=True)["id_alumno"].iloc[0]
+    f = m.ficha_alumno(d, primero, fecha)
+    t = m.tabla_alumnos(d, fecha)
+    suyo = t[t["id_alumno"] == primero].set_index("asignatura")
+    mat = f["materias"].set_index("asignatura")
+    assert set(mat.index) == set(suyo.index)
+    assert (mat["nota_final"].fillna(-1) == suyo.loc[mat.index, "nota_final"].fillna(-1)).all()
+    assert mat["percentil_minutos"].between(0, 100).all() and (mat["alumnos_materia"] > 100).all()
+    # sus interacciones por tipo suman su total y los % suman 100 por materia
+    cat = f["categorias"]
+    assert cat["eventos"].sum() == len(f["eventos"]) == suyo["eventos"].sum()
+    assert cat.groupby("asignatura")["pct_eventos"].sum().round(0).eq(100).all()
+    # el promedio del curso por instrumento es el de promedio_por_instrumento
+    prom = m.promedio_por_instrumento(d, fecha).set_index("id_instrumento")["promedio_pct"]
+    inst = f["instrumentos"].set_index("id_instrumento")
+    assert (inst["promedio_curso_pct"].fillna(-1) == prom.reindex(inst.index).fillna(-1)).all()
+    assert (f["alertas"]["id_alumno"] == primero).all()
+    assert (f["eventos"]["fecha_hora"] < m.fecha_de_corte(fecha) + pd.Timedelta(days=1)).all()
+
+
+def test_buscador_solo_base(d):
+    todos, en_base = m.buscar_alumnos(d), m.buscar_alumnos(d, solo_base=True)
+    assert len(en_base) == m.base(d)["id_alumno"].nunique() < len(todos)
+    assert len(m.buscar_alumnos(d, asignatura=ALG)) == len(m.base(d, ALG))
+
+
+def test_foto_datos_coincide_con_gold(d):
+    """La foto de antes/después (D51) cuenta todo lo cargado, sin fecha de corte."""
+    f = m.foto_datos(d).set_index("asignatura")
+    assert f["alumnos"].sum() == d.matricula["en_base"].sum()
+    assert f["notas"].sum() == d.calificaciones["rindio"].sum()
+    assert f["instrumentos"].sum() == len(d.instrumentos)
+    assert f["eventos"].sum() == len(d.interacciones)
+    assert (f[["libre", "regular", "promociona"]].sum(axis=1) <= f["alumnos"]).all()
+
+
+def test_comparar_fotos(d):
+    antes = m.foto_datos(d)
+    despues = antes.copy()
+    despues.loc[0, "notas"] += 10
+    c = m.comparar_fotos(antes, despues)
+    assert len(c) == len(antes) * len(m.FOTO_DATOS)
+    cambios = c[c["diferencia"] != 0]
+    assert len(cambios) == 1 and cambios.iloc[0]["clave"] == "notas" and cambios.iloc[0]["diferencia"] == 10

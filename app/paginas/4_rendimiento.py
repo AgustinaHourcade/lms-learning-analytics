@@ -11,18 +11,18 @@ instrumentos cuestan más y cuántos los rinden?, ¿cómo se reparten las notas?
                      y una caja con la distribución de las notas (solo quienes rindieron, D22).
   Distribución       histograma en la escala de cada materia, coloreado por condición,
                      con los cortes del ESQUEMA, y el resumen estadístico.
-  Condición          % por condición hoy y su evolución evaluación a evaluación (D51).
+  Condición          % por condición hoy y su evolución evaluación a evaluación (D61).
   Tabla              todos los instrumentos, ordenable, y las descargas en CSV.
 
-Diseño: sistema visual de componentes.py (piezas HTML de componentes.py, clases tc-*). Los
+Diseño: sistema visual de componentes_rendimiento.py (piezas HTML, clases tc-*). Los
 textos que interpretan los datos se arman con los números, no están escritos a mano.
 Todo sale de src.metricas vía comp.metrica() (D29, D47): la página solo agrega y dibuja.
 """
 import pandas as pd
 import streamlit as st
 
-import componentes as comp
-from componentes import esc, num
+import componentes_rendimiento as comp
+from componentes_rendimiento import esc, num
 from src.config import ESQUEMA
 
 f = comp.filtros()
