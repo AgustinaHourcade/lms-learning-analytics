@@ -291,3 +291,23 @@ def test_buscador_solo_base(d):
     todos, en_base = m.buscar_alumnos(d), m.buscar_alumnos(d, solo_base=True)
     assert len(en_base) == m.base(d)["id_alumno"].nunique() < len(todos)
     assert len(m.buscar_alumnos(d, asignatura=ALG)) == len(m.base(d, ALG))
+
+
+def test_foto_datos_coincide_con_gold(d):
+    """La foto de antes/después (D51) cuenta todo lo cargado, sin fecha de corte."""
+    f = m.foto_datos(d).set_index("asignatura")
+    assert f["alumnos"].sum() == d.matricula["en_base"].sum()
+    assert f["notas"].sum() == d.calificaciones["rindio"].sum()
+    assert f["instrumentos"].sum() == len(d.instrumentos)
+    assert f["eventos"].sum() == len(d.interacciones)
+    assert (f[["libre", "regular", "promociona"]].sum(axis=1) <= f["alumnos"]).all()
+
+
+def test_comparar_fotos(d):
+    antes = m.foto_datos(d)
+    despues = antes.copy()
+    despues.loc[0, "notas"] += 10
+    c = m.comparar_fotos(antes, despues)
+    assert len(c) == len(antes) * len(m.FOTO_DATOS)
+    cambios = c[c["diferencia"] != 0]
+    assert len(cambios) == 1 and cambios.iloc[0]["clave"] == "notas" and cambios.iloc[0]["diferencia"] == 10

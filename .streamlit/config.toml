@@ -1,28 +1,38 @@
 # Configuración de Streamlit (se lee desde la raíz del repo, también en Streamlit Cloud).
 
 [theme]
+# Sistema de diseño (rediseño del predictor de abandono): fondo cálido, azul institucional,
+# Inter para el texto, Space Grotesk para los títulos y
+# JetBrains Mono para código e IDs (D52). Los mismos valores están en
+# app/componentes.py (TOKENS) para el HTML propio y los gráficos de plotly.
 base = "light"
-# Diseño "Analítica académica" (D59): fondo cálido, tarjetas blancas, acento azul.
 primaryColor = "#1B4B8F"
 backgroundColor = "#F7F6F3"
 secondaryBackgroundColor = "#F1EFEA"
 textColor = "#1A1917"
 linkColor = "#1B4B8F"
 borderColor = "#E3E1DC"
+dataframeBorderColor = "#EFEDE8"
+dataframeHeaderBackgroundColor = "#FCFBF9"
 showWidgetBorder = true
 baseRadius = "9px"
+buttonRadius = "9px"
 baseFontSize = 14
-font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-headingFont = "Space Grotesk:https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap"
-# Misma paleta categórica que app/componentes.py, para los gráficos nativos (st.bar_chart, etc.)
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap, sans-serif"
+headingFont = "Space Grotesk:https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap, Inter, sans-serif"
+codeFont = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap, monospace"
+headingFontWeights = [600, 600, 600, 600, 600, 600]
+# Misma paleta categórica que app/componentes.py (CATEGORICA): los colores de las materias primero
+# (Álgebra, AED, PyE), para los gráficos nativos (st.bar_chart, etc.)
 chartCategoricalColors = ["#2563C9", "#D4661F", "#0E8F62", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
 
 [theme.sidebar]
 backgroundColor = "#FCFBF9"
-secondaryBackgroundColor = "#F1EFEA"
+secondaryBackgroundColor = "#FFFFFF"
+borderColor = "#E3E1DC"
 
 [server]
-maxUploadSize = 50                  # MB; la trazabilidad completa pesa unos pocos MB
+maxUploadSize = 50                  # MB por archivo; la trazabilidad completa pesa unos pocos MB
 
 [browser]
 gatherUsageStats = false

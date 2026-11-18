@@ -75,7 +75,7 @@ CSS_FICHA = """
   .fi-quien {flex:1 1 340px; min-width:260px; display:flex; gap:16px; align-items:flex-start;}
   .fi-avatar {width:54px; height:54px; flex:0 0 54px; border-radius:999px; background:#EAF0F8; color:#1B4B8F;
               display:flex; align-items:center; justify-content:center; font:600 17px 'Space Grotesk', Inter, sans-serif;}
-  .tfi-card h2.fi-nombre {margin:0 0 4px !important; font:600 22px 'Space Grotesk', Inter, sans-serif !important;
+  .fi-card h2.fi-nombre {margin:0 0 4px !important; font:600 22px 'Space Grotesk', Inter, sans-serif !important;
                           letter-spacing:-.015em;}
   .fi-sub {margin:0 0 10px; font-size:13px; color:#57544C;}
   .fi-chips {display:flex; flex-wrap:wrap; gap:7px;}
@@ -91,7 +91,7 @@ CSS_FICHA = """
   .fi-alerta-txt .fi-det {margin:4px 0 0; font-size:13px; line-height:1.5; color:#57544C;}
   .fi-alerta-txt .fi-sug {font-size:12px; font-weight:500; color:#6B6861; margin-top:6px;}
   .fi-libreta-cab {display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:14px;}
-  .tfi-card .fi-libreta-cab h4 {font:600 15px 'Space Grotesk', Inter, sans-serif !important;}
+  .fi-card .fi-libreta-cab h4 {font:600 15px 'Space Grotesk', Inter, sans-serif !important;}
   .fi-libreta {display:grid; grid-template-columns:repeat(auto-fill, minmax(185px, 1fr)); gap:10px;}
   .fi-nota {border:1px solid #E3E1DC; border-radius:11px; padding:12px; background:#FFFFFF;}
   .fi-nota.fi-falta {border-style:dashed; border-color:#D9D6CF; background:#FBFAF8;}
@@ -163,7 +163,7 @@ def sparkline(valores, color: str, tope: float, ancho: int = 84, alto: int = 24)
 def texto_riesgo_html(r) -> str:
     """'■ Alto · 43 %' con el color del nivel (D58)."""
     nivel = r["nivel_riesgo"]
-    _, color, solido = comp.TONOS[comp.TONO_RIESGO.get(nivel, "neutro")]
+    _, color, solido = comp.TONOS_ESTADO[comp.TONO_RIESGO_ESTADO.get(nivel, "neutro")]
     prob = f' · <span class="tfi-num">{comp.pct(r["probabilidad"], 0)}</span>' if pd.notna(r["probabilidad"]) else ""
     return (f'<span style="display:inline-flex;align-items:center;gap:6px;font-weight:600;color:{color};'
             f'white-space:nowrap">{comp.cuadro(solido, 9)}{esc(nivel)}{prob}</span>')
@@ -260,16 +260,16 @@ if inscripto_en < n_materias:
 chips = []
 con_eventos = materias[materias["eventos"] > 0]
 if con_eventos.empty:
-    chips.append(comp.chip("Nunca entró al aula", "critico", con_icono=True))
+    chips.append(comp.chip_estado("Nunca entró al aula", "critico", con_icono=True))
 else:
     dias = int(con_eventos["dias_sin_actividad"].min())
     tono = "atencion" if dias > f.umbral else "neutro"
-    chips.append(comp.chip(f"Sin entrar hace {dias} {'día' if dias == 1 else 'días'}" if dias else "Entró hoy",
+    chips.append(comp.chip_estado(f"Sin entrar hace {dias} {'día' if dias == 1 else 'días'}" if dias else "Entró hoy",
                            tono, con_icono=tono != "neutro"))
-chips.append(comp.chip(f"{comp.num(materias['eventos'].sum())} interacciones"))
-chips.append(comp.chip(f"{materias['rendidos'].sum()} de {materias['instrumentos'].sum()} instrumentos rendidos"))
+chips.append(comp.chip_estado(f"{comp.num(materias['eventos'].sum())} interacciones"))
+chips.append(comp.chip_estado(f"{materias['rendidos'].sum()} de {materias['instrumentos'].sum()} instrumentos rendidos"))
 for m in materias.loc[~materias["inscripto"], "asignatura"]:
-    chips.append(comp.chip(f"No inscripto en {esc(comp.SIGLAS[m])}", "atencion", con_icono=True))
+    chips.append(comp.chip_estado(f"No inscripto en {esc(comp.SIGLAS[m])}", "atencion", con_icono=True))
 
 # Riesgo: el más alto entre las materias que viene cursando; si no cursa ninguna, su estado.
 cursando = riesgo[riesgo["estado_abandono"] == ab.CURSANDO]
@@ -277,7 +277,7 @@ otros = []
 if not cursando.empty:
     m_r = cursando["probabilidad"].idxmax()
     r = cursando.loc[m_r]
-    tono = comp.TONO_RIESGO[r["nivel_riesgo"]]
+    tono = comp.TONO_RIESGO_ESTADO[r["nivel_riesgo"]]
     curso = riesgo_todos.loc[(riesgo_todos["asignatura"] == m_r)
                              & (riesgo_todos["estado_abandono"] == ab.CURSANDO), "probabilidad"].mean()
     valor = (f'<b class="tfi-num">{esc(r["nivel_riesgo"])}</b><b class="tfi-num">{comp.pct(r["probabilidad"], 0)}</b>'
@@ -285,7 +285,7 @@ if not cursando.empty:
              f'{signo(r["probabilidad"] - curso, 0)} pts vs. curso</span>')
     kicker_der = f"curso {comp.pct(curso, 0)}"
     titulo_r = f"Riesgo de abandono · {esc(comp.SIGLAS[m_r])}"
-    barra_r = comp.barra(r["probabilidad"], comp.TONOS[tono][2], alto=9, marca=curso)
+    barra_r = comp.barra(r["probabilidad"], comp.TONOS_ESTADO[tono][2], alto=9, marca=curso)
     explica = (f"Probabilidad de que no entre en los próximos {ab.ABANDONO_HORIZONTE_DIAS} días. "
                + (f"Pesan más: {esc(r['motivos'])}." if r["motivos"] else ""))
     otros = [m for m in riesgo.index if m != m_r]
@@ -293,7 +293,7 @@ if not cursando.empty:
 else:
     estado = riesgo["estado_abandono"].iloc[0] if not riesgo.empty else ab.SIN_ACTIVIDAD
     nivel = ab.YA_ABANDONO if (riesgo["estado_abandono"] == ab.YA_ABANDONO).any() else estado
-    tono = comp.TONO_RIESGO.get(nivel, "neutro")
+    tono = comp.TONO_RIESGO_ESTADO.get(nivel, "neutro")
     valor, kicker_der, barra_r = f"<b>{esc(nivel)}</b>", "", ""
     titulo_r, nivel_txt = "Riesgo de abandono", nivel
     explica = ("No entra a ninguna de sus materias hace 14 días o más: ya cumple la definición de abandono. "
@@ -304,9 +304,9 @@ for m in otros:
         explica += f" En {esc(comp.SIGLAS[m])} ya abandonó ({comp.num(o['dias_sin_actividad'])} días sin entrar)."
     elif o["estado_abandono"] == ab.SIN_ACTIVIDAD:
         explica += f" En {esc(comp.SIGLAS[m])} nunca entró."
-fondo, color, solido = comp.TONOS[tono]
+fondo, color, solido = comp.TONOS_ESTADO[tono]
 comp.html(f"""
-<section class="tfi-card" aria-label="Resumen del alumno"><div class="fi-cab">
+<section class="fi-card" aria-label="Resumen del alumno"><div class="fi-cab">
   <div class="fi-quien">
     <div class="fi-avatar" aria-hidden="true">{esc(iniciales)}</div>
     <div style="min-width:0">
@@ -318,7 +318,7 @@ comp.html(f"""
   <div class="fi-riesgo" style="background:{fondo};border-color:{solido}33;color:{color}">
     <div class="fi-riesgo-fila"><span class="tfi-kicker" style="color:{color};margin:0">{titulo_r}</span>
       <span class="tfi-num" style="font-size:11px">{kicker_der}</span></div>
-    <div class="fi-riesgo-valor">{comp.icono(tono, 18, etiqueta=nivel_txt)}{valor}</div>
+    <div class="fi-riesgo-valor">{comp.icono_estado(tono, 18, etiqueta=nivel_txt)}{valor}</div>
     {f'<div style="margin-bottom:8px">{barra_r}</div>' if barra_r else ''}
     <div class="fi-riesgo-txt">{explica}</div>
   </div>
@@ -362,18 +362,18 @@ for fila in tabla_estado.itertuples():
       <td>{fila.rendidos} de {fila.instrumentos}</td>
       <td>{actividad}</td><td>{celda_riesgo}</td></tr>""")
 leyenda = "".join(
-    f'<span style="display:inline-flex;align-items:center;gap:6px;font-weight:500;color:{comp.TONOS[t][1]}">'
-    f'{comp.icono(t)}{esc(c)}</span>' for c, t in comp.TONO_CONDICION.items())
+    f'<span style="display:inline-flex;align-items:center;gap:6px;font-weight:500;color:{comp.TONOS_ESTADO[t][1]}">'
+    f'{comp.icono_estado(t)}{esc(c)}</span>' for c, t in comp.TONO_CONDICION.items())
 comp.html(f"""
-<section class="tfi-card" aria-label="Estado por materia">
-  <div class="tfi-card-cab"><h3 class="tfi-h3">Estado por materia</h3>
+<section class="fi-card" aria-label="Estado por materia">
+  <div class="fi-card-cab"><h3 class="fi-h3">Estado por materia</h3>
     <div class="tfi-nota-al-pie">Ordenado por riesgo. La nota al corte incluye con 0 lo que no rindió (D15).</div></div>
-  <div style="overflow-x:auto"><table class="tfi-tabla">
+  <div style="overflow-x:auto"><table class="fi-tabla">
     <thead><tr><th scope="col">Materia</th><th scope="col">Condición</th><th scope="col">Nota al corte</th>
       <th scope="col">vs. curso</th><th scope="col">Rendidos</th><th scope="col">Actividad 8 sem.</th>
       <th scope="col">Riesgo de abandono</th></tr></thead>
     <tbody>{''.join(filas)}</tbody></table></div>
-  <div class="tfi-card-pie"><span style="font-weight:500;font-size:11px;letter-spacing:.05em;
+  <div class="fi-card-pie"><span style="font-weight:500;font-size:11px;letter-spacing:.05em;
     text-transform:uppercase">Semáforo</span>{leyenda}</div>
 </section>""")
 
@@ -382,9 +382,9 @@ comp.html(f"""
 # ---------------------------------------------------------------------------
 alertas = ficha["alertas"]
 if alertas.empty:
-    comp.html(f"""<section class="tfi-card" aria-label="Alertas"><div class="fi-alerta" style="border-top:none">
-      <div class="fi-alerta-ico" style="background:{comp.TONOS['bien'][0]};color:{comp.TONOS['bien'][2]}">
-        {comp.icono('bien', 16, 'Sin alertas')}</div>
+    comp.html(f"""<section class="fi-card" aria-label="Alertas"><div class="fi-alerta" style="border-top:none">
+      <div class="fi-alerta-ico" style="background:{comp.TONOS_ESTADO['bien'][0]};color:{comp.TONOS_ESTADO['bien'][2]}">
+        {comp.icono_estado('bien', 16, 'Sin alertas')}</div>
       <div class="fi-alerta-txt"><h4>Sin alertas a la fecha de corte</h4>
         <div class="fi-det">Entra con regularidad, rinde y no queda Libre en ninguna materia.</div></div></div></section>""")
 else:
@@ -415,23 +415,23 @@ else:
         detalle = " · ".join(partes) + "."
         if tipo == "inactivo":
             detalle += f" El umbral configurado son {f.umbral} días."
-        etiquetas = (comp.chip(f"Sus {n_materias} materias", "neutro", chico=True) if len(g) == n_materias > 1
+        etiquetas = (comp.chip_estado(f"Sus {n_materias} materias", "neutro", chico=True) if len(g) == n_materias > 1
                      else "".join(comp.sigla(m) for m in g["asignatura"]))
-        fondo, _, solido = comp.TONOS[tono]
+        fondo, _, solido = comp.TONOS_ESTADO[tono]
         tarjetas_alerta.append(f"""<article class="fi-alerta">
           <div class="fi-alerta-ico" style="background:{fondo};color:{solido}">
-            {comp.icono(tono, 16, NOMBRE_GRAVEDAD[tono].capitalize())}</div>
+            {comp.icono_estado(tono, 16, NOMBRE_GRAVEDAD[tono].capitalize())}</div>
           <div class="fi-alerta-txt">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">{etiquetas}<h4>{titulo}</h4></div>
             <div class="fi-det tfi-num">{detalle}</div><div class="fi-sug">{SUGERENCIA[tipo]}</div></div></article>""")
     resumen_chips = "".join(
-        comp.chip(f"{conteo[t]} {NOMBRE_GRAVEDAD[t]}{'s' if conteo[t] > 1 and t == 'critico' else ''}", t, chico=True)
+        comp.chip_estado(f"{conteo[t]} {NOMBRE_GRAVEDAD[t]}{'s' if conteo[t] > 1 and t == 'critico' else ''}", t, chico=True)
         for t in ("critico", "atencion", "neutro") if t in conteo)
     n_al, n_gr = len(alertas), len(tarjetas_alerta)
     comp.html(f"""
-<section class="tfi-card" aria-label="Alertas">
-  <div class="tfi-card-cab">
-    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><h3 class="tfi-h3">Qué hacer con este alumno</h3>
+<section class="fi-card" aria-label="Alertas">
+  <div class="fi-card-cab">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><h3 class="fi-h3">Qué hacer con este alumno</h3>
       <span class="tfi-nota-al-pie">{n_al} {'alerta' if n_al == 1 else 'alertas'} a la fecha de corte (D37)
       {f', agrupadas en {n_gr} situaciones' if n_gr < n_al else ''}</span></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">{resumen_chips}</div></div>
@@ -464,11 +464,11 @@ def tarjeta_nota(t, color: str) -> str:
         dif = t.nota_pct - t.promedio_curso_pct
         curso = (f"Curso {comp.pct(t.promedio_curso_pct, 0)} · "
                  f"{signo(round(dif), 0)} {'pt' if abs(round(dif)) == 1 else 'pts'}")
-    color_barra = color if aprobada else comp.TONOS["critico"][2]
+    color_barra = color if aprobada else comp.TONOS_ESTADO["critico"][2]
     return (f'<div class="fi-nota"><div class="fi-nota-nombre" title="{nombre}">{nombre}</div>'
             f'<div class="fi-nota-valor tfi-num">{comp.pct(t.nota_pct, 0)}'
             f'<small>{comp.num(t.nota_obtenida, 2)} / {comp.num(t.puntaje_maximo, 0)}</small></div>'
-            f'<div class="fi-nota-estado" style="color:{comp.TONOS[tono][1]}">{estado}</div>'
+            f'<div class="fi-nota-estado" style="color:{comp.TONOS_ESTADO[tono][1]}">{estado}</div>'
             f'{comp.barra(t.nota_pct, color_barra, alto=6)}'
             f'<div class="fi-nota-curso tfi-num">{curso}</div></div>')
 
@@ -508,7 +508,7 @@ with tab_notas:
                 else:
                     cuerpo = f'<div class="fi-libreta">{"".join(tarjeta_nota(t, color_m) for t in q.itertuples())}</div>'
                     resumen_m = f"{nota_texto(fila)} / {fila.escala} · rindió {fila.rendidos} de {fila.instrumentos}"
-                comp.html(f"""<section class="tfi-card" style="padding:16px" aria-label="Notas de {esc(materia)}">
+                comp.html(f"""<section class="fi-card" style="padding:16px" aria-label="Notas de {esc(materia)}">
                   <div class="fi-libreta-cab">{comp.cuadro(color_m)}<h4>{esc(materia)}</h4>
                     {comp.pastilla_condicion(fila.condicion, chico=True)}
                     <span class="tfi-num" style="font-size:12px;color:{comp.TINTA_3}">{resumen_m}</span></div>
@@ -554,7 +554,7 @@ with tab_notas:
            "Promedio del curso (%)", "Observaciones", "Recuperatorio aplicado"]]
         with st.container(border=True, key="tarjeta_detalle_notas"):
             c_t, c_b = st.columns([4, 1.3], vertical_alignment="center")
-            c_t.markdown('<h4 class="tfi-h3">Detalle de notas</h4>', unsafe_allow_html=True)
+            c_t.markdown('<h4 class="fi-h3">Detalle de notas</h4>', unsafe_allow_html=True)
             with c_b:
                 comp.boton_csv(tabla, f"notas_{id_alumno}", "Descargar CSV")
             st.dataframe(tabla, hide_index=True, width="stretch",
@@ -585,8 +585,8 @@ with tab_act:
                 f'<span>curso {comp.num(prom, dec)}{suf}</span></div></div>')
         bloques.append(f'<div><div class="fi-grilla-titulo">{comp.cuadro(color_m, 9)}{esc(fila.asignatura)}</div>'
                        f'{"".join(renglones)}</div>')
-    comp.html(f"""<section class="tfi-card" aria-label="Percentiles">
-      <div class="tfi-card-cab" style="display:block"><h3 class="tfi-h3">Dónde queda dentro de su curso</h3>
+    comp.html(f"""<section class="fi-card" aria-label="Percentiles">
+      <div class="fi-card-cab" style="display:block"><h3 class="fi-h3">Dónde queda dentro de su curso</h3>
         <div class="tfi-nota-al-pie" style="margin-top:4px;max-width:80ch">La barra es el percentil: qué parte de la
         base de la materia tiene un valor igual o menor (p80 = está por encima del 80 % de sus compañeros). Abajo,
         el promedio del curso. <em>Avance</em> sale del reporte de participación: es una foto a la fecha de
@@ -595,7 +595,7 @@ with tab_act:
 
     with st.container(border=True, key="tarjeta_semanal"):
         c_t, c_v = st.columns([3, 2], vertical_alignment="center")
-        c_t.markdown('<h3 class="tfi-h3">Evolución semanal</h3><div class="tfi-nota-al-pie">Semanas de lunes a '
+        c_t.markdown('<h3 class="fi-h3">Evolución semanal</h3><div class="tfi-nota-al-pie">Semanas de lunes a '
                      'domingo. Las líneas verticales son evaluaciones ya tomadas.</div>', unsafe_allow_html=True)
         if semanal.empty or semanal["eventos"].sum() == 0:
             st.info("No tiene interacciones registradas hasta la fecha de corte.", icon=":material/visibility_off:")
@@ -642,12 +642,12 @@ with tab_act:
             f"<td>{comp.num(fila.semanas_activas)}</td><td style='min-width:150px'>{avance}</td>"
             f"<td>{comp.num(fila.tiempo_uso_min)}</td><td>{comp.num(fila.intervenciones_foros)}</td>"
             f"<td>{comp.num(fila.encuestas_respondidas)}</td><td>{comp.num(fila.emails_enviados)}</td></tr>")
-    comp.html(f"""<section class="tfi-card" aria-label="Reporte de participación">
-      <div class="tfi-card-cab" style="display:block"><h3 class="tfi-h3">Reporte de participación</h3>
+    comp.html(f"""<section class="fi-card" aria-label="Reporte de participación">
+      <div class="fi-card-cab" style="display:block"><h3 class="fi-h3">Reporte de participación</h3>
         <div class="tfi-nota-al-pie" style="margin-top:3px">Sesiones y minutos salen de la trazabilidad (sesiones
         cortadas a los 30 min sin eventos, D25). El resto es una foto a la fecha de exportación del LMS: no se
         recorta con la fecha de corte (D36).</div></div>
-      <div style="overflow-x:auto"><table class="tfi-tabla"><thead><tr>
+      <div style="overflow-x:auto"><table class="fi-tabla"><thead><tr>
         <th scope="col">Materia</th><th scope="col">Sesiones</th><th scope="col">Minutos</th>
         <th scope="col">Días con actividad</th><th scope="col">Semanas</th><th scope="col">Avance</th>
         <th scope="col">Tiempo de uso (min)</th><th scope="col">Foros</th><th scope="col">Encuestas</th>
@@ -675,8 +675,8 @@ with tab_traz:
                 v, c = q.loc[tipo, "pct_eventos"], q.loc[tipo, "pct_curso"]
                 v = 0 if pd.isna(v) else v
                 cero_eval = tipo == "Evaluación" and v == 0 and pd.notna(c) and c > 0
-                col_b = comp.TONOS["critico"][2] if cero_eval else color_m
-                estilo = f"color:{comp.TONOS['critico'][1]};font-weight:600" if cero_eval else ""
+                col_b = comp.TONOS_ESTADO["critico"][2] if cero_eval else color_m
+                estilo = f"color:{comp.TONOS_ESTADO['critico'][1]};font-weight:600" if cero_eval else ""
                 renglones.append(
                     f'<div class="fi-tipo" title="{esc(tipo)}: {comp.pct(v)} (curso {comp.pct(c)})">'
                     f'<span class="fi-tipo-et" style="{estilo}">{esc(tipo)}</span>'
@@ -687,8 +687,8 @@ with tab_traz:
                              'registradas: el patrón «entra pero no rinde».</div>')
             bloques.append(f'<div><div class="fi-grilla-titulo">{comp.cuadro(color_m, 9)}{esc(materia)}</div>'
                            f'{"".join(renglones)}{aviso}</div>')
-        comp.html(f"""<section class="tfi-card" aria-label="Interacciones por tipo">
-          <div class="tfi-card-cab" style="display:block"><h3 class="tfi-h3">Qué hace cuando entra</h3>
+        comp.html(f"""<section class="fi-card" aria-label="Interacciones por tipo">
+          <div class="fi-card-cab" style="display:block"><h3 class="fi-h3">Qué hace cuando entra</h3>
             <div class="tfi-nota-al-pie" style="margin-top:4px;max-width:80ch">Sus interacciones por tipo, en % de su
             total en cada materia. La rayita gris es el curso: si su barra de <em>Evaluación</em> o
             <em>Contenido</em> queda muy por debajo, entra pero no estudia ni rinde.</div></div>
@@ -696,7 +696,7 @@ with tab_traz:
 
         with st.container(border=True, key="tarjeta_eventos"):
             c_t, c_b = st.columns([4, 1.3], vertical_alignment="center")
-            c_t.markdown(f'<h3 class="tfi-h3">Sus interacciones <span class="tfi-num" style="font:400 12px Inter,'
+            c_t.markdown(f'<h3 class="fi-h3">Sus interacciones <span class="tfi-num" style="font:400 12px Inter,'
                          f'sans-serif;color:{comp.TINTA_3}">{comp.num(len(eventos))} hasta la fecha de corte'
                          f'</span></h3>', unsafe_allow_html=True)
             c1, c2 = st.columns([1, 2.2])
