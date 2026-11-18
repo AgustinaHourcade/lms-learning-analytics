@@ -40,7 +40,17 @@ PAGINAS = {
     ],
 }
 
+# Páginas que no usan los filtros de la barra: en su lugar se explica por qué (D52).
+SIN_FILTROS = {
+    "Cargar archivo": "Esta página trabaja con todo lo cargado, sin fecha de corte. Los filtros que elegiste "
+                      "vuelven al pasar a un dashboard.",
+    "Explorar datos": "Esta página muestra las tablas crudas del pipeline, así que no usa la fecha de corte "
+                      "ni los filtros laterales.",
+}
+
 pagina = st.navigation(PAGINAS)
 comp.estilos()   # después de st.navigation: lo que se dibuja antes se pierde al cambiar de página
-comp.barra_lateral()
+comp.barra_lateral(sin_filtros=SIN_FILTROS.get(pagina.title))
+if pagina.title in SIN_FILTROS:   # en los dashboards la fecha ya está en la cabecera de la página
+    comp.barra_superior([f"Último recálculo: {comp.ultimo_recalculo()}"])
 pagina.run()

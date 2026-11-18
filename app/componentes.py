@@ -9,6 +9,8 @@ Piezas compartidas por todas las páginas de la app (Etapa 4).
   Diseño       TOKENS/TONOS + CSS global; cabecera(), kpis(kpi(...)), tarjeta(), chip(),
                barra_apilada(), leyenda(), tabla_html(). Las usa el predictor de abandono
                (app/paginas/ml_abandono.py), que es el modelo para rediseñar las demás páginas.
+               También titulo(), seccion(), aviso(), chip_materia(), pasos(), filas_dato(),
+               barras(), barra_superior() (D52), que usan Cargar archivo y Explorar datos.
 
 Una página típica:
 
@@ -24,7 +26,7 @@ import inspect
 import os
 import sys
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[1]
@@ -39,16 +41,26 @@ import streamlit as st  # noqa: E402
 from src import metricas, ml_abandono, ml_grupos  # noqa: E402
 from src.config import (ASIGNATURAS, FECHA_CORTE_DEFECTO, GOLD, SIN_EVALUACIONES,  # noqa: E402
                         UMBRAL_INACTIVIDAD_DIAS)
-from src.metricas import ACTIVO, INACTIVO, SIN_ACTIVIDAD  # noqa: E402
+from src.metricas import ACTIVO, INACTIVO, SIN_ACTIVIDAD, comparar_fotos  # noqa: E402,F401 (comparar_fotos: D51)
 
 # ---------------------------------------------------------------------------
 # Paleta (D48). Valores validados para daltonismo (skill de dataviz).
 # ---------------------------------------------------------------------------
-# Categórica, en orden fijo: los 3 primeros sirven para cualquier gráfico
-# (también dispersión), así que cada materia tiene uno.
-CATEGORICA = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
+# Categórica, en orden fijo: los 3 primeros son los de las materias (Álgebra,
+# AED, PyE, en el orden de ASIGNATURAS), los mismos del rediseño (D52).
+CATEGORICA = ["#2563C9", "#D4661F", "#0E8F62", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
 COLORES_MATERIA = dict(zip(ASIGNATURAS, CATEGORICA))
 SIGLAS = {nombre: datos["sigla"] for nombre, datos in ASIGNATURAS.items()}
+# Chips de materia: (fondo, texto).
+CHIP_MATERIA = dict(zip(ASIGNATURAS, [("#EAF0F8", "#164279"), ("#FBEFE6", "#8A4415"), ("#E6F2EB", "#0B6B49")]))
+
+# Tonos de los avisos de aviso() (D52): (fondo, borde, texto, ícono).
+TONOS_AVISO = {
+    "exito": ("#E6F2EB", "#CFE3D8", "#0B6B49", "#116040"),
+    "atencion": ("#FBF0DC", "#F0E2C4", "#6B4700", "#A06A00"),
+    "error": ("#FBE9E6", "#F2CFC9", "#7A3028", "#93241C"),
+    "info": ("#FBFAF8", "#E3E1DC", "#57544C", "#6B6861"),
+}
 
 # Estados: colores reservados, siempre acompañados de ícono y texto.
 BIEN, ATENCION, SERIO, CRITICO, NEUTRO = "#0ca30c", "#fab219", "#ec835a", "#d03b3b", "#898781"
@@ -238,15 +250,88 @@ CSS = f"""
   .tfi-meter > span:first-child > span {{display: block; height: 100%;}}
   .tfi-pie {{margin: 10px 0 0; font: 400 11.5px/1.55 {FUENTE}; color: {_T['texto_3']};}}
 
-  /* --- Semáforo de condición (Ficha) -------------------------------------- */
+  /* --- Rediseño de Cargar archivo y Explorar datos (D52) ------------------- */
+  .mono {{font-family: 'JetBrains Mono', ui-monospace, monospace;}}
+  /* Contenedores con key "tarjeta-...": superficie blanca con borde */
+  [class*="st-key-tarjeta"] {{background: #FFFFFF; border: 1px solid #E3E1DC; border-radius: 13px;
+      padding: 18px;}}
+
+  /* Métricas (st.metric con border=True) */
+  [data-testid="stMetric"] {{background: #FFFFFF; border-radius: 11px;}}
+  [data-testid="stMetricLabel"] p {{font-size: 11px !important; font-weight: 600; letter-spacing: .06em;
+      text-transform: uppercase; color: #6B6861;}}
+  [data-testid="stMetricValue"] {{font-family: 'Space Grotesk', Inter, sans-serif; font-weight: 600;
+      font-size: 1.75rem; font-variant-numeric: tabular-nums;}}
+  [data-testid="stMetricDelta"] {{font-weight: 600; font-variant-numeric: tabular-nums;}}
+  [class*="st-key-ad-peor"] [data-testid="stMetric"] {{background: #FBE9E6; border-color: #F2CFC9;}}
+  [class*="st-key-ad-peor"] [data-testid="stMetricLabel"] p {{color: #8A3A31;}}
+  [class*="st-key-ad-peor"] [data-testid="stMetricValue"] {{color: #93241C;}}
+  [class*="st-key-ad-mejor"] [data-testid="stMetric"] {{background: #E6F2EB; border-color: #CFE3D8;}}
+  [class*="st-key-ad-mejor"] [data-testid="stMetricLabel"] p {{color: #0B6B49;}}
+  [class*="st-key-ad-mejor"] [data-testid="stMetricValue"] {{color: #116040;}}
+  /* Tarjetas de antes/después: todas del mismo alto */
+  [class*="st-key-ad-"], [class*="st-key-ad-"] [data-testid="stElementContainer"] {{height: 100%;}}
+  [class*="st-key-ad-"] [data-testid="stMetric"] {{height: 100%; min-height: 118px;}}
+
+  /* Subida de archivos */
+  [data-testid="stFileUploaderDropzone"] {{background: #FFFFFF; border: 1px dashed #C9C5BC; border-radius: 11px;}}
+
+  /* Chips de materia en los multiselect */
+  [data-tag][aria-label="Álgebra"] {{background: #EAF0F8 !important;}}
+  [data-tag][aria-label="Álgebra"], [data-tag][aria-label="Álgebra"] * {{color: #164279 !important;}}
+  [data-tag][aria-label="Algoritmos y Estructuras de Datos"] {{background: #FBEFE6 !important;}}
+  [data-tag][aria-label="Algoritmos y Estructuras de Datos"], [data-tag][aria-label="Algoritmos y Estructuras de Datos"] * {{color: #8A4415 !important;}}
+  [data-tag][aria-label="Probabilidad y Estadística"] {{background: #E6F2EB !important;}}
+  [data-tag][aria-label="Probabilidad y Estadística"], [data-tag][aria-label="Probabilidad y Estadística"] * {{color: #0B6B49 !important;}}
+
+  /* Piezas HTML (titulo, seccion, aviso, pasos, ...) */
+  .tfi-desc {{margin: -.4rem 0 1rem; max-width: 76ch; font-size: 13px; line-height: 1.55; color: #57544C;}}
+  .tfi-cab {{display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; justify-content: space-between;}}
+  .tfi-cab .tfi-der {{font-size: 12px; color: #6B6861;}}
+  .tfi-etq {{margin: 0 0 8px; font: 600 11px Inter, sans-serif; letter-spacing: .06em; text-transform: uppercase;
+      color: #6B6861;}}
+  .tfi-aviso {{display: flex; gap: 12px; align-items: flex-start; padding: 13px 15px; border: 1px solid;
+      border-radius: 11px; margin: 0 0 12px;}}
+  .tfi-aviso svg {{flex: 0 0 17px; margin-top: 2px;}}
+  .tfi-aviso p, .tfi-aviso div {{margin: 0; font-size: 13px; line-height: 1.6;}}
+  .tfi-aviso ul {{margin: 4px 0 0; padding-left: 18px;}}
+  .tfi-aviso li {{font-size: 12.5px; line-height: 1.55; margin: 0;}}
+  .tfi-pasos {{display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 6px;}}
+  .tfi-paso {{display: inline-flex; align-items: center; gap: 9px; height: 38px; padding: 0 14px; border-radius: 999px;
+      font: 600 13px Inter, sans-serif;}}
+  .tfi-paso-hecho {{background: #E6F2EB; color: #0B6B49;}}
+  .tfi-paso-actual {{background: #1B4B8F; color: #FFFFFF;}}
+  .tfi-paso-pendiente {{background: #FFFFFF; color: #6B6861; border: 1px solid #E3E1DC;}}
+  .tfi-paso-error {{background: #FBE9E6; color: #93241C;}}
+  .tfi-sep {{width: 20px; height: 1px; background: #D4D1CA; display: inline-block;}}
+  .tfi-fdato {{display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 0;
+      border-top: 1px solid #EFEDE8;}}
+  .tfi-fdato span:first-child {{font-size: 12px; color: #57544C;}}
+  .tfi-fdato span:last-child {{font-size: 13px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums;}}
+  .tfi-top {{display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin: -6px 0 2px;}}
+  .tfi-archivo {{font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; font-weight: 500;
+      overflow-wrap: anywhere; margin: 0 0 2px;}}
+  .tfi-barra {{display: flex; align-items: center; gap: 10px; margin-bottom: 8px;}}
+  .tfi-barra > span:first-child {{flex: 0 0 104px; font-size: 12px; color: #57544C; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;}}
+  .tfi-barra .pista {{flex: 1 1 auto; height: 12px; border-radius: 3px; background: #EDEBE6; overflow: hidden;}}
+  .tfi-barra .pista span {{display: block; height: 100%;}}
+  .tfi-barra > span:last-child {{flex: 0 0 56px; text-align: right; font-size: 12px; font-weight: 500;
+      font-variant-numeric: tabular-nums;}}
+  .tfi-grilla {{display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;}}
+  .tfi-vacio {{border: 1px solid #E3E1DC; border-radius: 10px; padding: 12px;}}
+  .tfi-vacio .col {{margin: 0 0 6px; font: 500 12px 'JetBrains Mono', monospace; overflow-wrap: anywhere;}}
+  .tfi-vacio .val {{margin: 0 0 6px; font: 600 18px 'Space Grotesk', Inter, sans-serif;}}
+  .tfi-vacio .det {{margin: 0; font-size: 11px; line-height: 1.5;}}
+
+  /* Semáforo (Ficha individual) */
   .semaforo {{display:inline-flex; align-items:center; gap:.4rem; padding:.25rem .7rem; border-radius:999px;
              font-weight:600; border:1px solid rgba(11,11,11,.10);}}
-  .semaforo-Libre      {{background:#fde8e8; color:#8a1f1f;}}
-  .semaforo-Regular    {{background:#fff4d6; color:#6b4a00;}}
-  .semaforo-Promociona {{background:#e2f6e2; color:#006300;}}
-  .semaforo-otro       {{background:#f0efec; color:#52514e;}}
-  [data-testid="stMetric"] {{background: {_T['superficie']};}}
-  [data-testid="stMetric"] [data-testid="stMetricValue"] {{font-size: 1.9rem; font-family: {FUENTE_TITULOS};}}
+  .semaforo-Libre      {{background:#FBE9E6; color:#93241C;}}
+  .semaforo-Regular    {{background:#FBF0DC; color:#6B4700;}}
+  .semaforo-Promociona {{background:#E6F2EB; color:#0B6B49;}}
+  .semaforo-otro       {{background:#F1EFEA; color:#57544C;}}
+  [data-testid="stMetric"] [data-testid="stMetricValue"] {{font-size: 1.75rem; font-family: {FUENTE_TITULOS};}}
 </style>
 """
 
@@ -381,14 +466,31 @@ def _restablecer() -> None:
         st.session_state[clave] = valor
 
 
-def barra_lateral() -> Filtros:
+def barra_lateral(sin_filtros: str | None = None) -> Filtros:
     """Dibuja los filtros globales. Se llama una sola vez, desde Inicio.py,
-    antes de correr la página elegida: así valen para todas."""
+    antes de correr la página elegida: así valen para todas.
+    Las páginas que no usan filtros (Cargar archivo, Explorar datos) pasan en
+    `sin_filtros` el motivo: se muestra eso en vez de los widgets y los valores
+    elegidos se conservan para cuando se vuelve a un dashboard (D52)."""
     inicio, fin = _rango_fechas(datos())
     for clave, valor in DEFECTOS.items():
         st.session_state.setdefault(clave, valor)
+        # Reasignar evita que Streamlit borre el valor en las páginas donde el widget no se dibuja.
+        st.session_state[clave] = st.session_state[clave]
     # Si los datos cambiaron y la fecha guardada quedó fuera de rango, se acomoda.
     st.session_state["fecha_corte"] = min(max(st.session_state["fecha_corte"], inicio), fin)
+
+    if sin_filtros:
+        with st.sidebar:
+            html(f'<div style="margin-top:8px;padding:14px;background:#F1EFEA;border:1px dashed #D4D1CA;'
+                 f'border-radius:12px"><p class="tfi-etq" style="display:flex;align-items:center;gap:8px">'
+                 f'{ICONOS_SVG["cruz"]}Filtros desactivados</p>'
+                 f'<p style="margin:0;font-size:12px;line-height:1.55;color:#57544C">{sin_filtros}</p></div>')
+        ss = st.session_state
+        f = Filtros(fecha_corte=ss["fecha_corte"], asignatura=None if ss["materia"] == TODAS else ss["materia"],
+                    umbral=int(ss["umbral"]))
+        st.session_state["_filtros"] = f
+        return f
 
     with st.sidebar, st.container(key="filtros_card"):
         st.html(f'<p class="tfi" style="margin:0;font:600 11px {FUENTE};letter-spacing:.06em;'
@@ -621,13 +723,16 @@ def leyenda(items: list[tuple[str, str]]) -> str:
         for x, t in items) + "</div>")
 
 
-def tabla_html(encabezados: list[str], filas: list[list[str]], clases: list[str] | None = None) -> str:
-    """Tabla con el estilo del sistema. Las celdas ya vienen en HTML (escapar lo que venga de datos)."""
+def tabla_html(encabezados: list[str], filas: list[list[str]], clases: list[str] | None = None,
+               alto: int | None = None) -> str:
+    """Tabla con el estilo del sistema. Las celdas ya vienen en HTML (escapar lo que venga de datos).
+    `alto` limita la altura en px (con scroll); si no, el tope es el del CSS (460 px)."""
     clases = clases or [""] * len(encabezados)
     cab = "".join(f'<th scope="col">{h}</th>' for h in encabezados)
     cuerpo = "".join("<tr>" + "".join(f'<td class="{c}">{v}</td>' for c, v in zip(clases, fila)) + "</tr>"
                      for fila in filas)
-    return (f'<div class="tfi tfi-tabla-wrap"><table class="tfi-tabla"><thead><tr>{cab}</tr></thead>'
+    estilo = f' style="max-height:{alto}px"' if alto else ""
+    return (f'<div class="tfi tfi-tabla-wrap"{estilo}><table class="tfi-tabla"><thead><tr>{cab}</tr></thead>'
             f'<tbody>{cuerpo}</tbody></table></div>')
 
 
@@ -676,3 +781,110 @@ def riesgo_abandono_alumno(id_alumno: str) -> None:
         fig.update_layout(height=280, yaxis_range=[0, 100])
         st.plotly_chart(fig, width="stretch")
         st.caption("Cada punto usa solo lo que se sabía ese día. Sin punto = ese día no venía entrando.")
+
+
+# ---------------------------------------------------------------------------
+# Piezas del rediseño de Cargar archivo y Explorar datos (D52). Escriben con html()
+# (st.markdown), que sí conserva los <svg> de ICONOS_SVG.
+# ---------------------------------------------------------------------------
+ICONOS_SVG = {
+    "ok": '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6.6" '
+          'fill="currentColor"/><path d="M4.9 8.3l2.1 2.1 4.2-4.5" fill="none" stroke="#fff" stroke-width="1.8" '
+          'stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    "atencion": '<svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"><path d="M8 1.6l6.6 11.8H1.4z" '
+                'fill="currentColor"/><path d="M8 6v3.1M8 11.2v.1" stroke="#fff" stroke-width="1.5" '
+                'stroke-linecap="round"/></svg>',
+    "error": '<svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"><circle cx="8" cy="8" r="6.6" '
+             'fill="currentColor"/><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8" stroke="#fff" stroke-width="1.6" '
+             'stroke-linecap="round"/></svg>',
+    "info": '<svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"><circle cx="8" cy="8" r="6.6" '
+            'fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 7.2v4.2M8 4.8v.1" '
+            'stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    "nube": '<svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"><path d="M2 8s2.4-4 6-4 6 4 6 4-2.4 '
+            '4-6 4-6-4-6-4z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3 13L13 3" '
+            'stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+    "cruz": '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" '
+            'stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    "planilla": '<svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"><rect x="2.5" y="2" width="11" '
+                'height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2.5 6.5h11M6.5 '
+                '6.5v7.5" stroke="currentColor" stroke-width="1.4"/></svg>',
+}
+ICONO_TONO = {"exito": "ok", "atencion": "atencion", "error": "error", "info": "info"}
+
+
+def html(contenido: str) -> None:
+    """Escribe HTML (las piezas de abajo devuelven texto para poder combinarlas)."""
+    st.markdown(contenido, unsafe_allow_html=True)
+
+
+def titulo(texto: str, descripcion: str = "") -> None:
+    """Título de página del rediseño, con la bajada en gris."""
+    st.title(texto, anchor=False)
+    if descripcion:
+        html(f'<p class="tfi-desc">{descripcion}</p>')
+
+
+def seccion(texto: str, subtitulo: str = "", derecha: str = "", icono: str = "", color_icono: str = "") -> str:
+    """Encabezado de una tarjeta: título en Space Grotesk, subtítulo y un dato a la derecha."""
+    ic = (f'<span style="color:{color_icono or "#116040"};display:inline-flex">{ICONOS_SVG[icono]}</span>'
+          if icono else "")
+    der = f'<span class="tfi-der num">{derecha}</span>' if derecha else ""
+    sub = f'<p class="tfi-sub">{subtitulo}</p>' if subtitulo else '<div style="height:10px"></div>'
+    return f'<div class="tfi-cab"><p class="tfi-h3">{ic}{texto}</p>{der}</div>{sub}'
+
+
+def aviso(texto: str, tono: str = "info", titulo_: str = "", items: list[str] | None = None,
+          icono: str | None = None) -> str:
+    """Caja de aviso con ícono (exito / atencion / error / info). Nunca solo color (D48)."""
+    fondo, borde, color, color_icono = TONOS_AVISO[tono]
+    svg = ICONOS_SVG[icono or ICONO_TONO[tono]]
+    cab = f'<strong style="font-weight:600">{titulo_}</strong> ' if titulo_ else ""
+    lista = "<ul>" + "".join(f"<li>{i}</li>" for i in items) + "</ul>" if items else ""
+    return (f'<div class="tfi-aviso" style="background:{fondo};border-color:{borde}">'
+            f'<span style="color:{color_icono};display:inline-flex">{svg}</span>'
+            f'<div style="color:{color}">{cab}{texto}{lista}</div></div>')
+
+
+def chip_materia(asignatura: str | None, largo: bool = False) -> str:
+    if not asignatura:
+        return '<span class="tfi-badge" style="background:#F1EFEA;color:#57544C">–</span>'
+    fondo, color = CHIP_MATERIA.get(asignatura, ("#F1EFEA", "#57544C"))
+    return (f'<span class="tfi-badge" style="background:{fondo};color:{color}">'
+            f'{esc(asignatura if largo else SIGLAS.get(asignatura, asignatura))}</span>')
+
+
+def pasos(items: list[tuple[str, str]]) -> str:
+    """Indicador de pasos. Cada item es (texto, estado) con estado hecho / actual / pendiente / error."""
+    iconos = {"hecho": ICONOS_SVG["ok"].replace('stroke="#fff"', 'stroke="#E6F2EB"'),
+              "error": ICONOS_SVG["error"].replace('stroke="#fff"', 'stroke="#FBE9E6"')}
+    partes = [f'<span class="tfi-paso tfi-paso-{estado}">{iconos.get(estado, "")}{texto}</span>'
+              for texto, estado in items]
+    return '<div class="tfi-pasos" aria-label="Pasos">' + '<span class="tfi-sep"></span>'.join(partes) + "</div>"
+
+
+def filas_dato(pares: list[tuple[str, str]]) -> str:
+    """Lista etiqueta -> valor con líneas finas (como 'Qué se reconoció')."""
+    return "".join(f'<div class="tfi-fdato"><span>{k}</span><span>{v}</span></div>' for k, v in pares)
+
+
+def barras(filas: list[tuple[str, float, str]], decimales: int = 0) -> str:
+    """Barras horizontales simples: (etiqueta, valor, color). El largo es relativo al máximo."""
+    maximo = max((v for _, v, _ in filas), default=0) or 1
+    return "".join(
+        f'<div class="tfi-barra"><span title="{esc(e)}">{esc(e)}</span><span class="pista">'
+        f'<span style="width:{v / maximo * 100:.1f}%;background:{c}"></span></span>'
+        f'<span>{num(v, decimales)}</span></div>' for e, v, c in filas)
+
+
+def barra_superior(chips: list[str]) -> None:
+    """Píldoras arriba a la derecha (fecha de los datos, último recálculo)."""
+    html('<div class="tfi-top">' + "".join(f'<span class="tfi-pill num">{c}</span>' for c in chips) + "</div>")
+
+
+def ultimo_recalculo() -> str:
+    """'hoy 10:25' u '07/11 10:25', según cuándo se regeneró gold."""
+    v = version_gold()
+    if not v:
+        return "–"
+    t = datetime.fromtimestamp(int(v) / 1e9)
+    return f"hoy {t:%H:%M}" if t.date() == date.today() else f"{t:%d/%m %H:%M}"

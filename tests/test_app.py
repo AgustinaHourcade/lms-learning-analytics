@@ -50,11 +50,18 @@ def test_fecha_de_corte_cambia_los_numeros(app):
     assert _valores_metricas(app) != antes
 
 
+SIN_FILTROS = {"paginas/cargar_archivo.py", "paginas/explorar_datos.py"}
+
+
 @pytest.mark.parametrize("pagina", PAGINAS)
 def test_cada_pagina_corre_y_conserva_los_filtros(app, pagina):
     app.selectbox(key="materia").set_value("Álgebra").run()
     app.switch_page(pagina).run()
     assert not app.exception, app.exception
+    if pagina in SIN_FILTROS:  # no dibujan los filtros, pero los conservan (D52)
+        assert not [s for s in app.selectbox if s.key == "materia"]
+        assert any("Filtros desactivados" in m.value for m in app.sidebar.markdown)
+        app.switch_page("paginas/1_general.py").run()
     assert app.selectbox(key="materia").value == "Álgebra"
 
 
@@ -93,3 +100,25 @@ def test_predictor_con_corte_pasado_y_otro_umbral(app):
     assert not app.exception, app.exception
     app.button(key="ab_umbral_reset").click().run()
     assert not app.exception, app.exception
+
+
+def test_cargar_archivo_muestra_antes_y_despues(app, carpeta_pipeline):
+    """Después de una carga se muestran las tarjetas de antes/después (D51). Se
+    simula el resultado (no se sube un archivo para no tocar data/raw)."""
+    from src import metricas as m
+    antes = m.foto_datos(m.cargar(carpeta_pipeline / "gold"))
+    despues = antes.copy()
+    pye = despues["asignatura"] == "Probabilidad y Estadística"
+    despues.loc[pye, ["notas", "instrumentos"]] += [94, 1]
+    app.switch_page("paginas/cargar_archivo.py").run()
+    app.session_state["resultado_carga"] = {
+        "ok": True, "mensaje": "Se cargó", "errores": [], "rechazados": [],
+        "cargados": [{"nombre": "x.xlsx", "tipo": "calificaciones", "asignatura": "Probabilidad y Estadística",
+                      "instrumento": "Semanal 3"}],
+        "antes": antes, "despues": despues, "asignaturas": ["Probabilidad y Estadística"]}
+    app.run()
+    assert not app.exception, app.exception
+    valores = {mt.label: mt for mt in app.metric}
+    assert valores["Notas cargadas"].delta.startswith("+94")
+    assert valores["Instrumentos"].delta.startswith("+1")
+    assert valores["Libres"].delta == "sin cambios"

@@ -537,6 +537,54 @@ def kpis_generales(d: Datos, fecha_corte=None, asignatura=None, umbral: int = UM
             .merge(cal[["asignatura", "nota_promedio", "escala", "pct_libre", "pct_regular", "pct_promociona"]]))
 
 
+def corte_con_todo(d: Datos) -> pd.Timestamp:
+    """La fecha de corte que incluye todo lo cargado: el último instrumento o la
+    última interacción, lo que sea más tarde."""
+    fechas = [d.instrumentos["fecha_instrumento"].max(), d.interacciones["fecha_hora"].max(),
+              fecha_de_corte(None)]
+    return max(pd.Timestamp(f) for f in fechas if pd.notna(f)).normalize()
+
+
+FOTO_DATOS = {"alumnos": "Alumnos en la base", "inscriptos": "Inscriptos", "instrumentos": "Instrumentos",
+              "notas": "Notas cargadas", "nota_promedio": "Nota promedio", "promociona": "Promocionan",
+              "regular": "Regulares", "libre": "Libres", "eventos": "Eventos de trazabilidad"}
+
+
+def foto_datos(d: Datos, asignatura=None) -> pd.DataFrame:
+    """Resumen por materia de lo que hay cargado, para comparar antes y después
+    de subir un archivo (D51). Usa la fecha de corte que incluye todo
+    (corte_con_todo): así un instrumento nuevo se ve aunque sea posterior a la
+    fecha de corte elegida en la barra."""
+    corte = corte_con_todo(d)
+    n = nota_final(d, corte, asignatura)
+    g = n.groupby("asignatura")
+    df = pd.DataFrame({"alumnos": g.size(), "inscriptos": g["inscripto"].sum(),
+                       "nota_promedio": g["nota_final"].mean().round(2)})
+    for cond in CONDICIONES:
+        df[cond.lower()] = g["condicion"].apply(lambda s: int((s == cond).sum()))
+    inst = _filtrar(d.instrumentos, asignatura)
+    df["instrumentos"] = inst.groupby("asignatura").size()
+    cal = _filtrar(d.calificaciones, asignatura)
+    df["notas"] = cal[cal["rindio"]].groupby("asignatura").size()
+    df["eventos"] = _filtrar(d.interacciones, asignatura).groupby("asignatura").size()
+    df = df.reindex(_materias(asignatura))
+    enteros = [c for c in FOTO_DATOS if c != "nota_promedio"]
+    df[enteros] = df[enteros].fillna(0).astype(int)
+    return df[list(FOTO_DATOS)].rename_axis("asignatura").reset_index()
+
+
+def comparar_fotos(antes: pd.DataFrame, despues: pd.DataFrame) -> pd.DataFrame:
+    """Tabla larga materia × indicador con antes, después y diferencia (D51)."""
+    a = antes.melt("asignatura", var_name="clave", value_name="antes")
+    b = despues.melt("asignatura", var_name="clave", value_name="despues")
+    df = a.merge(b, on=["asignatura", "clave"], how="outer")
+    df["diferencia"] = (df["despues"].astype(float) - df["antes"].astype(float)).round(2)
+    df["indicador"] = df["clave"].map(FOTO_DATOS)
+    orden = {c: i for i, c in enumerate([*_materias(None), *FOTO_DATOS])}
+    return (df.sort_values(["asignatura", "clave"], key=lambda s: s.map(orden))
+              [["asignatura", "clave", "indicador", "antes", "despues", "diferencia"]].reset_index(drop=True))
+
+
 def buscar_alumnos(d: Datos, texto: str = "") -> pd.DataFrame:
     """Busca por ID o por apellido/nombre (sin importar tildes ni mayúsculas).
     Con texto vacío devuelve a todos; la ficha muestra al primero por defecto."""

@@ -1,7 +1,9 @@
 """
 Validación de un Excel nuevo ANTES de sumarlo a data/raw/.
 
-La usa `pipeline.agregar_archivo()` (y la página "Cargar archivo" de la app).
+La usa `pipeline.agregar_archivos()` (y la página "Cargar archivo" de la app).
+`validar_lote()` valida varios a la vez: además de compararlos con data/raw/,
+los compara entre sí (el mismo archivo dos veces, o dos exportaciones de lo mismo).
 Nunca lanza excepciones: devuelve un InfoArchivo con `errores` (el archivo no
 se puede usar) y `avisos` (se puede usar, pero conviene saberlo).
 
@@ -123,6 +125,7 @@ def validar_archivo(path: Path, raw: Path = RAW) -> InfoArchivo:
         info.errores.append(f"No se pudo leer el contenido ({type(e).__name__}: {e}).")
         return info
 
+    info.filas = len(df)
     _controlar_datos(info, df)
     if not info.ok:
         return info
@@ -136,3 +139,32 @@ def validar_archivo(path: Path, raw: Path = RAW) -> InfoArchivo:
 
     _comparar_con_raw(info, raw)
     return info
+
+
+def validar_lote(paths: list[Path], raw: Path = RAW) -> list[InfoArchivo]:
+    """Valida varios Excel que se van a cargar juntos (D52). Cada uno se valida
+    contra `raw` con validar_archivo() y después se comparan entre sí:
+      - el mismo contenido subido dos veces: vale el primero;
+      - dos exportaciones de lo mismo (misma materia e instrumento, o el mismo
+        reporte de participación): vale la más reciente, como en la ingesta (D32).
+    Devuelve un InfoArchivo por archivo, en el mismo orden."""
+    infos = [validar_archivo(p, raw) for p in paths]
+    vistos: dict[str, InfoArchivo] = {}
+    for info in infos:
+        if not info.ok:
+            continue
+        h = huella(info.path)
+        if h in vistos:
+            info.errores.append(f"Es el mismo archivo que {vistos[h].nombre}, que también estás subiendo.")
+        else:
+            vistos[h] = info
+
+    validos = [i for i in infos if i.ok]
+    for info in validos:
+        k = clave_foto(info)
+        otros = [o for o in validos if o is not info and k is not None and clave_foto(o) == k]
+        mas_nuevo = max([info, *otros], key=InfoArchivo.orden)
+        if mas_nuevo is not info:
+            info.errores.append(f"{mas_nuevo.nombre}, que también estás subiendo, es una exportación más "
+                                "reciente de lo mismo. Este archivo no se usaría.")
+    return infos
