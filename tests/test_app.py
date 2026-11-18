@@ -11,7 +11,9 @@ from streamlit.testing.v1 import AppTest
 INICIO = str(Path(__file__).resolve().parents[1] / "app" / "Inicio.py")
 PAGINAS = ["paginas/1_general.py", "paginas/2_participacion.py", "paginas/3_trazabilidad.py",
            "paginas/4_rendimiento.py", "paginas/5_notas_vs_participacion.py", "paginas/6_ficha_individual.py",
-           "paginas/7_matricula_y_alertas.py", "paginas/cargar_archivo.py", "paginas/explorar_datos.py"]
+           "paginas/7_matricula_y_alertas.py", "paginas/ml_grupos.py", "paginas/ml_abandono.py",
+           "paginas/cargar_archivo.py",
+           "paginas/explorar_datos.py"]
 
 
 @pytest.fixture
@@ -48,11 +50,18 @@ def test_fecha_de_corte_cambia_los_numeros(app):
     assert _valores_metricas(app) != antes
 
 
+SIN_FILTROS = {"paginas/cargar_archivo.py", "paginas/explorar_datos.py"}
+
+
 @pytest.mark.parametrize("pagina", PAGINAS)
 def test_cada_pagina_corre_y_conserva_los_filtros(app, pagina):
     app.selectbox(key="materia").set_value("Álgebra").run()
     app.switch_page(pagina).run()
     assert not app.exception, app.exception
+    if pagina in SIN_FILTROS:  # no dibujan los filtros, pero los conservan (D52)
+        assert not [s for s in app.selectbox if s.key == "materia"]
+        assert any("Filtros desactivados" in m.value for m in app.sidebar.markdown)
+        app.switch_page("paginas/1_general.py").run()
     assert app.selectbox(key="materia").value == "Álgebra"
 
 
@@ -75,3 +84,97 @@ def test_matricula_y_alertas(app):
     assert not app.exception, app.exception
     app.date_input(key="fecha_corte").set_value("2025-08-10").run()
     assert not app.exception, app.exception
+
+
+def test_ficha_individual_buscador(app):
+    app.switch_page("paginas/6_ficha_individual.py").run()
+    assert not app.exception, app.exception
+    primero = app.selectbox(key="fi_alumno").value          # muestra al primero por defecto
+    assert primero.startswith("ALU_")
+    assert not app.text_input                                # un solo buscador: el desplegable
+    assert any("Riesgo de abandono" in m.value for m in app.markdown)   # cabecera con el predictor (D58)
+    assert any("Estado por materia" in m.value for m in app.markdown)
+    app.selectbox(key="fi_alumno").set_value("ALU_1105").run()
+    assert not app.exception, app.exception
+    assert any("ALU_1105" in m.value for m in app.markdown)
+    app.button(key="fi_siguiente").click().run()                       # anterior / siguiente
+    assert not app.exception, app.exception
+    assert app.selectbox(key="fi_alumno").value != "ALU_1105"
+    app.button(key="fi_sig_riesgo").click().run()                      # siguiente en riesgo
+    assert not app.exception, app.exception
+    app.date_input(key="fecha_corte").set_value("2025-08-06").run()   # antes de cualquier evaluación
+    assert not app.exception, app.exception
+
+
+def test_predictor_buscador_individual(app):
+    """La página del predictor tiene el mismo buscador que la Ficha y el resumen del alumno (D58)."""
+    app.switch_page("paginas/ml_abandono.py").run()
+    assert not app.exception, app.exception
+    assert app.selectbox(key="ab_alumno").value.startswith("ALU_")   # muestra al primero por defecto
+    app.selectbox(key="ab_alumno").set_value("ALU_1105").run()
+    assert not app.exception, app.exception
+    assert any("ALU_1105" in m.value for m in app.markdown)
+    assert any("riesgo de abandono" in m.value for m in app.markdown)
+    app.selectbox(key="materia").set_value("Álgebra").run()           # el buscador se acota a la materia
+    assert not app.exception, app.exception
+    app.date_input(key="fecha_corte").set_value("2025-08-06").run()   # antes del día 14 de la cursada
+    assert not app.exception, app.exception
+
+
+def test_grupos_antes_de_la_primera_evaluacion(app):
+    """Con una fecha de corte sin evaluaciones, la página de grupos avisa en vez de romperse."""
+    app.date_input(key="fecha_corte").set_value("2025-08-06").run()
+    app.switch_page("paginas/ml_grupos.py").run()
+    assert not app.exception, app.exception
+    assert any("evaluaciones" in i.value for i in app.info)
+
+
+def test_bloque_de_riesgo_para_la_ficha(carpeta_pipeline, monkeypatch):
+    """El bloque del predictor de abandono que va en la Ficha individual corre solo (D58)."""
+    monkeypatch.setenv("LMS_GOLD", str(carpeta_pipeline / "gold"))
+
+    def ficha():
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.cwd() / "app"))
+        import componentes as comp
+        alumno = comp.metrica("riesgo_abandono", asignatura=None)["id_alumno"].iloc[0]
+        comp.riesgo_abandono_alumno(alumno)
+
+    at = AppTest.from_function(ficha, default_timeout=120).run()
+    assert not at.exception, at.exception
+    assert any("riesgo de abandono" in m.value for m in at.markdown)
+
+
+def test_predictor_con_corte_pasado_y_otro_umbral(app):
+    """Con una fecha de corte del pasado aparece el botón para volver; mover el umbral no rompe la página."""
+    app.date_input(key="fecha_corte").set_value("2025-10-10").run()
+    app.switch_page("paginas/ml_abandono.py").run()
+    assert not app.exception, app.exception
+    assert app.button(key="ab_volver") is not None
+    app.select_slider(key="ab_umbral_alto").set_value(25.0).run()
+    assert not app.exception, app.exception
+    app.button(key="ab_umbral_reset").click().run()
+    assert not app.exception, app.exception
+
+
+def test_cargar_archivo_muestra_antes_y_despues(app, carpeta_pipeline):
+    """Después de una carga se muestran las tarjetas de antes/después (D51). Se
+    simula el resultado (no se sube un archivo para no tocar data/raw)."""
+    from src import metricas as m
+    antes = m.foto_datos(m.cargar(carpeta_pipeline / "gold"))
+    despues = antes.copy()
+    pye = despues["asignatura"] == "Probabilidad y Estadística"
+    despues.loc[pye, ["notas", "instrumentos"]] += [94, 1]
+    app.switch_page("paginas/cargar_archivo.py").run()
+    app.session_state["resultado_carga"] = {
+        "ok": True, "mensaje": "Se cargó", "errores": [], "rechazados": [],
+        "cargados": [{"nombre": "x.xlsx", "tipo": "calificaciones", "asignatura": "Probabilidad y Estadística",
+                      "instrumento": "Semanal 3"}],
+        "antes": antes, "despues": despues, "asignaturas": ["Probabilidad y Estadística"]}
+    app.run()
+    assert not app.exception, app.exception
+    valores = {mt.label: mt for mt in app.metric}
+    assert valores["Notas cargadas"].delta.startswith("+94")
+    assert valores["Instrumentos"].delta.startswith("+1")
+    assert valores["Libres"].delta == "sin cambios"

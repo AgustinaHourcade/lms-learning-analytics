@@ -22,7 +22,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-import componentes as comp
+import componentes_matricula as comp   # sistema visual propio de esta página (ver el módulo)
 from src.metricas import TIPOS_ALERTA
 
 f = comp.encabezado(
@@ -310,7 +310,7 @@ with tab_alertas:
             if texto.strip():
                 buscado = vista["nombre_completo"].fillna("") + " " + vista["id_alumno"]
                 vista = vista[buscado.str.contains(texto.strip(), case=False, regex=False)]
-            st.html(f'<p class="tfi-pie num" style="margin:-4px 0 6px">{comp.num(len(vista))} de '
+            st.html(f'<p class="ma-pie num" style="margin:-4px 0 6px">{comp.num(len(vista))} de '
                     f'{comp.num(len(por_alumno))} alumnos con alguna alerta</p>')
 
             mostrar = pd.DataFrame({
@@ -405,7 +405,7 @@ with tab_sin_notas:
     sin_notas = tabla[tabla["inscripto"] & (tabla["rendidos"] == 0)]
     sin_notas = sin_notas.assign(nunca=sin_notas["eventos"].fillna(0).eq(0)) \
                          .sort_values(["nunca", "eventos"], ascending=[False, False])
-    st.html('<p class="tfi-desc" style="margin:4px 0 2px">Inscriptos que <strong>no rindieron ningún '
+    st.html('<p class="ma-desc" style="margin:4px 0 2px">Inscriptos que <strong>no rindieron ningún '
             'instrumento</strong> a la fecha de corte: todo cuenta 0, así que están Libres. Se separan en dos '
             'grupos porque piden acciones distintas.</p>')
     nunca, entra = int(sin_notas["nunca"].sum()), int((~sin_notas["nunca"]).sum())
