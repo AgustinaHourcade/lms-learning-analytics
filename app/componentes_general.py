@@ -17,8 +17,12 @@ y alertas con componentes_matricula.py), vive en este módulo aparte:
   - El color de materia IDENTIFICA, el del semáforo EVALÚA: nunca se mezclan en el mismo elemento.
   - El color nunca va solo: el semáforo repite el estado con forma (círculo, triángulo,
     octágono, cuadrado) y texto (D48, D60).
+  - Las materias se nombran "Nombre completo (SIGLA)" con nombre_materia(); la sigla
+    sola, solo en desgloses del tipo "ALG 54 · AED 39 · PYE 52" (D78).
 """
 from __future__ import annotations
+
+import re
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -39,13 +43,25 @@ FUENTE = "Inter, system-ui, sans-serif"
 FUENTE_TITULOS = "'Space Grotesk', Inter, sans-serif"
 
 # Categórica, en orden fijo: las 3 primeras son las materias (en el orden de ASIGNATURAS).
-CATEGORICA = ["#2563C9", "#D4661F", "#0E8F62", "#7A5AC8", "#C2407A", "#5C7C8A", "#A68A1E", "#3C3A34"]
+# Las materias quedan fuera del semáforo (ni verde, ni ámbar, ni rojo, ni gris): azul,
+# violeta y cian. Se eligieron simulando deuteranopía y protanopía (Machado 2009): la
+# menor diferencia CIELAB entre dos materias, o entre una materia y un color del
+# semáforo, es ΔE ≈ 27 (D78).
+CATEGORICA = ["#1E4FA8", "#7C3AED", "#0891B2", "#C2407A", "#5C7C8A", "#A68A1E", "#3C3A34", "#9A6700"]
 COLORES_MATERIA = dict(zip(ASIGNATURAS, CATEGORICA))
 SIGLAS = {nombre: datos["sigla"] for nombre, datos in ASIGNATURAS.items()}
-NOMBRES_CORTOS = {"Álgebra": "Álgebra", "Algoritmos y Estructuras de Datos": "Algoritmos",
-                  "Probabilidad y Estadística": "Probabilidad"}
 # Etiqueta de materia: fondo claro y texto oscuro del mismo tono.
-ETIQUETA_MATERIA = dict(zip(ASIGNATURAS, [("#EAF0F8", "#164279"), ("#FBEFE6", "#8A4415"), ("#E6F2EB", "#0B6B49")]))
+ETIQUETA_MATERIA = dict(zip(ASIGNATURAS, [("#E8EEF8", "#173F86"), ("#F1EBFD", "#5B21B6"), ("#E3F4F8", "#0B6A82")]))
+
+
+def nombre_instrumento(nombre: str) -> str:
+    """Nombre del instrumento sin los emojis del LMS ('👉  Actividad Rápida 1' -> 'Actividad Rápida 1')."""
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s°º:.,()/+-]", "", str(nombre))).strip()
+
+
+def nombre_materia(materia: str) -> str:
+    """'Algoritmos y Estructuras de Datos (AED)': así se nombra una materia en toda la página."""
+    return f"{materia} ({SIGLAS[materia]})" if materia in SIGLAS else materia
 
 # Estados: (relleno, fondo claro, texto). Reservados para evaluar.
 BIEN, ATENCION, CRITICO, NEUTRO = "#16734A", "#C98A12", "#B02A20", "#3C3A34"
@@ -55,6 +71,9 @@ TONOS = {
     "critico": (CRITICO, "#FBE9E6", "#93241C"),
     "neutro": (NEUTRO, "#EBE9E4", "#35332D"),
 }
+# Texto sobre cada relleno: el blanco sobre el ámbar da 2,9:1 (no llega a 4,5:1), así que
+# ahí va texto oscuro (6,0:1). Con blanco: verde 5,9:1, rojo 6,6:1, neutro 11,4:1 (D78).
+TEXTO_SOBRE = {ATENCION: TEXTO}
 TONO_CONDICION = {"Promociona": "bien", "Regular": "atencion", "Libre": "critico", SIN_EVALUACIONES: "neutro"}
 TONO_ACTIVIDAD = {ACTIVO: "bien", INACTIVO: "atencion", SIN_ACTIVIDAD: "neutro"}
 COLORES_CONDICION = {c: TONOS[t][0] for c, t in TONO_CONDICION.items()}
@@ -78,8 +97,37 @@ pio.templates[PLANTILLA] = go.layout.Template(layout=dict(
 CSS = f"""
 <style>
   /* Tarjeta de alerta (roja clara) */
-  .st-key-tarjeta_alerta {{background: #FBE9E6 !important; border-color: #F2CFC9 !important;}}
-  .st-key-tarjeta_alerta a p {{color: #93241C; font-weight: 600;}}
+  /* Fila de KPIs: 4 tarjetas blancas del mismo alto, con el link pegado abajo */
+  .st-key-fila_kpis [data-testid="stHorizontalBlock"] {{align-items: stretch;}}
+  .st-key-fila_kpis [data-testid="stColumn"] > div {{height: 100%;}}
+  .st-key-fila_kpis [data-testid="stColumn"] [data-testid="stLayoutWrapper"] {{flex: 1 1 auto;}}
+  .st-key-fila_kpis [class*="st-key-kpi_"] {{height: 100%; justify-content: flex-start; gap: 0;
+      background: {TARJETA}; border-radius: 13px; padding: 18px 20px 14px;}}
+  .st-key-fila_kpis [class*="st-key-kpi_"] > div:has([data-testid="stPageLink"]) {{margin-top: auto;}}
+  .st-key-fila_kpis [data-testid="stPageLink"] a {{padding-left: 0;}}
+  .st-key-fila_kpis [data-testid="stPageLink"] p {{font-size: 13px; font-weight: 600; color: {ACCION};}}
+  .st-key-kpi_alerta {{box-shadow: inset 0 3px 0 {CRITICO};}}
+  /* La etiqueta reserva dos líneas: si una se parte (pantallas angostas), los números siguen alineados. */
+  .gr-kpi-etq {{display: block; min-height: 34px; margin-bottom: 4px !important; line-height: 17px !important;
+                font: 600 13px {FUENTE} !important; letter-spacing: 0 !important; text-transform: none !important;}}
+  .gr-kpi-etq .gr-ayuda {{vertical-align: 0;}}
+  .gr-kpi-fila {{display: flex; flex-direction: column; align-items: flex-start; gap: 8px;}}
+  .gr-kpi-num {{font: 600 32px/1.1 {FUENTE_TITULOS}; font-variant-numeric: tabular-nums; letter-spacing: -.01em;}}
+  .gr-kpi-var {{display: inline-flex; align-items: center; gap: 6px;}}
+  .gr-kpi-delta {{display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px;
+                  border-radius: 999px; font: 600 12px {FUENTE}; font-variant-numeric: tabular-nums;
+                  white-space: nowrap;}}
+  .gr-kpi-ref {{font: 400 11px {FUENTE}; color: {TENUE}; white-space: nowrap;}}
+  .gr-kpi-barra {{height: 6px; margin: 14px 0 8px; border-radius: 3px; background: #EDEBE6; overflow: hidden;}}
+  .gr-kpi-barra > div {{height: 100%; border-radius: 3px;}}
+  .gr-kpi-detalle {{font: 400 12px/1.5 {FUENTE}; color: {TEXTO_2};}}
+  .gr-kpi-detalle b {{font-weight: 600; color: {TEXTO};}}
+  .gr-ayuda {{display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px;
+              margin-left: 6px; border-radius: 50%; border: 1px solid #C9C5BC; color: {TEXTO_3};
+              font: 600 10px {FUENTE}; cursor: help; vertical-align: 2px; text-transform: none;
+              letter-spacing: 0;}}
+  .gr-h2 {{font: 600 19px/1.3 {FUENTE_TITULOS}; color: {TEXTO}; margin: 2px 0 12px !important;}}
+  .gr-atenuado {{opacity: .55;}}
 
   /* Piezas HTML (ver las funciones de abajo) */
   .gr {{font-family: {FUENTE}; color: {TEXTO};}}
@@ -118,25 +166,21 @@ def estilos() -> None:
 # ---------------------------------------------------------------------------
 # Componentes visuales
 # ---------------------------------------------------------------------------
-def encabezado(titulo: str, descripcion: str = "") -> Filtros:
-    """Título de la página y, abajo, los filtros que se están usando."""
-    f = filtros()
+def encabezado(titulo: str, contexto: str = "") -> None:
+    """Título de la página y, abajo, una línea de contexto (fecha, filtros, base)."""
     estilos()
     st.title(titulo)
-    if descripcion:
-        st.html(f'<p class="gr" style="margin:-6px 0 0;max-width:72ch;font:400 13px/1.55 {FUENTE};'
-                f'color:{TEXTO_2}">{descripcion}</p>')
-    st.caption(f"Datos al **{fmt_fecha(f.fecha_corte)}** · {f.materia} · "
-               f"Inactivo después de {f.umbral} días sin entrar")
-    return f
+    if contexto:
+        st.caption(contexto)
 
 
 def grafico(fig, **kwargs) -> None:
-    """st.plotly_chart con la plantilla de esta página. Los fondos se fijan en el layout
-    porque el tema de Streamlit los pisa aunque se pase theme=None."""
-    fig.update_layout(template=f"plotly_white+{PLANTILLA}")
+    """st.plotly_chart con la plantilla de esta página, sin la barra de herramientas y con
+    formato es-AR en ejes y hovers (1.234,5). Los fondos se fijan en el layout porque el
+    tema de Streamlit los pisa aunque se pase theme=None."""
+    fig.update_layout(template=f"plotly_white+{PLANTILLA}", separators=",.")
     fig.update_layout(paper_bgcolor=TARJETA, plot_bgcolor=TARJETA)
-    st.plotly_chart(fig, width="stretch", theme=None, **kwargs)
+    st.plotly_chart(fig, width="stretch", theme=None, config={"displayModeBar": False}, **kwargs)
 
 
 def tarjeta(nombre: str, **kwargs):
@@ -202,7 +246,8 @@ def barra_apilada(segmentos: list, alto: int = 30, min_etiqueta: float = 9) -> s
             continue
         ancho = p / total * 100
         texto = etiqueta if ancho >= min_etiqueta else ""
-        tramos.append(f'<div style="width:{ancho:.2f}%;background:{color}" title="{etiqueta}">{texto}</div>')
+        tramos.append(f'<div style="width:{ancho:.2f}%;background:{color};color:{TEXTO_SOBRE.get(color, "#fff")}" '
+                      f'title="{etiqueta}">{texto}</div>')
     return f'<div class="gr-barra" style="height:{alto}px">{"".join(tramos)}</div>'
 
 
@@ -211,6 +256,21 @@ def barra_simple(pct_: float, color: str, alto: int = 22) -> str:
     return (f'<span style="flex:1 1 auto;height:{alto}px;border-radius:5px;background:#EDEBE6;overflow:hidden;'
             f'display:inline-block"><span style="display:block;width:{ancho:.1f}%;height:100%;'
             f'background:{color}"></span></span>')
+
+
+def barra_marca(pct_: float, marca: float, color: str, titulo_marca: str = "", alto: int = 8) -> str:
+    """Barra simple (0-100) con una raya vertical en `marca` (por ejemplo, el corte de Regular)."""
+    ancho = 0 if pct_ is None or pd.isna(pct_) else max(0.0, min(100.0, pct_))
+    return (f'<div style="position:relative;height:{alto}px;margin:4px 0 2px;border-radius:4px;background:#EDEBE6">'
+            f'<div style="width:{ancho:.1f}%;height:100%;border-radius:4px;background:{color}"></div>'
+            f'<div title="{titulo_marca}" style="position:absolute;left:calc({marca:.1f}% - 1px);top:-4px;width:2px;'
+            f'height:{alto + 8}px;background:{TEXTO};border-radius:1px"></div></div>')
+
+
+def ayuda(texto: str) -> str:
+    """Signo (?) con una explicación que aparece al pasar el mouse."""
+    texto = texto.replace('"', "&quot;")
+    return f'<span class="gr-ayuda" title="{texto}" aria-label="{texto}">?</span>'
 
 
 def leyenda(items: list) -> str:
@@ -235,16 +295,40 @@ def delta(valor, unidad: str = "pp", mejor: str = "sube", decimales: int = 1) ->
     signo = "+" if sube else "−"
     return (f'<span class="gr-delta" style="color:{color}"><span aria-hidden="true" style="display:inline-block;'
             f'width:10px;height:10px;background:currentColor;clip-path:{flecha}"></span>'
-            f'{signo}{num(abs(valor), decimales)} {unidad}</span>')
+            f'{signo}{num(abs(valor), decimales)}{" " + unidad if unidad else ""}</span>')
 
 
-def kpi(etiqueta: str, valor: str, pie: str = "", sufijo: str = "") -> str:
-    """Tarjeta chica de KPI: etiqueta, número grande y una línea de pie (texto o delta)."""
-    sufijo = f' <span style="font:400 13px {FUENTE};color:{TENUE}">{sufijo}</span>' if sufijo else ""
-    pie = f'<p class="gr-txt num" style="margin-top:4px">{pie}</p>' if pie else ""
-    return (f'<div class="gr-tarjeta" style="padding:15px;height:100%">'
-            f'<p class="gr-etq" style="margin-bottom:8px">{etiqueta}</p>'
-            f'<p class="gr-grande">{valor}{sufijo}</p>{pie}</div>')
+def pastilla_delta(valor, unidad: str = "pp", mejor: str = "sube", decimales: int = 1, referencia: str = "") -> str:
+    """Variación como pastilla de color (verde si mejora, roja si empeora, gris si no cambia)
+    con 'vs. dd/mm' al lado. Sin dato devuelve ""."""
+    if valor is None or pd.isna(valor):
+        return ""
+    ref = f'<span class="gr-kpi-ref">vs. {referencia}</span>' if referencia else ""
+    if round(valor, decimales) == 0:
+        return f'<span class="gr-kpi-delta" style="background:#EFEDE8;color:{TEXTO_2}">= sin cambios</span>{ref}'
+    sube = valor > 0
+    _, fondo, texto = TONOS["bien" if sube == (mejor == "sube") else "critico"]
+    flecha = "polygon(50% 10%,100% 80%,0 80%)" if sube else "polygon(0 20%,100% 20%,50% 90%)"
+    return (f'<span class="gr-kpi-delta" style="background:{fondo};color:{texto}"><span aria-hidden="true" '
+            f'style="display:inline-block;width:9px;height:9px;background:currentColor;clip-path:{flecha}"></span>'
+            f'{"+" if sube else "−"}{num(abs(valor), decimales)}{" " + unidad if unidad else ""}</span>{ref}')
+
+
+def kpi(etiqueta: str, valor: str, variacion: str = "", proporcion: float | None = None, color_barra: str = ACCION,
+        detalle: str = "", tip: str = "", alerta: bool = False) -> str:
+    """Contenido de una tarjeta de KPI (va dentro de un st.container con borde, ver CSS
+    .st-key-fila_kpis): etiqueta (con su (?) si hay `tip`), número grande con la variación al
+    lado (pastilla_delta), una barra fina con la `proporcion` (0-100) y una línea de `detalle`
+    que dice sobre cuántos. `alerta` pinta la etiqueta y el número de rojo."""
+    c_etq, c_num = ("#93241C", "#93241C") if alerta else (TEXTO_3, TEXTO)
+    barra = ""
+    if proporcion is not None and not pd.isna(proporcion):
+        ancho = max(0.0, min(100.0, proporcion))
+        barra = (f'<div class="gr-kpi-barra"><div style="width:{ancho:.1f}%;background:{color_barra}"></div></div>')
+    detalle = f'<p class="gr-kpi-detalle num">{detalle}</p>' if detalle else ""
+    return (f'<p class="gr-etq gr-kpi-etq" style="color:{c_etq}">{etiqueta}{ayuda(tip) if tip else ""}</p>'
+            f'<div class="gr-kpi-fila"><span class="gr-kpi-num" style="color:{c_num}">{valor}</span>'
+            f'<span class="gr-kpi-var">{variacion}</span></div>{barra}{detalle}')
 
 
 def aviso(texto: str, tono: str = "atencion") -> str:

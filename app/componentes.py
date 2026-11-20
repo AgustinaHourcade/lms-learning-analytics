@@ -271,7 +271,7 @@ CSS = f"""
   .tfi-meter > span:first-child > span {{display: block; height: 100%;}}
   .tfi-pie {{margin: 10px 0 0; font: 400 11.5px/1.55 {FUENTE}; color: {_T['texto_3']};}}
 
-  /* --- Rediseño de Cargar archivo y Explorar datos (D52) ------------------- */
+  /* --- Rediseño de Cargar archivo y Explorar datos ------ ------------------- */
   .mono {{font-family: 'JetBrains Mono', ui-monospace, monospace;}}
   /* Contenedores con key "tarjeta-...": superficie blanca con borde */
   [class*="st-key-tarjeta"] {{background: #FFFFFF; border: 1px solid #E3E1DC; border-radius: 13px;
@@ -354,7 +354,7 @@ CSS = f"""
   .semaforo-otro       {{background:#F1EFEA; color:#57544C;}}
   [data-testid="stMetric"] [data-testid="stMetricValue"] {{font-size: 1.75rem; font-family: {FUENTE_TITULOS};}}
 
-  /* --- Ficha individual: diseño "Analítica académica" (D59) ---------------
+  /* --- Ficha individual: diseño "Analítica académica" ------ ---------------
      Clases fi-* para no chocar con las tfi-* del rediseño de main. */
   .stTabs [data-baseweb="tab-list"] {{gap: 4px; border-bottom: 1px solid #E3E1DC;}}
   .stTabs [data-baseweb="tab"] {{height: 42px; padding: 0 14px; font-weight: 500;}}
@@ -558,7 +558,7 @@ def barra_lateral(sin_filtros: str | None = None) -> Filtros:
                                    "instrumentos ya tomados, actividad hasta esa fecha.")
         materia = st.selectbox("Materia", [TODAS, *ASIGNATURAS], key="materia")
         umbral = st.slider("Inactivo después de (días sin entrar)", 1, 30, key="umbral",
-                           help="Un alumno que no entra hace más de estos días cuenta como inactivo (D35).")
+                           help="Un alumno que no entra hace más de estos días cuenta como inactivo.")
         st.button("Restablecer filtros", on_click=_restablecer, width="stretch")
         st.caption(f"Datos del {fmt_fecha(inicio)} al {fmt_fecha(fin)}.")
 

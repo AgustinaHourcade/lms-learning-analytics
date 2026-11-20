@@ -891,6 +891,91 @@ def kpis_generales(d: Datos, fecha_corte=None, asignatura=None, umbral: int = UM
             .merge(cal[["asignatura", "nota_promedio", "escala", "pct_libre", "pct_regular", "pct_promociona"]]))
 
 
+# ---------------------------------------------------------------------------
+# Dashboard General: KPIs nuevos (D72-D76)
+# ---------------------------------------------------------------------------
+def alcanzan_regular(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
+    """Por materia: alumnos con condición a la fecha (los que ya tienen nota) y
+    cuántos alcanzan Regular o Promociona con el corte de su materia (D72).
+    pct_alcanzan = (Regular + Promociona) / con_condicion × 100; vacío si
+    todavía no hay evaluaciones."""
+    n = nota_final(d, fecha_corte, asignatura)
+    n = n[n["condicion"].ne(SIN_EVALUACIONES)]
+    g = (n.assign(alcanza=n["condicion"].isin(["Regular", "Promociona"]))
+          .groupby("asignatura").agg(con_condicion=("id_alumno", "size"), alcanzan=("alcanza", "sum"))
+          .reindex(_materias(asignatura)).fillna(0).astype(int))
+    g["pct_alcanzan"] = (g["alcanzan"] / g["con_condicion"].replace(0, np.nan) * 100).round(2)
+    return g.reset_index(names="asignatura")
+
+
+def alumnos_en_riesgo(d: Datos, fecha_corte=None, asignatura=None,
+                      umbral: int = UMBRAL_INACTIVIDAD_DIAS) -> pd.DataFrame:
+    """Alumnos en riesgo (D73): Libre a la fecha de corte y sin entrar en los
+    últimos `umbral` días (Inactivo o Sin actividad). Una fila por alumno y materia."""
+    t = tabla_alumnos(d, fecha_corte, asignatura, umbral)
+    r = t[t["condicion"].eq("Libre") & t["estado_actividad"].ne(ACTIVO)]
+    cols = ["asignatura", "id_alumno", "nombre_completo", "inscripto", "nota_final", "escala", "rendidos",
+            "instrumentos", "estado_actividad", "dias_sin_actividad"]
+    return r[cols].reset_index(drop=True)
+
+
+def tasa_rendicion(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
+    """Por materia (D74): Σ instrumentos rendidos / Σ instrumentos disponibles a la
+    fecha, sobre todos los alumnos de la base (alumno × instrumento). Rendido =
+    tiene nota en el instrumento o en su recuperatorio, como en nota_final."""
+    n = nota_final(d, fecha_corte, asignatura)
+    g = (n.groupby("asignatura")[["instrumentos", "rendidos"]].sum()
+          .reindex(_materias(asignatura)).fillna(0).astype(int))
+    g["pct_rendidos"] = (g["rendidos"] / g["instrumentos"].replace(0, np.nan) * 100).round(2)
+    return g.reset_index(names="asignatura")
+
+
+def sin_rendir(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
+    """Alumnos de la base que no rindieron ningún instrumento a la fecha (rendidos
+    == 0): su nota es 0 por no rendir (D15). Con `inscripto` y `eventos` para
+    separar a quienes nunca entraron de quienes entran y no rinden."""
+    n = nota_final(d, fecha_corte, asignatura)
+    act = actividad_alumnos(d, fecha_corte, asignatura)[["asignatura", "id_alumno", "eventos"]]
+    s = n[(n["rendidos"] == 0) & (n["instrumentos"] > 0)].merge(act, how="left")
+    return s[["asignatura", "id_alumno", "inscripto", "instrumentos", "eventos"]].reset_index(drop=True)
+
+
+def evaluaciones_en_periodo(d: Datos, fecha_corte=None, asignatura=None, dias: int = 7) -> pd.DataFrame:
+    """Instrumentos que cuentan para la nota final cuya fecha cae en
+    (corte − dias, corte] (D75), con cuántos alumnos de la base lo rindieron y
+    cuántos no (que cuentan 0). Los recuperatorios no van: no rendirlos no da 0."""
+    corte = fecha_de_corte(fecha_corte)
+    c = notas_instrumento(d, corte, asignatura)
+    c = c[c["cuenta_en_final"] & c["fecha_instrumento"].gt(corte - pd.Timedelta(days=dias))]
+    c = c.assign(con_nota=c["rindio"] | c["recuperatorio_aplicado"])
+    if c.empty:
+        return pd.DataFrame(columns=["asignatura", "id_instrumento", "instrumento", "fecha_instrumento", "base",
+                                     "rindieron", "no_rindieron"])
+    g = (c.groupby(["asignatura", "id_instrumento", "fecha_instrumento"])
+          .agg(base=("id_alumno", "size"), rindieron=("con_nota", "sum")).reset_index()
+          .merge(d.instrumentos[["id_instrumento", "instrumento"]], on="id_instrumento", how="left"))
+    g["no_rindieron"] = g["base"] - g["rindieron"]
+    return g.sort_values(["fecha_instrumento", "asignatura"]).reset_index(drop=True)
+
+
+def no_rindieron_periodo(d: Datos, fecha_corte=None, asignatura=None, dias: int = 7) -> pd.DataFrame:
+    """Alumno × materia con al menos un instrumento de evaluaciones_en_periodo()
+    sin rendir (D75). `faltan` = cuántos de esos instrumentos le faltan."""
+    corte = fecha_de_corte(fecha_corte)
+    c = notas_instrumento(d, corte, asignatura)
+    c = c[c["cuenta_en_final"] & c["fecha_instrumento"].gt(corte - pd.Timedelta(days=dias))]
+    c = c[~(c["rindio"] | c["recuperatorio_aplicado"])]
+    return (c.groupby(["asignatura", "id_alumno"]).size().rename("faltan").reset_index())
+
+
+def fecha_reporte_participacion(d: Datos) -> pd.Timestamp | None:
+    """Día del reporte de participación (D76). La fecha de exportación del Excel no
+    llega a gold, así que se usa la última interacción que registra el reporte:
+    el LMS la calcula al exportar. El avance es una foto de ese día (D36)."""
+    f = d.participacion["ultima_interaccion"].max()
+    return None if pd.isna(f) else pd.Timestamp(f).normalize()
+
+
 def corte_con_todo(d: Datos) -> pd.Timestamp:
     """La fecha de corte que incluye todo lo cargado: el último instrumento o la
     última interacción, lo que sea más tarde."""

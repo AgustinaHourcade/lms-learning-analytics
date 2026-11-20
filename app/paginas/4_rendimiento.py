@@ -572,4 +572,5 @@ with tab_tabla:
                ["Promedio", "Mediana", "Mínimo", "Máximo", "% aprobada"]}})
         st.caption("La fecha es la mediana de los intentos registrados en la trazabilidad. \"% aprobada\" sale de "
                    "la columna Observaciones del Excel. El recuperatorio aparece aparte, con su propia nota.",
-                   help="Decisiones: D18 (fecha del instrumento), D20 (recuperatorio), D22 (solo quienes rindieron).")
+                   help="La fecha de cada instrumento es la mediana de las realizaciones; si se rindió el "
+                        "recuperatorio, su nota reemplaza a la original; el promedio usa solo a quienes rindieron.")

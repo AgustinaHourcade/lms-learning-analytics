@@ -63,7 +63,7 @@ SUGERENCIA = {
     "sin_actividad": "Sugerido: contactarlo para confirmar si sigue cursando la materia.",
     "sin_notas": "Sugerido: confirmar si tuvo algún problema para acceder a las evaluaciones antes de darlo "
                  "por perdido.",
-    "libre": "Sugerido: revisar qué instrumentos no rindió, porque cuentan 0 en la nota final (D15).",
+    "libre": "Sugerido: revisar qué instrumentos no rindió, porque cuentan 0 en la nota final.",
     "inactivo": "Sugerido: un mensaje corto para que vuelva a entrar antes de la próxima evaluación.",
     "no_inscripto": "Sugerido: avisar a la secretaría: cursa y rinde sin figurar en Matriculados.",
 }
@@ -230,7 +230,7 @@ with st.container(border=True, key="tarjeta_selector"):
 ficha = comp.metrica("ficha_alumno", id_alumno=id_alumno)
 materias = ficha["materias"]
 if materias.empty:  # no pasa con solo_base=True, pero por las dudas
-    st.info("Este alumno no está en la base de ninguna materia (D11).", icon=":material/person_off:")
+    st.info("Este alumno no está en la base de ninguna materia.", icon=":material/person_off:")
     st.stop()
 orden = {m: i for i, m in enumerate(ESQUEMA)}
 materias = materias.sort_values("asignatura", key=lambda s: s.map(orden)).reset_index(drop=True)
@@ -368,7 +368,7 @@ leyenda = "".join(
 comp.html(f"""
 <section class="fi-card" aria-label="Estado por materia">
   <div class="fi-card-cab"><h3 class="fi-h3">Estado por materia</h3>
-    <div class="tfi-nota-al-pie">Ordenado por riesgo. La nota al corte incluye con 0 lo que no rindió (D15).</div></div>
+    <div class="tfi-nota-al-pie">Ordenado por riesgo. La nota al corte incluye con 0 lo que no rindió.</div></div>
   <div style="overflow-x:auto"><table class="fi-tabla">
     <thead><tr><th scope="col">Materia</th><th scope="col">Condición</th><th scope="col">Nota al corte</th>
       <th scope="col">vs. curso</th><th scope="col">Rendidos</th><th scope="col">Actividad 8 sem.</th>
@@ -433,7 +433,7 @@ else:
 <section class="fi-card" aria-label="Alertas">
   <div class="fi-card-cab">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><h3 class="fi-h3">Qué hacer con este alumno</h3>
-      <span class="tfi-nota-al-pie">{n_al} {'alerta' if n_al == 1 else 'alertas'} a la fecha de corte (D37)
+      <span class="tfi-nota-al-pie">{n_al} {'alerta' if n_al == 1 else 'alertas'} a la fecha de corte
       {f', agrupadas en {n_gr} situaciones' if n_gr < n_al else ''}</span></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">{resumen_chips}</div></div>
   {''.join(tarjetas_alerta)}
@@ -490,8 +490,8 @@ with tab_notas:
         c_txt, c_vista = st.columns([4, 1.3], vertical_alignment="center")
         c_txt.markdown(
             '<div class="tfi-desc" style="margin:0">Una tarjeta por instrumento, en el orden en que se tomaron. '
-            "Lo que no rindió cuenta 0 para la nota final (D15); si rindió el recuperatorio, esa nota reemplaza "
-            "a la original (D34). El curso es el promedio de quienes lo rindieron (D22).</div>",
+            "Lo que no rindió cuenta 0 para la nota final; si rindió el recuperatorio, esa nota reemplaza "
+            "a la original. El curso es el promedio de quienes lo rindieron.</div>",
             unsafe_allow_html=True)
         vista = c_vista.segmented_control("Vista", ["Libreta", "Barras"], default="Libreta", key="fi_vista_notas",
                                           label_visibility="collapsed") or "Libreta"
@@ -591,7 +591,7 @@ with tab_act:
         <div class="tfi-nota-al-pie" style="margin-top:4px;max-width:80ch">La barra es el percentil: qué parte de la
         base de la materia tiene un valor igual o menor (p80 = está por encima del 80 % de sus compañeros). Abajo,
         el promedio del curso. <em>Avance</em> sale del reporte de participación: es una foto a la fecha de
-        exportación y no se recorta con la fecha de corte (D36).</div></div>
+        exportación y no se recorta con la fecha de corte.</div></div>
       <div class="fi-grilla">{''.join(bloques)}</div></section>""")
 
     with st.container(border=True, key="tarjeta_semanal"):
@@ -646,8 +646,8 @@ with tab_act:
     comp.html(f"""<section class="fi-card" aria-label="Reporte de participación">
       <div class="fi-card-cab" style="display:block"><h3 class="fi-h3">Reporte de participación</h3>
         <div class="tfi-nota-al-pie" style="margin-top:3px">Sesiones y minutos salen de la trazabilidad (sesiones
-        cortadas a los 30 min sin eventos, D25). El resto es una foto a la fecha de exportación del LMS: no se
-        recorta con la fecha de corte (D36).</div></div>
+        cortadas a los 30 min sin eventos). El resto es una foto a la fecha de exportación del LMS: no se
+        recorta con la fecha de corte.</div></div>
       <div style="overflow-x:auto"><table class="fi-tabla"><thead><tr>
         <th scope="col">Materia</th><th scope="col">Sesiones</th><th scope="col">Minutos</th>
         <th scope="col">Días con actividad</th><th scope="col">Semanas</th><th scope="col">Avance</th>

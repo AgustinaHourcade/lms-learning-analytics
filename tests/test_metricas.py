@@ -500,3 +500,83 @@ def test_comparar_fotos(d):
     assert len(c) == len(antes) * len(m.FOTO_DATOS)
     cambios = c[c["diferencia"] != 0]
     assert len(cambios) == 1 and cambios.iloc[0]["clave"] == "notas" and cambios.iloc[0]["diferencia"] == 10
+
+
+# ---------------------------------------------------------------------------
+# Dashboard General: KPIs nuevos (D72-D76)
+# ---------------------------------------------------------------------------
+def test_alcanzan_regular_chicos(chicos):
+    a = m.alcanzan_regular(chicos, "2025-10-24").set_index("asignatura")
+    assert (a.loc[ALG, "con_condicion"], a.loc[ALG, "alcanzan"], a.loc[ALG, "pct_alcanzan"]) == (2, 1, 50.0)
+    assert a.loc[PYE, "pct_alcanzan"] == 0.0           # P1 queda Libre por el recuperatorio
+    assert pd.isna(a.loc[AED, "pct_alcanzan"])          # sin alumnos con condición: vacío, no 0
+
+
+def test_alumnos_en_riesgo_chicos(chicos):
+    r = m.alumnos_en_riesgo(chicos, "2025-10-24", umbral=7)
+    # A1: Libre e inactivo; P1: Libre y nunca entró. A2 promociona aunque esté inactivo.
+    assert sorted(r["id_alumno"]) == ["A1", "P1"]
+    assert m.alumnos_en_riesgo(chicos, "2025-10-24", umbral=40)["id_alumno"].tolist() == ["P1"]
+
+
+def test_tasa_rendicion_chicos(chicos):
+    t = m.tasa_rendicion(chicos, "2025-10-24").set_index("asignatura")
+    assert (t.loc[ALG, "instrumentos"], t.loc[ALG, "rendidos"], t.loc[ALG, "pct_rendidos"]) == (4, 3, 75.0)
+    assert t.loc[PYE, "pct_rendidos"] == 100.0          # el recuperatorio no suma un instrumento
+    assert pd.isna(t.loc[AED, "pct_rendidos"])
+
+
+def test_evaluaciones_en_periodo_chicos(chicos):
+    e = m.evaluaciones_en_periodo(chicos, "2025-10-05")
+    assert e["id_instrumento"].tolist() == ["ALG-2"]
+    assert (e.loc[0, "base"], e.loc[0, "rindieron"], e.loc[0, "no_rindieron"]) == (2, 1, 1)
+    assert m.no_rindieron_periodo(chicos, "2025-10-05")["id_alumno"].tolist() == ["A1"]
+    # El 01/10 entra en (corte - 7, corte] hasta el 07/10 y deja de entrar el 08/10.
+    assert len(m.evaluaciones_en_periodo(chicos, "2025-10-07")) == 1
+    assert m.evaluaciones_en_periodo(chicos, "2025-10-08").empty
+    # Los recuperatorios no cuentan como evaluación nueva (no rendirlos no da 0).
+    assert m.evaluaciones_en_periodo(chicos, "2025-09-25").empty
+    assert m.no_rindieron_periodo(chicos, "2025-09-25").empty
+
+
+@pytest.mark.parametrize("fecha", FECHAS)
+def test_kpis_general_cierran(d, fecha):
+    a = m.alcanzan_regular(d, fecha)
+    dist = m.distribucion_condicion(d, fecha)
+    alc = dist[dist["condicion"].isin(["Regular", "Promociona"])].groupby("asignatura")["alumnos"].sum()
+    assert a.set_index("asignatura")["alcanzan"].reindex(alc.index).eq(alc).all()
+    riesgo = m.alumnos_en_riesgo(d, fecha)
+    assert riesgo["estado_actividad"].ne(m.ACTIVO).all()
+    t = m.tasa_rendicion(d, fecha)
+    assert t["pct_rendidos"].dropna().between(0, 100).all()
+    n = m.nota_final(d, fecha)
+    assert t["rendidos"].sum() == n["rendidos"].sum()
+
+
+def test_evaluaciones_en_periodo_real(d):
+    e = m.evaluaciones_en_periodo(d, FECHA_CORTE_DEFECTO)
+    corte = T(FECHA_CORTE_DEFECTO)
+    assert e["fecha_instrumento"].gt(corte - pd.Timedelta(days=7)).all() and e["fecha_instrumento"].le(corte).all()
+    falta = m.no_rindieron_periodo(d, FECHA_CORTE_DEFECTO)
+    por_materia = falta.groupby("asignatura").size()
+    maximo = e.groupby("asignatura")["no_rindieron"]
+    assert por_materia.reindex(maximo.max().index).ge(maximo.max()).all()
+    assert por_materia.reindex(maximo.sum().index).le(maximo.sum()).all()
+
+
+@pytest.mark.parametrize("fecha", ["2025-09-15", "2025-09-23", "2025-10-11", FECHA_CORTE_DEFECTO])
+def test_inscriptos_sin_rendir_coinciden_con_integridad(d, fecha):
+    """El KPI 'Inscriptos que no rindieron nada' (alertas sin_actividad + sin_notas)
+    es el mismo grupo que los inscriptos con rendidos == 0 de la caja de integridad."""
+    al = m.alertas(d, fecha)
+    kpi = set(map(tuple, al.loc[al["tipo"].isin(["sin_actividad", "sin_notas"]),
+                                ["asignatura", "id_alumno"]].values))
+    s = m.sin_rendir(d, fecha)
+    assert kpi == set(map(tuple, s.loc[s["inscripto"], ["asignatura", "id_alumno"]].values))
+    if fecha == FECHA_CORTE_DEFECTO:
+        # Al 24/10 todos los no inscriptos ya rindieron algo: la caja entera es el mismo grupo (101).
+        assert kpi == set(map(tuple, s[["asignatura", "id_alumno"]].values))
+
+
+def test_fecha_reporte_participacion(d):
+    assert m.fecha_reporte_participacion(d) == T(FECHA_CORTE_DEFECTO)

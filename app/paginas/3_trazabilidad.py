@@ -98,11 +98,11 @@ dia_pico, hora_pico = DIAS[int(pico["dia_semana"])], int(pico["hora"])
 comp.tarjetas([
     dict(label="Interacciones", value=comp.num(total),
          delta=f"{comp.num(total / dias_periodo)} por día", delta_color="off", delta_arrow="off",
-         help="Clics de los alumnos de la base registrados por el LMS en el período (solo perfil Alumnos, D10), "
-              "sin las filas duplicadas exactas (D7). Por día divide por los días calendario, con fines de semana."),
+         help="Clics de los alumnos de la base registrados por el LMS en el período (solo perfil Alumnos), "
+              "sin las filas duplicadas exactas. Por día divide por los días calendario, con fines de semana."),
     dict(label="Por alumno", value=comp.num(total / max(len(base), 1)),
          delta=f"sobre {comp.num(len(base))} de la base", delta_color="off", delta_arrow="off",
-         help="Total del período dividido por la base de alumnos (D11). Un alumno que cursa dos materias "
+         help="Total del período dividido por la base de alumnos. Un alumno que cursa dos materias "
               "cuenta dos veces."),
     dict(label="Tipo más frecuente", value=tipo_top,
          delta=f"{comp.pct(por_tipo.iloc[0] / total * 100, 0)} de los clics", delta_color="off",
@@ -286,7 +286,7 @@ with tab_tipos:
             masiva = vista.loc[vista["pct_alumnos"].idxmax()]
             comp.nota(f"La acción que más alumnos hicieron es **{masiva['accion']}** "
                       f"({masiva['seccion'] or 'sin sección'}): {comp.pct(masiva['pct_alumnos'], 0)} de la base. "
-                      "'Acceder' a Inicio y a Programa son filas distintas (D62).")
+                      "'Acceder' a Inicio y a Programa son filas distintas.")
         comp.boton_csv(tabla, f"trazabilidad_acciones_{SUFIJO}", "Descargar")
 
     with st.expander("Ver el detalle tipo › sección › acción (mapa de árbol)", icon=":material/account_tree:"):
@@ -403,8 +403,8 @@ with tab_evals:
     with comp.tarjeta("alrededor"):
         comp.titulo_tarjeta("¿Estudian con tiempo o el día antes?",
                             "Para cada evaluación ya tomada se mira la actividad de su materia en los días de "
-                            "alrededor. El **día 0** es la fecha de la evaluación (la mediana de las realizaciones, "
-                            "D18). Usa toda la cursada hasta el corte: no se recorta por el período.")
+                            "alrededor. El **día 0** es la fecha de la evaluación (la mediana de las realizaciones). "
+                            "Usa toda la cursada hasta el corte: no se recorta por el período.")
         c1, c2 = st.columns([1.4, 1.6], vertical_alignment="bottom")
         medida = c1.selectbox("Medida", list(MEDIDAS_EVAL), key="traz_eval_medida")
         antes, despues = c2.slider("Días antes y después", -14, 7, (-7, 3), key="traz_eval_ventana")

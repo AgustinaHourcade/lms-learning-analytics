@@ -261,3 +261,22 @@ def test_cargar_archivo_muestra_antes_y_despues(app, carpeta_pipeline):
     assert valores["Notas cargadas"].delta.startswith("+94")
     assert valores["Instrumentos"].delta.startswith("+1")
     assert valores["Libres"].delta == "sin cambios"
+
+
+@pytest.mark.parametrize("fecha", ["2025-08-05", "2025-08-10", "2025-09-08", "2025-10-14", "2025-10-24"])
+@pytest.mark.parametrize("materia", ["Todas las materias", "Álgebra"])
+def test_general_sin_pestanas_ni_nan(app, fecha, materia):
+    """Dashboard General: corre en los bordes (antes de la primera evaluación, una sola
+    materia, con el interruptor) sin pestañas, sin 'nan' y sin referencias D*."""
+    import re
+    app.date_input(key="fecha_corte").set_value(fecha)
+    app.selectbox(key="materia").set_value(materia)
+    app.switch_page("paginas/1_general.py").run()
+    assert not app.exception, app.exception
+    assert len(app.tabs) == 0
+    for valor in [False, True]:
+        app.toggle[0].set_value(valor).run()
+        assert not app.exception, app.exception
+        textos = " ".join(str(getattr(e, "value", "")) for e in [*app.markdown, *app.caption])
+        assert not re.search(r"\bnan\b", textos, re.I), fecha
+        assert not re.search(r"\bD\d+\b", textos), fecha

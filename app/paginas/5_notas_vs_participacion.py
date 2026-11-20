@@ -89,12 +89,12 @@ with st.container(border=True):
                             help="La variable de participación que se cruza con la nota en toda la página.")
     solo_rindieron = c2.toggle(
         "Solo alumnos que rindieron al menos una evaluación", key="nvp_solo_rindieron",
-        help="Quien no rindió nada tiene 0 (D15) y casi siempre también poca actividad: eso solo ya arma "
-             "una correlación. Sacarlos muestra si la actividad se asocia con la nota entre los que sí rinden (D55).")
+        help="Quien no rindió nada tiene 0 y casi siempre también poca actividad: eso solo ya arma "
+             "una correlación. Sacarlos muestra si la actividad se asocia con la nota entre los que sí rinden.")
     nombre_var = VARIABLES_CRUCE[variable]
     if variable in DEL_REPORTE:
         st.caption(f":material/info: *{nombre_var}* sale del reporte de participación: es una foto a la fecha de "
-                   "exportación y no se recorta con la fecha de corte (D36).")
+                   "exportación y no se recorta con la fecha de corte.")
 
 alumnos = comp.metrica("cuadrante_riesgo", variable=variable)
 if alumnos["nota_pct"].isna().all():

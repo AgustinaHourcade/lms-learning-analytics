@@ -64,11 +64,11 @@ altas = int((por_alumno["prioridad"] == "Alta").sum())
 comp.tarjetas([
     dict(label="Inscriptos", value=comp.num(total("inscriptos")),
          delta=f"sobre {comp.num(total('base'))} de la base",
-         help=f"Último estado Aceptada en Matriculados (D11). Hay además {comp.num(total('bajas'))} bajas. "
+         help=f"Último estado Aceptada en Matriculados. Hay además {comp.num(total('bajas'))} bajas. "
               "Un alumno que cursa dos materias cuenta dos veces."),
     dict(label="Activos", value=comp.num(total("activos")), tono_valor="bien",
          delta=f"{comp.pct(total('activos') / max(total('base'), 1) * 100, 0)} de la base",
-         help=f"Alumnos de la base (inscriptos + con nota) que entraron en los últimos {f.umbral} días (D35)."),
+         help=f"Alumnos de la base (inscriptos + con nota) que entraron en los últimos {f.umbral} días."),
     dict(label="Cursan sin inscripción", value=comp.num(total("no_inscriptos_cursando")), tono="atencion",
          delta=f"{comp.num(aprueban_sin_insc)} van a aprobar",
          help="Tienen notas o actividad, pero no figuran como Aceptada en Matriculados. Abajo, cuántos de "
@@ -78,7 +78,7 @@ comp.tarjetas([
          help="Inscriptos que no rindieron ningún instrumento a la fecha de corte."),
     dict(label="Prioridad alta", value=comp.num(altas), tono="critico", delta="contactar esta semana",
          help="Inscriptos sin actividad o con dos o más alertas académicas a la vez (inactivo, Libre, entra "
-              "pero no rinde) (D52)."),
+              "pero no rinde)."),
 ])
 
 tab_mat, tab_alertas, tab_no_insc, tab_sin_notas = st.tabs(
@@ -330,7 +330,7 @@ with tab_alertas:
                          hide_index=True, width="stretch", height=420, column_config={
                              "Avance": st.column_config.ProgressColumn(
                                  "Avance", format="%d %%", min_value=0, max_value=100,
-                                 help="Avance en el aula según el reporte de participación (foto al 24/10, D36)."),
+                                 help="Avance en el aula según el reporte de participación (foto al 24/10)."),
                              "Por qué": st.column_config.TextColumn(width="medium")})
             comp.pie("<strong>Prioridad:</strong> alta = inscripto sin actividad, o dos o más alertas académicas "
                      "juntas · media = una sola · administrativa = solo cursa sin inscripción.")

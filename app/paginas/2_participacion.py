@@ -142,7 +142,7 @@ with col_kpis:
               delta=f"mediana {comp.num(alumnos['sesiones'].median(), 0)}", delta_color="off", delta_arrow="off",
               chart_data=histograma(alumnos["sesiones"]), chart_type="bar",
               help="Promedio en el período, sobre toda la base (con los 0). Una sesión es una tanda de eventos "
-                   "sin pausas de más de 30 minutos (D25). El gráfico es la distribución.")
+                   "sin pausas de más de 30 minutos. El gráfico es la distribución.")
     k2.metric("Minutos por alumno", comp.num(alumnos["minutos"].mean(), 0), border=True,
               delta=f"mediana {comp.num(alumnos['minutos'].median(), 0)}", delta_color="off", delta_arrow="off",
               chart_data=histograma(alumnos["minutos"]), chart_type="bar",
@@ -151,7 +151,7 @@ with col_kpis:
     k3.metric("Avance promedio", comp.pct(alumnos["avance"].mean(), 0), border=True,
               delta="del contenido · al 24/10", delta_color="off", delta_arrow="off",
               help="Del reporte de participación: % del contenido del aula que recorrió el alumno. Es una foto al "
-                   "24/10 y no cambia con la fecha de corte ni el período (D36).")
+                   "24/10 y no cambia con la fecha de corte ni el período.")
     k4.metric("Uso de foros", comp.pct((alumnos["intervenciones_foros"].fillna(0) > 0).mean() * 100, 1),
               border=True, delta=detalle_foros, delta_color="off", delta_arrow="off",
               help="% de la base que intervino al menos una vez en un foro (reporte al 24/10).")
@@ -223,7 +223,7 @@ with tab_evo:
         c1, c2, c3 = st.columns([2.2, 1.3, 1.1], vertical_alignment="bottom")
         medida = c2.selectbox("Medida", list(MEDIDAS), key="part_medida",
                               help="Las medidas por alumno y el % de la base dividen por el tamaño de la base de "
-                                   "cada materia (D11, D53).")
+                                   "cada materia.")
         frecuencia = c3.segmented_control("Agrupar por", list(FRECUENCIAS), default="Semana",
                                           key="part_frecuencia") or "Semana"
         col, eje, hover, explicacion = MEDIDAS[medida]
@@ -238,7 +238,7 @@ with tab_evo:
         fig.update_traces(hovertemplate=f"%{{x|{formato_x}}}<br>%{{fullData.name}}: {hover}<extra></extra>",
                           line_width=2.4, marker_size=6)
         marcar = st.toggle("Marcar evaluaciones", value=True, key="part_marcar",
-                           help="Fechas de las evaluaciones (D18): mediana del día en que los alumnos las rindieron.")
+                           help="Fechas de las evaluaciones: mediana del día en que los alumnos las rindieron.")
         if marcar:
             evals = comp.metrica("fechas_evaluaciones")
             if desde is not None:
@@ -474,7 +474,7 @@ with tab_reporte:
                 for r in conc.sort_values("rho", ascending=False).itertuples())
             H(f'<div class="tfi">{comp.etiqueta("Correlación de Spearman")}{filas}</div>')
         H(comp.nota("Que el orden de los alumnos sea casi el mismo en las dos fuentes valida cómo armamos las sesiones "
-                    "(se cortan a los 30 minutos sin eventos, D25). Los minutos propios quedan por debajo porque no "
+                    "(se cortan a los 30 minutos sin eventos). Los minutos propios quedan por debajo porque no "
                     "cuentan el rato posterior al último clic: es esperable, no un error."))
 
 # ---------------------------------------------------------------------------

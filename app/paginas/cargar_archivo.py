@@ -307,5 +307,5 @@ for a in avisos:
 
 comp.html(comp.aviso(
     "Para que quede, hay que subir el Excel a <span class='mono' style='font-size:11px'>data/raw/</span> en "
-    "GitHub. Es una limitación del alojamiento, no del pipeline (D50).", "info",
+    "GitHub. Es una limitación del alojamiento, no del pipeline.", "info",
     "En la versión publicada, lo que subas acá se pierde cuando la app se reinicia.", icono="nube"))

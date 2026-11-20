@@ -38,3 +38,6 @@ maxUploadSize = 50                  # MB por archivo; la trazabilidad completa p
 
 [browser]
 gatherUsageStats = false
+
+[client]
+toolbarMode = "viewer"            # oculta "Deploy" y el menú de desarrollo
