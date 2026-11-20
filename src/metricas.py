@@ -638,6 +638,90 @@ def interacciones_promedio_por_dia(d: Datos, fecha_corte=None, asignatura=None, 
     return pd.DataFrame(filas)
 
 
+def franjas_horarias(calor: pd.DataFrame) -> dict:
+    """% de las interacciones de un `mapa_calor` en cada franja: noche (18 a 24 h),
+    mañana (6 a 12 h) y fin de semana (sábado y domingo). Hora del servidor del LMS."""
+    total = calor["eventos"].sum()
+    if total == 0:
+        return {"pct_nocturno": np.nan, "pct_manana": np.nan, "pct_finde": np.nan}
+    def parte(filtro):
+        return float(calor.loc[filtro, "eventos"].sum() / total * 100)
+    return {"pct_nocturno": parte(calor["hora"].between(18, 23)), "pct_manana": parte(calor["hora"].between(6, 11)),
+            "pct_finde": parte(calor["dia_semana"] >= 5)}
+
+
+def _resumen_periodo(d: Datos, corte: pd.Timestamp, asignatura, inicio: pd.Timestamp) -> dict:
+    """KPIs de trazabilidad entre `inicio` y `corte` (inclusive), ver resumen_trazabilidad."""
+    dias = (corte - inicio).days + 1
+    act = actividad_alumnos(d, corte, asignatura, desde=inicio)
+    entraron = act[act["eventos"] > 0]
+    total = int(act["eventos"].sum())
+    cat = interacciones_por_categoria(d, corte, asignatura, desde=inicio)
+    evaluacion = cat.loc[cat["categoria"] == "Evaluación", "eventos"].sum()
+    return {"desde": inicio, "hasta": corte, "dias": dias, "alumnos": len(entraron),
+            "dias_ingreso_semana": (entraron["dias_activos"] / (dias / 7)).median() if len(entraron) else np.nan,
+            "interacciones_por_dia_ingreso": (entraron["eventos"] / entraron["dias_activos"]).median()
+                                             if len(entraron) else np.nan,
+            "interacciones_total": total, "interacciones_por_dia": total / dias,
+            "pct_evaluacion": evaluacion / total * 100 if total else np.nan,
+            **franjas_horarias(mapa_calor(d, corte, asignatura, desde=inicio))}
+
+
+def resumen_trazabilidad(d: Datos, fecha_corte=None, asignatura=None, desde=None) -> pd.DataFrame:
+    """KPIs del dashboard de Trazabilidad (D80), para el período (fila "actual",
+    de `desde` o el primer dato a la fecha de corte, inclusive) y para el período
+    anterior de igual largo (fila "anterior", solo si entra entero en los datos).
+    Unidad: alumno × materia de la base. "Entraron" = con al menos una interacción
+    en el período.
+      alumnos                        alumnos que entraron (denominador de las medianas)
+      dias_ingreso_semana            mediana de días con ingreso / (días del período / 7)
+      interacciones_por_dia_ingreso  mediana de interacciones / días con ingreso
+      interacciones_total            interacciones del período
+      interacciones_por_dia          total / días calendario del período
+      pct_evaluacion                 % de las interacciones de tipo Evaluación
+      pct_nocturno, pct_manana, pct_finde   ver franjas_horarias"""
+    corte = fecha_de_corte(fecha_corte)
+    inicio = _inicio_periodo(d, desde)
+    filas = {"actual": _resumen_periodo(d, corte, asignatura, inicio)}
+    if desde is not None:
+        dias = (corte - inicio).days + 1
+        inicio_ant = inicio - pd.Timedelta(days=dias)
+        if inicio_ant >= pd.Timestamp(d.interacciones["fecha"].min()):
+            filas["anterior"] = _resumen_periodo(d, inicio - pd.Timedelta(days=1), asignatura, inicio_ant)
+    return pd.DataFrame.from_dict(filas, orient="index").rename_axis("periodo")
+
+
+TRAMOS_FRECUENCIA = {
+    "W": ([0, 1, 2, 3, 4, np.inf], ["0–1", "1–2", "2–3", "3–4", "4 o más"]),
+    "M": ([0, 4, 8, 12, 16, np.inf], ["1–3", "4–7", "8–11", "12–15", "16 o más"]),
+}
+
+
+def frecuencia_ingreso(d: Datos, fecha_corte=None, asignatura=None, desde=None,
+                       frecuencia: str = "W") -> pd.DataFrame:
+    """Por materia, % de los alumnos que entraron en el período según cuántos días
+    con ingreso tienen por semana ('W': días / (días del período / 7)) o por mes
+    ('M': días / (días del período / 30)), en los tramos de TRAMOS_FRECUENCIA
+    (cerrados a la izquierda: 1 día por semana cae en "1–2"; en 'M', "1–3" incluye
+    a los que entraron menos de 4 días por mes). Grilla completa (tramos con 0)."""
+    if frecuencia not in TRAMOS_FRECUENCIA:
+        raise ValueError("frecuencia tiene que ser 'W' o 'M'")
+    corte = fecha_de_corte(fecha_corte)
+    inicio = _inicio_periodo(d, desde)
+    dias = (corte - inicio).days + 1
+    act = actividad_alumnos(d, corte, asignatura, desde=inicio)
+    act = act[act["eventos"] > 0]
+    tasa = act["dias_activos"] / (dias / (7 if frecuencia == "W" else 30))
+    bordes, etiquetas = TRAMOS_FRECUENCIA[frecuencia]
+    act = act.assign(tramo=pd.cut(tasa, bordes, labels=etiquetas, right=False))
+    grilla = pd.MultiIndex.from_product([_materias(asignatura), etiquetas], names=["asignatura", "tramo"])
+    df = act.groupby(["asignatura", "tramo"], observed=True).size().reindex(grilla, fill_value=0) \
+            .rename("alumnos").reset_index()
+    df["total"] = df.groupby("asignatura")["alumnos"].transform("sum")
+    df["pct"] = (df["alumnos"] / df["total"].where(df["total"] > 0) * 100).fillna(0)
+    return df
+
+
 def fechas_evaluaciones(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
     """Instrumentos ya tomados a la fecha de corte, para marcarlos en las líneas de tiempo."""
     i = _filtrar(d.instrumentos, asignatura)
@@ -674,7 +758,9 @@ def evolucion_interacciones(d: Datos, fecha_corte=None, asignatura=None, frecuen
     (`por="asignatura"`) o por tipo de interacción (`por="categoria"`, sumando
     las materias elegidas). Grilla completa: los períodos sin eventos van con 0.
       eventos_por_alumno   eventos / tamaño de la base (de la materia o de las elegidas)
-      pct_periodo          % de los eventos del período que son de ese grupo (D62)."""
+      pct_periodo          % de los eventos del período que son de ese grupo (D62)
+      dias, dias_periodo   días del período dentro de [desde, corte] y largo del período (1, 7 o días del mes)
+      completo             dias == dias_periodo (el primero y el último pueden estar cortados)"""
     if por not in {"asignatura", "categoria"}:
         raise ValueError("por tiene que ser 'asignatura' o 'categoria'")
     corte = fecha_de_corte(fecha_corte)
@@ -691,6 +777,12 @@ def evolucion_interacciones(d: Datos, fecha_corte=None, asignatura=None, frecuen
     df["eventos_por_alumno"] = (df["eventos"] / n).round(2)
     total = df.groupby("periodo")["eventos"].transform("sum")
     df["pct_periodo"] = (df["eventos"] / total.where(total > 0) * 100).round(2).fillna(0)
+    # Períodos incompletos: el primero y el último pueden quedar cortados por `desde` y la fecha de corte.
+    cubiertos = _periodo(pd.Series(pd.date_range(inicio, corte, freq="D")), frecuencia).value_counts()
+    largo = {"D": lambda p: 1, "W": lambda p: 7, "M": lambda p: p.days_in_month}[frecuencia]
+    df["dias"] = df["periodo"].map(cubiertos).fillna(0).astype(int)
+    df["dias_periodo"] = df["periodo"].map(lambda p: largo(pd.Timestamp(p))).astype(int)
+    df["completo"] = df["dias"] >= df["dias_periodo"]
     return df
 
 

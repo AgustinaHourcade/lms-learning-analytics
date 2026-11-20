@@ -27,14 +27,8 @@ h1 {letter-spacing: -.02em;}
 [data-testid="stMetricDelta"] {background: none !important; padding: 0 !important; color: #6B6861 !important;}
 [data-testid="stMetricDelta"] p, [data-testid="stMetricDelta"] div {font-size: 12px; font-weight: 400;}
 
-/* Lectura (el dato que hay que mirar) y notas debajo de un gráfico */
-.tz-lectura {display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; margin: 4px 0 8px;
-             border: 1px solid #DCE5F1; background: #EAF0F8; border-radius: 12px;
-             font-size: 13px; line-height: 1.6; color: #164279;}
-.tz-lectura svg {flex: 0 0 17px; margin-top: 2px;}
-.tz-lectura p {margin: 0;}
-.tz-lectura.atencion {border-color: #F1DFB8; background: #FBF0DC; color: #6B4700;}
-.tz-lectura strong, .tz-nota strong {font-weight: 600;}
+/* Notas debajo de un gráfico */
+.tz-nota strong {font-weight: 600;}
 .tz-nota {margin: 2px 0 0; padding: 12px 14px; border-radius: 10px; background: #FBFAF8; font-size: 12px;
           line-height: 1.6; color: #57544C;}
 .tz-nota strong {color: #1A1917;}
@@ -75,3 +69,21 @@ h1 {letter-spacing: -.02em;}
 [data-testid="stButtonGroup"] button[aria-checked="true"] {background: #FFFFFF !important;
                                                            box-shadow: 0 1px 2px rgba(26,25,23,.10);}
 [data-testid="stButtonGroup"] button[aria-checked="true"] p {font-weight: 600; color: #1A1917;}
+
+/* KPIs (kpi()): tarjeta blanca, número grande, pastilla de variación (mismo estilo que General) */
+.tz-kpi {height: 100%; background: #FFFFFF; border: 1px solid #E3E1DC; border-radius: 13px; padding: 15px 16px;}
+.tz-kpi-etq {margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+             color: #6B6861;}
+.tz-kpi-fila {display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;}
+.tz-kpi-num {font: 600 30px/1.15 'Space Grotesk', Inter, sans-serif; font-variant-numeric: tabular-nums;
+             letter-spacing: -.01em; color: #1A1917;}
+.tz-kpi-var {display: inline-flex; align-items: center; gap: 6px;}
+.tz-kpi-delta {display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 999px;
+               font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;}
+.tz-kpi-ref {font-size: 11px; color: #8A867C; white-space: nowrap;}
+.tz-kpi-detalle {margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: #57544C;}
+
+/* (?) con la aclaración al pasar el mouse */
+.tz-ayuda {display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px;
+           margin-left: 6px; border: 1px solid #C9C5BC; border-radius: 50%; font: 600 10px/1 Inter, sans-serif;
+           letter-spacing: 0; text-transform: none; color: #6B6861; cursor: help; vertical-align: 1px;}

@@ -74,23 +74,76 @@ def test_cada_pagina_corre_y_conserva_los_filtros(app, pagina):
     assert app.selectbox(key="materia").value == "Álgebra"
 
 
+def _textos_visibles(at) -> list[str]:
+    """El texto de cada elemento de la página (markdown, captions, títulos, help de métricas y
+    widgets, etiquetas, tooltips de plotly...): el protobuf de cada hoja del árbol, sin los
+    bloques <style> (los comentarios del CSS no se ven) ni los ids internos de los widgets."""
+    import re
+    textos = []
+
+    def recorrer(nodo):
+        hijos = getattr(nodo, "children", None)
+        if hijos:
+            for hijo in hijos.values():
+                recorrer(hijo)
+        elif getattr(nodo, "proto", None) is not None:
+            texto = re.sub(r"<style>.*?</style>", "", str(nodo.proto), flags=re.S)
+            textos.append(re.sub(r'^\s*id: ".*"$', "", texto, flags=re.M))   # ids internos de widgets
+
+    recorrer(at._tree)
+    return textos
+
+
+@pytest.mark.parametrize("pagina", PAGINAS + ["paginas/inicio.py"])
+def test_sin_codigos_de_decision_visibles(app, pagina):
+    """Los códigos de decisión (D7, D62...) van solo en comentarios y docstrings, nunca en pantalla."""
+    import re
+    app.switch_page(pagina).run()
+    assert not app.exception, app.exception
+    encontrados = [m.group() for t in _textos_visibles(app) for m in re.finditer(r"\bD\d{1,3}\b", t)]
+    assert not encontrados, f"{pagina}: {encontrados}"
+
+
+def _kpis_trazabilidad(at) -> str:
+    return " ".join(m.value for m in at.markdown if m.value.startswith('<div class="tz-kpi"'))
+
+
 def test_trazabilidad(app):
-    """Dashboard de Trazabilidad: tarjetas, pestañas, período, frecuencia y evaluaciones."""
+    """Dashboard de Trazabilidad: tarjetas (D80), pestañas, período, controles y bordes."""
+    import re
     app.switch_page("paginas/3_trazabilidad.py").run()
     assert not app.exception, app.exception
     assert len(app.tabs) == 4
-    antes = _valores_metricas(app)
+    antes = _kpis_trazabilidad(app)
+    for nombre in ["Días con ingreso por semana", "Interacciones por día de ingreso", "Clics en Evaluación",
+                   "Clics entre 18 y 24 h", "alumnos que entraron", "en total"]:
+        assert nombre in antes, nombre
+    assert "tz-kpi-delta" not in antes                # toda la cursada: sin Δ
+
+    def sin_textos_rotos():
+        textos = " ".join(_textos_visibles(app))
+        assert not re.search(r"\bnan\b|\bNaN\b|\bNone\b", textos)
+
+    sin_textos_rotos()
     app.button_group(key="traz_periodo").set_value("Últimas 2 semanas").run()
     assert not app.exception, app.exception
-    assert _valores_metricas(app)["Interacciones"] != antes["Interacciones"]
+    despues = _kpis_trazabilidad(app)
+    assert despues != antes and despues.count("tz-kpi-delta") == 3     # Δ en las tarjetas 1 a 3
+    sin_textos_rotos()
     app.button_group(key="traz_frecuencia").set_value("Día").run()
-    app.button_group(key="traz_medida").set_value("Por alumno").run()
-    app.toggle(key="traz_pct").set_value(True).run()
+    app.toggle(key="traz_tipos_abs").set_value(True).run()
     app.toggle(key="traz_calor_pct").set_value(True).run()
+    app.button_group(key="traz_frec_ingreso").set_value("Mes").run()
     app.button_group(key="traz_perfil").set_value("Por hora").run()
-    app.multiselect(key="traz_categorias").set_value(["Evaluación"]).run()
+    app.multiselect(key="traz_categorias").set_value(["Agenda"]).run()
     app.selectbox(key="traz_eval_medida").set_value("Interacciones por alumno").run()
     assert not app.exception, app.exception
+    sin_textos_rotos()
+    app.selectbox(key="materia").set_value("Probabilidad y Estadística").run()
+    assert not app.exception, app.exception
+    sin_textos_rotos()
+    app.button_group(key="traz_periodo").set_value("Toda la cursada").run()
+    assert "tz-kpi-delta" not in _kpis_trazabilidad(app)
     app.date_input(key="fecha_corte").set_value("2025-08-06").run()
     assert not app.exception, app.exception
 

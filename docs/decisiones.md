@@ -82,3 +82,37 @@ Formato: número, decisión, por qué, estado.
 - **Por qué:** los totales por alumno no se comparan entre períodos de distinto largo; por semana sí. La retención
   dice si los que venían entrando siguen, que el % de activos solo no muestra.
 - **Estado:** vigente.
+
+## D80 · KPIs y rediseño del dashboard Trazabilidad
+- **Decisión:** cuatro tarjetas, calculadas en `resumen_trazabilidad` (período y período anterior de igual largo, solo
+  si entra entero en los datos; Δ en las tres primeras cuando el período no es toda la cursada):
+  - **Días con ingreso por semana:** mediana, entre los alumno-materia de la base que entraron al menos una vez en el
+    período, de días distintos con interacciones / (días del período / 7). Días del período = de `desde` (o el primer
+    dato) a la fecha de corte, inclusive.
+  - **Interacciones por día de ingreso:** mediana de interacciones / días con ingreso entre esos mismos alumnos; abajo,
+    el total y el total / días calendario (interacciones promedio por día de la consigna).
+  - **Clics en Evaluación:** % de las interacciones de tipo Evaluación (interacciones por tipo de la consigna).
+  - **Clics entre 18 y 24 h:** % de las interacciones con hora 18 a 23 (distribución temporal; hora del servidor).
+  `frecuencia_ingreso` reparte a los que entraron en tramos de días con ingreso por semana (0–1, 1–2, 2–3, 3–4, 4 o
+  más) o por mes (días / (días del período / 30): 1–3, 4–7, 8–11, 12–15, 16 o más), que es la frecuencia de ingreso
+  semanal/mensual de la consigna. Las franjas noche / mañana / fin de semana pasan a `franjas_horarias`.
+- **Por qué:**
+  - *Días con ingreso y no sesiones:* la sesión depende del corte de 30 minutos sin eventos (D25) y el LMS registra
+    clics de navegación muy seguidos; "entró ese día" no depende de ese parámetro y se explica en una frase.
+  - *Mediana y no promedio:* la distribución de interacciones por alumno tiene cola larga (unos pocos alumnos con
+    cientos de clics por día); la mediana describe al alumno típico y no se mueve por un caso extremo.
+  - *Denominador = alumnos que entraron:* "Sin actividad" ya se mide en Participación y Matrícula; sumarlos con 0
+    mezclaría "cuánto entran los que cursan" con "cuántos no entran nunca".
+  - *Por semana y no totales:* los totales dependen del largo del período; normalizados por semana se comparan
+    "Últimas 2 semanas" con "Toda la cursada" y con el período anterior.
+- **Pantalla:** el dashboard muestra datos, no explica. Los títulos dicen el dato principal calculado con los datos, el
+  subtítulo solo cómo leer el gráfico y las limitaciones (hora del servidor, períodos incompletos, superposición de
+  las evaluaciones de PyE, qué acciones entran en cada tipo) van en el (?) de cada tarjeta. Las interpretaciones que
+  estaban en pantalla se guardaron con sus valores al 24/10/2025 en `docs/conclusiones_trazabilidad.md`. Pestañas:
+  Cuándo y cada cuánto entran · Qué hacen · Evolución (siempre por alumno; períodos cortados con marcador hueco,
+  `evolucion_interacciones` suma `dias`, `dias_periodo` y `completo`) · Alrededor de las evaluaciones. Números en
+  es-AR también en plotly (`separators=",."`) y en las tablas (Styler, que se sigue ordenando como número).
+- **Zona horaria:** las fechas vienen sin zona; la evidencia (último evento de cada archivo minutos antes de la hora de
+  exportación, coordinadores de 7 a 21 h) apunta a hora local. Se deja como está, rotulado "hora del servidor del LMS",
+  hasta que lo confirme la cátedra.
+- **Estado:** vigente.

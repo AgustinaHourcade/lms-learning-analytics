@@ -23,6 +23,7 @@ import re
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 import streamlit as st
@@ -68,15 +69,16 @@ pio.templates[PLANTILLA] = go.layout.Template(layout=dict(
     yaxis=dict(gridcolor=GRILLA, linecolor="rgba(0,0,0,0)", zerolinecolor=EJE, tickfont=dict(color=TEXTO_3),
                title=dict(font=dict(color=TEXTO_4, size=11))),
     margin=dict(t=36, l=8, r=8, b=8),
+    separators=",.",   # es-AR: decimales con coma, miles con punto
     legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=12, color="#2C2A25"),
                 title=dict(text="")),
     hoverlabel=dict(font_size=12, bgcolor=TARJETA, bordercolor=BORDE, font=dict(color=TEXTO)),
 ))
 
+# Forma del marcador de cada materia en los gráficos de líneas (además del color).
+MARCADORES = dict(zip(ASIGNATURAS, ["circle", "square", "diamond"]))
+
 CSS = Path(__file__).with_name("estilos_trazabilidad.css")
-ICONO_DATO = ('<svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true">'
-              '<circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.5"/>'
-              '<path d="M8 7.2v4.2M8 4.8v.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>')
 
 
 def _md(texto: str) -> str:
@@ -111,8 +113,7 @@ def encabezado(titulo: str, descripcion: str = "") -> Filtros:
     st.title(titulo, anchor=False)
     if descripcion:
         _html(f'<p class="tz-desc">{_md(descripcion)}</p>')
-    st.caption(f"Corte: **{fmt_fecha(f.fecha_corte)}** · {f.materia} · "
-               f"Inactivo después de {f.umbral} días sin entrar")
+    st.caption(f"Corte: {fmt_fecha(f.fecha_corte)} · {f.materia}")
     return f
 
 
@@ -127,16 +128,55 @@ def tarjeta(clave: str, titulo: str = "", subtitulo: str = ""):
     return c
 
 
-def titulo_tarjeta(titulo: str, subtitulo: str = "") -> None:
-    """Título y explicación de una tarjeta cuando van al lado de un control (dentro de una columna)."""
-    _html(f'<p class="tz-h3">{titulo}</p>' + (f'<p class="tz-sub">{_md(subtitulo)}</p>' if subtitulo else ""))
+def ayuda(texto: str) -> str:
+    """Signo (?) con una aclaración que aparece al pasar el mouse (limitaciones, definiciones)."""
+    texto = texto.replace('"', "&quot;")
+    return f'<span class="tz-ayuda" title="{texto}" aria-label="{texto}">?</span>'
 
 
-def lectura(texto: str, titulo: str = "", tono: str = "info") -> None:
-    """Recuadro con el dato que hay que mirar: título en negrita y la explicación.
-    tono: "info" (azul) o "atencion" (ámbar)."""
-    cuerpo = (f"<strong>{titulo}</strong> " if titulo else "") + _md(texto)
-    _html(f'<div class="tz-lectura {tono}">{ICONO_DATO}<p>{cuerpo}</p></div>')
+def titulo_tarjeta(titulo: str, subtitulo: str = "", tip: str = "") -> None:
+    """Título (el dato principal), una línea para leer el gráfico y, si hay `tip`, el (?)
+    con las aclaraciones. Va al lado de un control (dentro de una columna) o solo."""
+    _html(f'<p class="tz-h3">{titulo}{ayuda(tip) if tip else ""}</p>'
+          + (f'<p class="tz-sub">{_md(subtitulo)}</p>' if subtitulo else ""))
+
+
+def delta(valor, unidad: str = "", mejor: str = "neutro", decimales: int = 1, referencia: str = "") -> str:
+    """Variación contra el período anterior como pastilla, con el mismo estilo que General:
+    verde si mejora, roja si empeora, gris si `mejor="neutro"` o no cambia; 'vs. ...' al lado.
+    Sin dato devuelve ""."""
+    if valor is None or pd.isna(valor):
+        return ""
+    ref = f'<span class="tz-kpi-ref">vs. {referencia}</span>' if referencia else ""
+    if round(valor, decimales) == 0:
+        return f'<span class="tz-kpi-delta" style="background:#EFEDE8;color:{TEXTO_2}">= sin cambios</span>{ref}'
+    sube = valor > 0
+    if mejor == "neutro":
+        fondo, texto = "#EFEDE8", TEXTO_2
+    else:
+        fondo, texto = ("#E3F1E8", "#0F5A37") if sube == (mejor == "sube") else ("#F8E4E1", "#93241C")
+    flecha = "polygon(50% 10%,100% 80%,0 80%)" if sube else "polygon(0 20%,100% 20%,50% 90%)"
+    return (f'<span class="tz-kpi-delta" style="background:{fondo};color:{texto}"><span aria-hidden="true" '
+            f'style="display:inline-block;width:9px;height:9px;background:currentColor;clip-path:{flecha}"></span>'
+            f'{"+" if sube else "−"}{num(abs(valor), decimales)}{" " + unidad if unidad else ""}</span>{ref}')
+
+
+def kpi(etiqueta: str, valor: str, detalle: str = "", variacion: str = "", tip: str = "") -> None:
+    """Tarjeta de KPI en HTML: etiqueta con su (?), número grande, variación y una línea de detalle."""
+    _html(f'<div class="tz-kpi"><p class="tz-kpi-etq">{etiqueta}{ayuda(tip) if tip else ""}</p>'
+          f'<div class="tz-kpi-fila"><span class="tz-kpi-num">{valor}</span>'
+          f'<span class="tz-kpi-var">{variacion}</span></div>'
+          + (f'<p class="tz-kpi-detalle">{detalle}</p>' if detalle else "") + "</div>")
+
+
+def estilo_tabla(df: pd.DataFrame, decimales: dict | None = None):
+    """Styler en es-AR (miles con punto, decimales con coma) que conserva los números,
+    así la tabla se sigue ordenando como número. `decimales`: {columna: cantidad} (0 por defecto)."""
+    decimales = decimales or {}
+    sty = df.style
+    for col in df.select_dtypes("number").columns:
+        sty = sty.format(precision=decimales.get(col, 0), subset=[col], thousands=".", decimal=",")
+    return sty
 
 
 def nota(texto: str, tono: str = "") -> None:
@@ -157,11 +197,11 @@ def leyenda(colores: dict, linea: bool = False) -> None:
         f'<span><i{clase} style="background:{c}"></i>{e}</span>' for e, c in colores.items()) + "</div>")
 
 
-def mini_tarjeta(titulo: str, valor: str, texto: str, color: str | None = None) -> str:
+def mini_tarjeta(titulo: str, valor: str, texto: str, color: str | None = None, tip: str = "") -> str:
     """HTML de una tarjeta chica (resumen de una materia dentro de una tarjeta grande)."""
     marca = f'<i style="background:{color}"></i>' if color else ""
-    return (f'<div class="tz-mini"><p class="titulo">{marca}{titulo}</p><p class="valor">{valor}</p>'
-            f'<p class="texto">{_md(texto)}</p></div>')
+    return (f'<div class="tz-mini"><p class="titulo">{marca}{titulo}{ayuda(tip) if tip else ""}</p>'
+            f'<p class="valor">{valor}</p><p class="texto">{_md(texto)}</p></div>')
 
 
 def tarjetas(items: list, columnas: int | None = None) -> None:

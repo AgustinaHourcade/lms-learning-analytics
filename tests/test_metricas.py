@@ -632,3 +632,99 @@ def test_inscriptos_sin_rendir_coinciden_con_integridad(d, fecha):
 
 def test_fecha_reporte_participacion(d):
     assert m.fecha_reporte_participacion(d) == T(FECHA_CORTE_DEFECTO)
+
+
+# ---------------------------------------------------------------------------
+# Trazabilidad: resumen y frecuencia de ingreso (D80)
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def constante() -> m.Datos:
+    """Álgebra, del lunes 04/08 al domingo 26/10/2025 (12 semanas): A entra lunes y jueves
+    (3 interacciones a las 10 h, la del jueves de Evaluación); B entra todos los días a las
+    20 h (1 interacción). C es de la base y nunca entra. PyE: P entra solo los sábados."""
+    filas, i = [], 0
+    for dia in pd.date_range("2025-08-04", "2025-10-26", freq="D"):
+        visitas = [("B", ALG, 20, 1)]
+        if dia.day_of_week in (0, 3):
+            visitas.append(("A", ALG, 10, 3))
+        if dia.day_of_week == 5:
+            visitas.append(("P", PYE, 15, 2))
+        for alumno, asig, hora, n in visitas:
+            for _ in range(n):
+                i += 1
+                e = _evento(i, alumno, asig, dia + pd.Timedelta(hours=hora), i)
+                if alumno == "A" and dia.day_of_week == 3:
+                    e["categoria"] = "Evaluación"
+                filas.append(e)
+    eventos = pd.DataFrame(filas)
+    sesiones = eventos[["id_sesion", "id_alumno", "asignatura", "en_base"]].assign(
+        inicio=eventos["fecha_hora"], duracion_min=0.0)
+    matricula = pd.DataFrame({"asignatura": [ALG, ALG, ALG, PYE], "id_alumno": ["A", "B", "C", "P"],
+                              "en_base": True, "inscripto": True, "en_matriculados": True, "estado": "Aceptada"})
+    vacio = pd.DataFrame()
+    return m.Datos(alumnos=vacio, instrumentos=vacio, interacciones=eventos, sesiones=sesiones,
+                   calificaciones=vacio, participacion=vacio, matricula=matricula)
+
+
+@pytest.mark.parametrize("desde", [None, "2025-09-01", "2025-10-13", "2025-10-20"])
+def test_resumen_trazabilidad_no_depende_del_largo(constante, desde):
+    """Con actividad constante, los KPIs dan lo mismo en cualquier período de semanas enteras."""
+    r = m.resumen_trazabilidad(constante, "2025-10-26", ALG, desde=desde).loc["actual"]
+    dias = r["dias"]
+    assert r["alumnos"] == 2                                     # C no entró: no cuenta
+    assert r["dias_ingreso_semana"] == pytest.approx((2 + 7) / 2)   # mediana de A (2) y B (7)
+    assert r["interacciones_por_dia_ingreso"] == pytest.approx(2)   # mediana de A (3) y B (1)
+    assert r["interacciones_por_dia"] == pytest.approx((2 * 3 + 7) / 7)
+    assert r["interacciones_total"] == pytest.approx(dias * (2 * 3 + 7) / 7)
+    assert r["pct_evaluacion"] == pytest.approx(3 / 13 * 100)
+    assert r["pct_nocturno"] == pytest.approx(7 / 13 * 100)
+
+
+def test_resumen_trazabilidad_periodo_anterior(constante, d):
+    r = m.resumen_trazabilidad(constante, "2025-10-26", ALG, desde="2025-10-13")
+    assert r.loc["anterior", "desde"] == T("2025-09-29") and r.loc["anterior", "hasta"] == T("2025-10-12")
+    assert r.loc["anterior", "dias"] == r.loc["actual", "dias"] == 14
+    assert r.loc["anterior", "dias_ingreso_semana"] == r.loc["actual", "dias_ingreso_semana"]
+    # toda la cursada o un anterior que no entra entero en los datos: sin fila "anterior"
+    assert "anterior" not in m.resumen_trazabilidad(constante, "2025-10-26", ALG).index
+    assert "anterior" not in m.resumen_trazabilidad(constante, "2025-10-26", ALG, desde="2025-08-20").index
+    # en los datos reales, el anterior es el mismo cálculo corrido en sus fechas
+    r = m.resumen_trazabilidad(d, "2025-10-24", desde="2025-10-11")
+    solo = m.resumen_trazabilidad(d, "2025-10-10", desde="2025-09-27").loc["actual"]
+    assert r.loc["anterior"].drop(["desde", "hasta"]).astype(float).tolist() == \
+        pytest.approx(solo.drop(["desde", "hasta"]).astype(float).tolist())
+
+
+def test_resumen_trazabilidad_una_materia(constante, d):
+    p = m.resumen_trazabilidad(constante, "2025-10-26", PYE).loc["actual"]
+    assert p["alumnos"] == 1 and p["dias_ingreso_semana"] == pytest.approx(1)
+    assert p["pct_finde"] == pytest.approx(100) and p["pct_nocturno"] == 0
+    total = m.resumen_trazabilidad(d, "2025-10-24").loc["actual", "interacciones_total"]
+    por_materia = sum(m.resumen_trazabilidad(d, "2025-10-24", a).loc["actual", "interacciones_total"]
+                      for a in (ALG, PYE, AED))
+    assert total == por_materia == m.interacciones_por_categoria(d, "2025-10-24")["eventos"].sum()
+
+
+@pytest.mark.parametrize("desde", [None, "2025-09-01", "2025-10-13"])
+def test_frecuencia_ingreso(constante, desde):
+    f = m.frecuencia_ingreso(constante, "2025-10-26", desde=desde).set_index(["asignatura", "tramo"])
+    assert f.loc[(ALG, "2–3"), "alumnos"] == 1 and f.loc[(ALG, "4 o más"), "alumnos"] == 1   # A: 2, B: 7
+    assert f.loc[(PYE, "1–2"), "pct"] == 100
+    sumas = f.groupby("asignatura")["pct"].sum()
+    assert (sumas[ALG], sumas[PYE], sumas[AED]) == pytest.approx((100, 100, 0))   # AED: nadie entró
+    mes = m.frecuencia_ingreso(constante, "2025-10-26", ALG, desde=desde, frecuencia="M").set_index("tramo")
+    assert mes.loc["8–11", "alumnos"] == 1 and mes.loc["16 o más", "alumnos"] == 1   # A: 8,6; B: 30 por mes
+    assert mes["total"].eq(2).all()
+    with pytest.raises(ValueError):
+        m.frecuencia_ingreso(constante, frecuencia="D")
+
+
+def test_evolucion_marca_periodos_incompletos(d):
+    w = m.evolucion_interacciones(d, "2025-10-24", frecuencia="W", desde="2025-10-11")
+    semanas = w.drop_duplicates("periodo").set_index("periodo")
+    assert semanas.loc[T("2025-10-06"), "dias"] == 2 and not semanas.loc[T("2025-10-06"), "completo"]
+    assert semanas.loc[T("2025-10-13"), "completo"]
+    assert semanas.loc[T("2025-10-20"), "dias"] == 5
+    mes = m.evolucion_interacciones(d, "2025-10-24", frecuencia="M").drop_duplicates("periodo")
+    assert mes.set_index("periodo").loc[T("2025-09-01"), "completo"]
+    assert not mes.set_index("periodo").loc[T("2025-10-01"), "completo"]
