@@ -103,27 +103,26 @@ def variacion(col: str, unidad: str = "", mejor: str = "neutro", decimales: int 
     return comp.delta(actual[col] - anterior[col], unidad, mejor, decimales, referencia)
 
 
-k1, k2, k3, k4 = st.columns(4)
-with k1:
-    comp.kpi("Días con ingreso por semana", comp.num(actual["dias_ingreso_semana"], 1),
-             f"de {comp.num(actual['alumnos'])} alumnos que entraron", variacion("dias_ingreso_semana", "", "sube"),
-             tip="Mediana, entre los alumnos que entraron en el período, de los días distintos con al menos una "
-                 "interacción dividido por las semanas del período (días / 7). Quien cursa dos materias cuenta "
-                 "una vez por materia.")
-with k2:
-    comp.kpi("Interacciones por día de ingreso", comp.num(actual["interacciones_por_dia_ingreso"], 1),
-             f"{comp.num(actual['interacciones_total'])} en total · {comp.num(actual['interacciones_por_dia'])} por día",
-             variacion("interacciones_por_dia_ingreso"),
-             tip="Mediana, entre los alumnos que entraron, de sus interacciones divididas por sus días con ingreso. "
-                 "Por día = total del período / días calendario, con fines de semana.")
-with k3:
-    comp.kpi("Clics en Evaluación", comp.pct(actual["pct_evaluacion"], 1), "de las interacciones del período",
-             variacion("pct_evaluacion", "pp"),
-             tip="Interacciones de tipo Evaluación (realizar, ver o finalizar exámenes, autoevaluaciones y "
-                 "encuestas) sobre el total del período.")
-with k4:
-    comp.kpi("Clics entre 18 y 24 h", comp.pct(actual["pct_nocturno"], 1), "de las interacciones del período",
-             tip="Interacciones con hora entre las 18:00 y las 23:59. " + HORA_SERVIDOR)
+comp.kpis([   # en una grilla: las cuatro tarjetas del mismo alto
+    comp.kpi_html("Días con ingreso por semana", comp.num(actual["dias_ingreso_semana"], 1),
+                  f"de {comp.num(actual['alumnos'])} alumnos que entraron",
+                  variacion("dias_ingreso_semana", "", "sube"),
+                  tip="Mediana, entre los alumnos que entraron en el período, de los días distintos con al menos "
+                      "una interacción dividido por las semanas del período (días / 7). Quien cursa dos materias "
+                      "cuenta una vez por materia."),
+    comp.kpi_html("Interacciones por día de ingreso", comp.num(actual["interacciones_por_dia_ingreso"], 1),
+                  f"{comp.num(actual['interacciones_total'])} en total · "
+                  f"{comp.num(actual['interacciones_por_dia'])} por día",
+                  variacion("interacciones_por_dia_ingreso"),
+                  tip="Mediana, entre los alumnos que entraron, de sus interacciones divididas por sus días con "
+                      "ingreso. Por día = total del período / días calendario, con fines de semana."),
+    comp.kpi_html("Clics en Evaluación", comp.pct(actual["pct_evaluacion"], 1), "de las interacciones del período",
+                  variacion("pct_evaluacion", "pp"),
+                  tip="Interacciones de tipo Evaluación (realizar, ver o finalizar exámenes, autoevaluaciones y "
+                      "encuestas) sobre el total del período."),
+    comp.kpi_html("Clics entre 18 y 24 h", comp.pct(actual["pct_nocturno"], 1), "de las interacciones del período",
+                  tip="Interacciones con hora entre las 18:00 y las 23:59. " + HORA_SERVIDOR),
+])
 
 tab_cuando, tab_que, tab_evolucion, tab_evals = st.tabs(
     ["Cuándo y cada cuánto entran", "Qué hacen", "Evolución", "Alrededor de las evaluaciones"])
@@ -140,7 +139,7 @@ with tab_cuando:
             comp.titulo_tarjeta(f"Pico: {dia_pico.lower()} de {hora_pico} a {hora_pico + 1} h",
                                 f"Interacciones por día y hora, suma de {NOMBRE_TODAS}. Más oscuro, más interacciones.",
                                 tip=HORA_SERVIDOR)
-        en_pct = c2.toggle("Ver en % del total", key="traz_calor_pct")
+        en_pct = comp.a_la_derecha(c2).toggle("Ver en % del total", key="traz_calor_pct")
         matriz = calor.pivot(index="dia_semana", columns="hora", values="eventos") \
                       .reindex(index=range(7), columns=range(24)).fillna(0)
         if en_pct:
@@ -160,7 +159,7 @@ with tab_cuando:
 
     with comp.tarjeta("frecuencia"):
         c1, c2 = st.columns([3, 1.1], vertical_alignment="bottom")
-        unidad = c2.segmented_control("Frecuencia", ["Semana", "Mes"], default="Semana", key="traz_frec_ingreso",
+        unidad = comp.a_la_derecha(c2).segmented_control("Frecuencia", ["Semana", "Mes"], default="Semana", key="traz_frec_ingreso",
                                       label_visibility="collapsed") or "Semana"
         clave = "W" if unidad == "Semana" else "M"
         frecuencia = comp.metrica("frecuencia_ingreso", desde=desde, frecuencia=clave)
@@ -206,7 +205,7 @@ with tab_cuando:
                           for a in f.materias])
     with comp.tarjeta("perfil"):
         c1, c2 = st.columns([3, 1.1], vertical_alignment="bottom")
-        vista_perfil = c2.segmented_control("Perfil", ["Por día", "Por hora"], default="Por día",
+        vista_perfil = comp.a_la_derecha(c2).segmented_control("Perfil", ["Por día", "Por hora"], default="Por día",
                                             key="traz_perfil", label_visibility="collapsed") or "Por día"
         por_dia = vista_perfil == "Por día"
         clave_t = "dia_semana" if por_dia else "hora"
@@ -358,7 +357,7 @@ def nota_incompleto(df: pd.DataFrame) -> pd.Series:
 with tab_evolucion:
     with comp.tarjeta("evolucion"):
         c1, c2 = st.columns([3, 1.2], vertical_alignment="bottom")
-        frecuencia_evo = c2.segmented_control("Agrupar por", list(FRECUENCIAS), default="Semana",
+        frecuencia_evo = comp.a_la_derecha(c2).segmented_control("Agrupar por", list(FRECUENCIAS), default="Semana",
                                               key="traz_frecuencia", label_visibility="collapsed") or "Semana"
         frec = FRECUENCIAS[frecuencia_evo]
         nombre_frec = {"D": "día", "W": "semana", "M": "mes"}[frec]
@@ -396,7 +395,7 @@ with tab_evolucion:
 
     with comp.tarjeta("tipos_tiempo"):
         c1, c2 = st.columns([3, 1.2], vertical_alignment="bottom")
-        absoluto = c2.toggle("Ver en interacciones", key="traz_tipos_abs",
+        absoluto = comp.a_la_derecha(c2).toggle("Ver en interacciones", key="traz_tipos_abs",
                              help="Muestra el volumen de cada tipo en vez de su % del período.")
         tipos = comp.metrica("evolucion_interacciones", frecuencia=frec, desde=desde, por="categoria")
         PRINCIPALES = ["Contenido", "Navegación", "Evaluación", "Comunicación"]

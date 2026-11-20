@@ -523,12 +523,14 @@ def _restablecer() -> None:
         st.session_state[clave] = valor
 
 
-def barra_lateral(sin_filtros: str | None = None) -> Filtros:
+def barra_lateral(sin_filtros: str | None = None, sin_umbral: bool = False) -> Filtros:
     """Dibuja los filtros globales. Se llama una sola vez, desde Inicio.py,
     antes de correr la página elegida: así valen para todas.
     Las páginas que no usan filtros (Cargar archivo, Explorar datos) pasan en
     `sin_filtros` el motivo: se muestra eso en vez de los widgets y los valores
-    elegidos se conservan para cuando se vuelve a un dashboard (D52)."""
+    elegidos se conservan para cuando se vuelve a un dashboard (D52).
+    `sin_umbral=True` oculta el umbral de inactividad en las páginas donde no
+    cambia nada (Rendimiento académico); su valor se conserva igual."""
     inicio, fin = _rango_fechas(datos())
     for clave, valor in DEFECTOS.items():
         st.session_state.setdefault(clave, valor)
@@ -557,8 +559,11 @@ def barra_lateral(sin_filtros: str | None = None) -> Filtros:
                               help="Todo se calcula con lo que se sabía ese día (inclusive): notas de los "
                                    "instrumentos ya tomados, actividad hasta esa fecha.")
         materia = st.selectbox("Materia", [TODAS, *ASIGNATURAS], key="materia")
-        umbral = st.slider("Inactivo después de (días sin entrar)", 1, 30, key="umbral",
-                           help="Un alumno que no entra hace más de estos días cuenta como inactivo.")
+        if sin_umbral:
+            umbral = st.session_state["umbral"]
+        else:
+            umbral = st.slider("Inactivo después de (días sin entrar)", 1, 30, key="umbral",
+                               help="Un alumno que no entra hace más de estos días cuenta como inactivo.")
         st.button("Restablecer filtros", on_click=_restablecer, width="stretch")
         st.caption(f"Datos del {fmt_fecha(inicio)} al {fmt_fecha(fin)}.")
 

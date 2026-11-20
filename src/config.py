@@ -77,6 +77,10 @@ DIAS_DESCONECTADO = 21               # D54: los inactivos con más de 21 días s
 DIAS_REGRESO = 14                    # D54: "volvió" = está activo y una semana antes llevaba 14 días o más sin entrar
 DIAS_INACTIVIDAD_LARGA = 21          # D60: solo visual; los inactivos se abren en "hasta 21 días" y "22 o más"
 CONDICIONES = ["Libre", "Regular", "Promociona"]
+APROBADO_PCT = 60            # D81: un instrumento se aprueba con nota >= 60 sobre 100 (Observaciones no es un corte fijo)
+DIAS_CIERRE = 7              # D82: un instrumento está cerrado si su fecha es <= fecha de corte - 7 días
+ULTIMOS_CERRADOS = 2         # D82: "dejaron de entregar" = no rindieron ninguno de los 2 últimos instrumentos cerrados
+MARGEN_RECUPERABLE = 10      # D83: libres a menos de 10 puntos (escala de la materia) del corte de Regular
 SIN_EVALUACIONES = "Sin evaluaciones"  # todavía no hay instrumentos a la fecha de corte
 
 # --- ML: grupos de alumnos con K-Means (Etapa 7, D57) -----------------------

@@ -48,9 +48,12 @@ SIN_FILTROS = {
                       "ni los filtros laterales.",
 }
 
+# Páginas donde el umbral de inactividad no cambia nada: se oculta (su valor se conserva).
+SIN_UMBRAL = {"Rendimiento académico"}
+
 pagina = st.navigation(PAGINAS)
 comp.estilos()   # después de st.navigation: lo que se dibuja antes se pierde al cambiar de página
-comp.barra_lateral(sin_filtros=SIN_FILTROS.get(pagina.title))
+comp.barra_lateral(sin_filtros=SIN_FILTROS.get(pagina.title), sin_umbral=pagina.title in SIN_UMBRAL)
 if pagina.title in SIN_FILTROS:   # en los dashboards la fecha ya está en la cabecera de la página
     comp.barra_superior([f"Último recálculo: {comp.ultimo_recalculo()}"])
 pagina.run()

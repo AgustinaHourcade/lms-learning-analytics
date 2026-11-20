@@ -161,12 +161,30 @@ def delta(valor, unidad: str = "", mejor: str = "neutro", decimales: int = 1, re
             f'{"+" if sube else "−"}{num(abs(valor), decimales)}{" " + unidad if unidad else ""}</span>{ref}')
 
 
+def kpi_html(etiqueta: str, valor: str, detalle: str = "", variacion: str = "", tip: str = "") -> str:
+    """HTML de una tarjeta de KPI: etiqueta con su (?), número grande, variación y una línea de detalle."""
+    return (f'<div class="tz-kpi"><p class="tz-kpi-etq">{etiqueta}{ayuda(tip) if tip else ""}</p>'
+            f'<div class="tz-kpi-fila"><span class="tz-kpi-num">{valor}</span>'
+            f'<span class="tz-kpi-var">{variacion}</span></div>'
+            + (f'<p class="tz-kpi-detalle">{detalle}</p>' if detalle else "") + "</div>")
+
+
 def kpi(etiqueta: str, valor: str, detalle: str = "", variacion: str = "", tip: str = "") -> None:
-    """Tarjeta de KPI en HTML: etiqueta con su (?), número grande, variación y una línea de detalle."""
-    _html(f'<div class="tz-kpi"><p class="tz-kpi-etq">{etiqueta}{ayuda(tip) if tip else ""}</p>'
-          f'<div class="tz-kpi-fila"><span class="tz-kpi-num">{valor}</span>'
-          f'<span class="tz-kpi-var">{variacion}</span></div>'
-          + (f'<p class="tz-kpi-detalle">{detalle}</p>' if detalle else "") + "</div>")
+    """Una tarjeta de KPI suelta (para una fila de varias, mejor kpis(): quedan todas del mismo alto)."""
+    _html(kpi_html(etiqueta, valor, detalle, variacion, tip))
+
+
+def kpis(tarjetas: list[str]) -> None:
+    """Fila de KPIs (cada uno armado con kpi_html) en una grilla: todas las tarjetas del mismo alto,
+    con margen abajo, y en pantallas angostas pasan a dos columnas."""
+    _html(f'<div class="tz-kpis">{"".join(tarjetas)}</div>')
+
+
+def a_la_derecha(columna):
+    """Contenedor alineado a la derecha dentro de una columna: para los controles de una tarjeta
+    (toggle, Semana / Mes...), que quedan contra el borde derecho del gráfico.
+    Uso: valor = comp.a_la_derecha(c2).toggle(...)."""
+    return columna.container(horizontal=True, horizontal_alignment="right")
 
 
 def estilo_tabla(df: pd.DataFrame, decimales: dict | None = None):

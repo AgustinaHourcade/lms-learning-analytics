@@ -105,7 +105,7 @@ def test_sin_codigos_de_decision_visibles(app, pagina):
 
 
 def _kpis_trazabilidad(at) -> str:
-    return " ".join(m.value for m in at.markdown if m.value.startswith('<div class="tz-kpi"'))
+    return " ".join(m.value for m in at.markdown if m.value.startswith(('<div class="tz-kpi"', '<div class="tz-kpis"')))
 
 
 def test_trazabilidad(app):
@@ -149,16 +149,27 @@ def test_trazabilidad(app):
 
 
 def test_rendimiento(app):
-    """Dashboard de Rendimiento: con todas las materias, sin evaluaciones a la fecha y con el checkbox."""
+    """Dashboard de Rendimiento: con todas las materias, cada materia, otras fechas y el checkbox."""
     app.switch_page("paginas/4_rendimiento.py").run()
     assert not app.exception, app.exception
+    assert not [s for s in app.slider if s.key == "umbral"]   # el umbral no cambia nada en esta página
     html = " ".join(m.value for m in app.markdown)
-    for texto in ["Lo que explica la nota", "Condición al corte", "Instrumento más flojo",
-                  "Promociona", "Regular", "Libre", *ASIGNATURAS]:
+    for texto in ["Tasa de entrega", "Dejaron de entregar", "Libres recuperables", "Sin ninguna entrega",
+                  "Por materia", "proyectada", "Promociona", "Regular", "Libre", *ASIGNATURAS]:
         assert texto in html, texto
-    assert len(app.tabs) == 4
+    for texto in ["Instrumento más flojo", "nota promedio de todos", "Inactivo después de", "Para leer"]:
+        assert texto not in html, texto
+    assert len(app.tabs) == 3
+    assert len(app.expander) == 2          # listas de Dejaron de entregar y Libres recuperables
     app.checkbox[0].set_value(False).run()
     assert not app.exception, app.exception
+    for materia in ASIGNATURAS:
+        app.selectbox(key="materia").set_value(materia).run()
+        assert not app.exception, (materia, app.exception)
+    app.selectbox(key="materia").set_value("Todas las materias").run()
+    for fecha in ["2025-09-15", "2025-08-14"]:   # la segunda es la primera fecha con evaluaciones
+        app.date_input(key="fecha_corte").set_value(fecha).run()
+        assert not app.exception, (fecha, app.exception)
     app.date_input(key="fecha_corte").set_value("2025-08-10").run()
     assert not app.exception, app.exception
     assert "todavía no se tomó ninguna evaluación" in app.info[0].value

@@ -71,7 +71,9 @@ h1 {letter-spacing: -.02em;}
 [data-testid="stButtonGroup"] button[aria-checked="true"] p {font-weight: 600; color: #1A1917;}
 
 /* KPIs (kpi()): tarjeta blanca, número grande, pastilla de variación (mismo estilo que General) */
-.tz-kpi {height: 100%; background: #FFFFFF; border: 1px solid #E3E1DC; border-radius: 13px; padding: 15px 16px;}
+.tz-kpis {display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: stretch; margin: 4px 0 22px;}
+@media (max-width: 900px) {.tz-kpis {grid-template-columns: repeat(2, minmax(0, 1fr));}}
+.tz-kpi {height: 100%; box-sizing: border-box; background: #FFFFFF; border: 1px solid #E3E1DC; border-radius: 13px; padding: 15px 16px;}
 .tz-kpi-etq {margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
              color: #6B6861;}
 .tz-kpi-fila {display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;}

@@ -116,3 +116,67 @@ Formato: número, decisión, por qué, estado.
   exportación, coordinadores de 7 a 21 h) apunta a hora local. Se deja como está, rotulado "hora del servidor del LMS",
   hasta que lo confirme la cátedra.
 - **Estado:** vigente.
+
+## D81 · "Aprobó" un instrumento = nota ≥ 60 sobre 100
+- **Decisión:** `promedio_por_instrumento.pct_aprobada` es el % de quienes rindieron el instrumento con nota ≥
+  `APROBADO_PCT` (60) sobre 100. La columna Observaciones del Excel queda como `pct_aprobada_lms`, solo para
+  comparar. El titular de Rendimiento ("el X % de lo entregado tiene 60 o más") usa esta definición.
+- **Por qué:** Observaciones ("aprobada" / "no aprobada") no es un corte fijo de la nota. Al 24/10/2025, de 1.793
+  notas: en Álgebra y AED "aprobada" es casi cualquier entrega (27 "aprobada" con menos de 60, desde 12 %: ALG-03
+  15 casos, ALG-01 6, ALG-02 4, AED-03 2 con 30 y 50; los únicos "no aprobada" son notas de 0 y 50). En PyE sí
+  depende de la nota, pero con un corte propio de cada instrumento y más alto que 60 (27 notas ≥ 60 marcadas "no
+  aprobada"; en Actividad Rápida 4, "aprobada" empieza en 87,5). Con un corte único los instrumentos se comparan.
+- **Efecto:** en el total casi no cambia (95,5 % con los dos criterios); por instrumento sí: PyE Actividad Rápida 4
+  pasa de 67,6 % a 87,0 %, Álgebra 1° Parcial de 99,4 % a 90,1 %.
+- **Estado:** vigente.
+
+## D82 · Instrumentos cerrados, caída de la entrega y "dejaron de entregar"
+- **Decisión:** un instrumento está **cerrado** si `fecha_instrumento <= fecha de corte − DIAS_CIERRE` (7 días);
+  si no, está **abierto** (todavía recibe entregas). Sin fecha inferida = cerrado. Sobre los cerrados, sin
+  recuperatorios:
+  - `caida_entrega`: por materia, % de la base que rindió el primer instrumento y el último cerrado y la diferencia
+    en puntos porcentuales; también `empezaron` y `dejaron`.
+  - `dejaron_de_entregar`: alumnos de la base que rindieron al menos un instrumento cerrado y ninguno de los
+    `ULTIMOS_CERRADOS` (2) últimos cerrados ni de los abiertos. Solo en materias con 3 o más cerrados.
+  - La **tasa de entrega** de Rendimiento se calcula sobre los cerrados (si todavía no hay ninguno, sobre todos).
+- **Por qué:** la fecha del instrumento es la mediana de los intentos (D18), así que justo después de esa fecha
+  falta la mitad de las entregas. Al 24/10/2025 los datos terminan ese día (no hay intentos posteriores para
+  medir), pero AED Unidad 5 (21/10) tenía sus 24 intentos en los últimos 7 días y PyE Evaluación Semanal Nº2
+  (23/10) sus 13: comparados con instrumentos cerrados exageran la caída (AED daba 71 % → 12 %; cerrado, 71 % →
+  31 %). Los que rindieron un abierto no "dejaron": todavía están entregando. Se excluye al que solo rindió un
+  recuperatorio: no empezó la cursada normal.
+- **Límite conocido:** las autoevaluaciones de AED y las actividades de PyE reciben entregas tardías (≈30 % de los
+  intentos después de la semana de la mediana); con 7 días PyE Actividad Rápida 5 (15/10, 9 días) ya cuenta como
+  cerrada aunque tuvo 18 de sus 54 intentos en la última semana. Si se quiere más prudencia, subir `DIAS_CIERRE`.
+- **Valores al 24/10/2025:** tasa de entrega 58,2 % (1.735 de 2.979, antes 52,1 % con los abiertos); primera →
+  última −28 pp; dejaron de entregar 109 (66 AED, 23 PyE, 20 Álgebra) = 20,4 % de los 534 que habían empezado.
+- **Estado:** vigente.
+
+## D83 · Libres recuperables
+- **Decisión:** `libres_recuperables` = alumnos con condición Libre, al menos un instrumento rendido y nota final ≥
+  corte de Regular − `MARGEN_RECUPERABLE` (10 puntos en la escala de la materia: Álgebra de 50 a 60 sobre 120, AED y
+  PyE de 50 a 60 sobre 100). `faltan` = puntos hasta Regular.
+- **Por qué:** son los que pueden cambiar de condición con el próximo instrumento: la lista a quién intervenir
+  primero. Es el mismo cálculo que hacía el bloque "Para leer" de la Distribución, ahora como métrica con test.
+- **Valores al 24/10/2025:** 28 (5 Álgebra, 12 AED, 11 PyE).
+- **Estado:** vigente.
+
+## D84 · Rediseño del dashboard Rendimiento académico
+- **Decisión:** la página tiene que leerse en 5 segundos ("quedan libres porque dejan de entregar, no porque les vaya
+  mal") y mostrar a quién intervenir. Orden: encabezado ("Notas y condición al dd/mm · materia", menú Descargar con
+  los dos CSV) → mensaje armado con los números (nota de lo entregado vs. nota con los 0 por no entregar y con los
+  que no rindieron nada) → 4 KPIs (Tasa de entrega con la caída primera → última; Dejaron de entregar y Libres
+  recuperables, con la lista y su CSV; Sin ninguna entrega) → tarjeta por materia (nota de quienes rindieron en su
+  escala, Álgebra "proyectada"; barra de condición; entrega primero → último cerrado) → pestañas Por instrumento ·
+  Distribución · Evolución de la condición.
+- **Se quitó:** la pestaña Tabla (el CSV sigue en Descargar), la tarjeta "Instrumento más flojo" y su resaltado, la
+  "nota promedio de todos" como cifra grande (mezcla escalas y duplica alumnos: queda en la frase), la tarjeta
+  agregada "Condición al corte" (reemplazada por las barras por materia) y el bloque "Para leer" (pasó a KPI). El
+  umbral de inactividad no cambia nada en esta página: `barra_lateral(sin_umbral=True)` lo oculta.
+- **Colores:** las barras de entrega van en gris si están bien, ámbar con menos de 50 % y rojo con menos de 30 %
+  (no se confunden con el naranja de AED ni el verde de PyE); los abiertos, rayados; el recuperatorio, gris. Las
+  cajas van en azul de acción. Los números grandes no llevan semáforo; el verde queda para Promociona.
+- **Textos:** los títulos de cada materia en Por instrumento y de Evolución se arman con los datos ("AED: la entrega
+  cae de 71 % a 31 % con promedios de 92 a 96", "Promociona cae en las tres materias desde agosto"). Las definiciones
+  van en el (?) de cada pieza, sin códigos D (lo controla `test_sin_codigos_de_decision_visibles`).
+- **Estado:** vigente.

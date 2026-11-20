@@ -36,8 +36,9 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from src.config import (CONDICIONES, DIAS_DESCONECTADO, DIAS_REGRESO, ESQUEMA, FECHA_CORTE_DEFECTO, GOLD,
-                        SIN_EVALUACIONES, UMBRAL_INACTIVIDAD_DIAS)
+from src.config import (APROBADO_PCT, CONDICIONES, DIAS_CIERRE, DIAS_DESCONECTADO, DIAS_REGRESO, ESQUEMA,
+                        FECHA_CORTE_DEFECTO, GOLD, MARGEN_RECUPERABLE, SIN_EVALUACIONES, ULTIMOS_CERRADOS,
+                        UMBRAL_INACTIVIDAD_DIAS)
 
 ACTIVO, INACTIVO, SIN_ACTIVIDAD = "Activo", "Inactivo", "Sin actividad"
 ESTADOS_ACTIVIDAD = [ACTIVO, INACTIVO, SIN_ACTIVIDAD]
@@ -199,16 +200,28 @@ def nota_final(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
     return df
 
 
+def cerrado(fecha_instrumento: pd.Series, fecha_corte=None) -> pd.Series:
+    """D82: un instrumento está cerrado si su fecha es <= fecha de corte - DIAS_CIERRE.
+    Los que siguen abiertos todavía reciben entregas: no entran en la caída de la
+    entrega ni en "dejaron de entregar". Sin fecha (no se pudo inferir) = cerrado."""
+    limite = fecha_de_corte(fecha_corte) - pd.Timedelta(days=DIAS_CIERRE)
+    return fecha_instrumento.isna() | (fecha_instrumento <= limite)
+
+
 def promedio_por_instrumento(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
     """Promedio de cada instrumento SOLO entre quienes lo rindieron (D22). La
-    nota es la original: el recuperatorio aparece como un instrumento aparte."""
+    nota es la original: el recuperatorio aparece como un instrumento aparte.
+      pct_aprobada      % de quienes lo rindieron con nota >= APROBADO_PCT sobre 100 (D81)
+      pct_aprobada_lms  % con Observaciones = "aprobada" (el criterio del LMS, que no es fijo)
+      cerrado           si la fecha del instrumento ya pasó hace más de DIAS_CIERRE días (D82)"""
     c = notas_instrumento(d, fecha_corte, asignatura)
-    c = c.assign(pct=c["nota_obtenida"] / c["puntaje_maximo"] * 100,
-                 aprobada=c["observaciones"].eq("aprobada"))
+    c = c.assign(pct=c["nota_obtenida"] / c["puntaje_maximo"] * 100)
+    c = c.assign(aprobada=c["pct"].round(2) >= APROBADO_PCT, aprobada_lms=c["observaciones"].eq("aprobada"))
     r = c[c["rindio"]]
     g = (r.groupby(["asignatura", "id_instrumento"])
           .agg(rindieron=("id_alumno", "size"), promedio_pct=("pct", "mean"), mediana_pct=("pct", "median"),
-               minimo_pct=("pct", "min"), maximo_pct=("pct", "max"), pct_aprobada=("aprobada", "mean"))
+               minimo_pct=("pct", "min"), maximo_pct=("pct", "max"), pct_aprobada=("aprobada", "mean"),
+               pct_aprobada_lms=("aprobada_lms", "mean"))
           .reset_index())
     inst = d.instrumentos[["id_instrumento", "instrumento", "orden", "puntaje_maximo", "fecha_instrumento",
                            "es_recuperatorio"]]
@@ -217,6 +230,8 @@ def promedio_por_instrumento(d: Datos, fecha_corte=None, asignatura=None) -> pd.
     df["rindieron"] = df["rindieron"].fillna(0).astype(int)
     df["pct_rindio"] = (df["rindieron"] / df["base"] * 100).round(1)
     df["pct_aprobada"] = (df["pct_aprobada"] * 100).round(1)
+    df["pct_aprobada_lms"] = (df["pct_aprobada_lms"] * 100).round(1)
+    df["cerrado"] = cerrado(df["fecha_instrumento"], fecha_corte)
     for col in ["promedio_pct", "mediana_pct", "minimo_pct", "maximo_pct"]:
         df[col] = df[col].round(2)
     return df.sort_values(["asignatura", "orden"]).reset_index(drop=True)
@@ -261,6 +276,116 @@ def distribucion_condicion(d: Datos, fecha_corte=None, asignatura=None) -> pd.Da
     largo.columns = ["asignatura", "condicion", "alumnos"]
     largo["pct"] = (largo["alumnos"] / largo.groupby("asignatura")["alumnos"].transform("sum") * 100).round(1)
     return largo
+
+
+# ---------------------------------------------------------------------------
+# Entregas: quién deja de entregar y quién está cerca de Regular (D82-D83)
+# ---------------------------------------------------------------------------
+def _cerrados(d: Datos, fecha_corte, asignatura) -> pd.DataFrame:
+    """Instrumentos disponibles a la fecha de corte, sin recuperatorios, con `cerrado` (D82)."""
+    p = promedio_por_instrumento(d, fecha_corte, asignatura)
+    return p[~p["es_recuperatorio"].fillna(False).astype(bool)].sort_values(["asignatura", "orden"])
+
+
+def _nombres(d: Datos) -> pd.DataFrame:
+    a = d.alumnos
+    if "nombre_completo" not in a:
+        return pd.DataFrame(columns=["id_alumno", "nombre"])
+    return a[["id_alumno", "nombre_completo"]].rename(columns={"nombre_completo": "nombre"})
+
+
+COLUMNAS_DEJARON = ["asignatura", "id_alumno", "nombre", "inscripto", "ultimo_rendido", "fecha_ultimo_rendido",
+                    "rendidos", "instrumentos", "nota_final", "escala", "condicion"]
+
+
+def dejaron_de_entregar(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
+    """Alumnos de la base que habían empezado a entregar y dejaron (D82). Una fila por
+    alumno x materia que rindió al menos un instrumento cerrado (no recuperatorio) y
+    NINGUNO de los ULTIMOS_CERRADOS últimos cerrados ni de los que siguen abiertos.
+    Solo en las materias con al menos ULTIMOS_CERRADOS + 1 instrumentos cerrados
+    (con menos, "los últimos" son casi todos y no hay con qué comparar).
+      ultimo_rendido / fecha_ultimo_rendido   el último instrumento que rindió
+      rendidos / instrumentos                 rendidos sobre tomados a la fecha de corte"""
+    inst = _cerrados(d, fecha_corte, asignatura)
+    c = notas_instrumento(d, fecha_corte, asignatura)
+    c = c[c["rindio"] & c["id_instrumento"].isin(inst["id_instrumento"])]
+    partes = []
+    for materia, im in inst.groupby("asignatura"):
+        cerr = im[im["cerrado"]]
+        if len(cerr) <= ULTIMOS_CERRADOS:
+            continue
+        ultimos = set(cerr["id_instrumento"].iloc[-ULTIMOS_CERRADOS:])
+        recientes = ultimos | set(im.loc[~im["cerrado"], "id_instrumento"])
+        cm = c[c["asignatura"] == materia]
+        empezaron = set(cm.loc[cm["id_instrumento"].isin(cerr["id_instrumento"]), "id_alumno"])
+        siguen = set(cm.loc[cm["id_instrumento"].isin(recientes), "id_alumno"])
+        ids = empezaron - siguen
+        if not ids:
+            continue
+        ult = (cm.loc[cm["id_alumno"].isin(ids), ["id_alumno", "id_instrumento"]]
+                 .merge(im[["id_instrumento", "instrumento", "fecha_instrumento", "orden"]], on="id_instrumento")
+                 .sort_values("orden").groupby("id_alumno").last()
+                 [["instrumento", "fecha_instrumento"]]
+                 .rename(columns={"instrumento": "ultimo_rendido", "fecha_instrumento": "fecha_ultimo_rendido"})
+                 .reset_index())
+        partes.append(ult.assign(asignatura=materia))
+    if not partes:
+        return pd.DataFrame(columns=COLUMNAS_DEJARON)
+    n = nota_final(d, fecha_corte, asignatura)
+    df = (pd.concat(partes, ignore_index=True)
+            .merge(n[["asignatura", "id_alumno", "inscripto", "rendidos", "instrumentos", "nota_final", "escala",
+                      "condicion"]], on=["asignatura", "id_alumno"])
+            .merge(_nombres(d), on="id_alumno", how="left"))
+    return (df[COLUMNAS_DEJARON].sort_values(["asignatura", "fecha_ultimo_rendido", "id_alumno"])
+              .reset_index(drop=True))
+
+
+def caida_entrega(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
+    """Por materia (D82): % de la base que rindió el primer instrumento y el último
+    cerrado (sin recuperatorios) y la diferencia en puntos porcentuales
+    (diferencia_pp = ultimo - primero: negativa si cae). Solo materias con al menos
+    un instrumento cerrado; con uno solo, la diferencia queda vacía.
+    También trae, para el KPI "Dejaron de entregar": empezaron (rindieron al menos
+    un instrumento cerrado) y dejaron (filas de dejaron_de_entregar; vacío si la
+    materia tiene ULTIMOS_CERRADOS o menos instrumentos cerrados)."""
+    inst = _cerrados(d, fecha_corte, asignatura)
+    cerr = inst[inst["cerrado"]]
+    columnas = ["asignatura", "cerrados", "abiertos", "primero", "rindieron_primero", "base_primero", "pct_primero",
+                "ultimo", "rindieron_ultimo", "base_ultimo", "pct_ultimo", "diferencia_pp", "empezaron", "dejaron"]
+    if cerr.empty:
+        return pd.DataFrame(columns=columnas)
+    c = notas_instrumento(d, fecha_corte, asignatura)
+    c = c[c["rindio"] & c["id_instrumento"].isin(cerr["id_instrumento"])]
+    dej = dejaron_de_entregar(d, fecha_corte, asignatura).groupby("asignatura").size()
+    filas = []
+    for materia, cm in cerr.groupby("asignatura"):
+        p, u = cm.iloc[0], cm.iloc[-1]
+        filas.append({
+            "asignatura": materia, "cerrados": len(cm),
+            "abiertos": int((~inst.loc[inst["asignatura"] == materia, "cerrado"]).sum()),
+            "primero": p["instrumento"], "rindieron_primero": int(p["rindieron"]), "base_primero": int(p["base"]),
+            "pct_primero": p["pct_rindio"],
+            "ultimo": u["instrumento"], "rindieron_ultimo": int(u["rindieron"]), "base_ultimo": int(u["base"]),
+            "pct_ultimo": u["pct_rindio"],
+            "diferencia_pp": round(u["pct_rindio"] - p["pct_rindio"], 1) if len(cm) > 1 else np.nan,
+            "empezaron": c.loc[c["asignatura"] == materia, "id_alumno"].nunique(),
+            "dejaron": int(dej.get(materia, 0)) if len(cm) > ULTIMOS_CERRADOS else np.nan,
+        })
+    return pd.DataFrame(filas, columns=columnas)
+
+
+def libres_recuperables(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
+    """Alumnos Libres con al menos un instrumento rendido y nota_final >= corte de
+    Regular - MARGEN_RECUPERABLE (en la escala de la materia, D83): los más cerca de
+    cambiar de condición con el próximo instrumento. `faltan` = puntos hasta Regular."""
+    n = nota_final(d, fecha_corte, asignatura)
+    regular = n["asignatura"].map(lambda a: ESQUEMA[a]["cortes"]["Regular"])
+    n = n.assign(corte_regular=regular, faltan=(regular - n["nota_final"]).round(2))
+    df = n[n["condicion"].eq("Libre") & (n["rendidos"] > 0) & (n["nota_final"] >= regular - MARGEN_RECUPERABLE)]
+    df = df.merge(_nombres(d), on="id_alumno", how="left")
+    columnas = ["asignatura", "id_alumno", "nombre", "inscripto", "nota_final", "escala", "corte_regular", "faltan",
+                "rendidos", "instrumentos"]
+    return df[columnas].sort_values(["asignatura", "faltan", "id_alumno"]).reset_index(drop=True)
 
 
 def resumen_calificaciones(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:

@@ -13,7 +13,8 @@ Participación), vive en este módulo aparte:
     solo en esta página.
   - Piezas HTML: pintar(html) (envuelve en <div class="tc">, necesario para que las clases
     tc-* le ganen al CSS de Streamlit), forma(), swatch(), etiqueta_materia(), barra(),
-    aclarar(). Tarjeta con widgets: st.container(key="tarjeta_..."); opción destacada
+    aclarar(), ayuda() (el (?) con la definición), kpi() + kpis() (fila de KPIs en grilla,
+    todos del mismo alto); estilo_tabla() (Styler es-AR). Tarjeta con widgets: st.container(key="tarjeta_..."); opción destacada
     (checkbox azul): st.container(key="opcion_..."). encabezado(..., acciones=fn) pone
     botones a la derecha del título.
   - El color de materia IDENTIFICA, el del semáforo EVALÚA. El estado nunca va solo con
@@ -133,6 +134,32 @@ CSS = f"""
   .tc .tc-tabla tbody tr:last-child td {{border-bottom:none;}}
   .tc .tc-tabla tr.tenue td {{background:#FBFAF8;}}
 
+  /* KPIs: kpis([kpi(...), ...]) = grilla HTML, todas las tarjetas del mismo alto */
+  .tc .tc-kpis {{display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px; align-items:stretch;
+                margin:0 0 12px;}}
+  @media (max-width: 900px) {{.tc .tc-kpis {{grid-template-columns:repeat(2, minmax(0, 1fr));}}}}
+  .tc .tc-kpi-card {{height:100%; box-sizing:border-box; background:{TARJETA}; border:1px solid {BORDE};
+                    border-radius:13px; padding:18px 20px;}}
+  .tc .tc-kpi-card.alerta {{border-left:4px solid {CRITICO};}}
+  [data-testid="stExpander"] details {{background:{TARJETA}; border-color:{BORDE}; border-radius:11px;}}
+  [data-testid="stExpander"] summary p {{font-size:13px; font-weight:500;}}
+  .tc .tc-kpi-etq {{margin:0 0 8px; display:flex; align-items:center; gap:6px; font-size:11px; font-weight:600;
+                   letter-spacing:.06em; text-transform:uppercase; color:{TEXTO_3};}}
+  .tc .tc-kpi-etq.alerta {{color:#8A3A31;}}
+  .tc .tc-kpi-num {{margin:0; font:600 30px/1.15 'Space Grotesk', Inter, sans-serif; letter-spacing:-.02em;
+                   font-variant-numeric:tabular-nums; color:{TEXTO};}}
+  .tc .tc-kpi-num small {{font:500 13px Inter, sans-serif; color:{TEXTO_3}; letter-spacing:0;}}
+  .tc .tc-kpi-det {{margin:6px 0 0; font-size:12px; line-height:1.5; color:{TEXTO_2};}}
+  .tc .tc-delta {{display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:999px;
+                 background:#F1EFEA; font-size:12px; font-weight:500; color:{TEXTO_2}; font-variant-numeric:tabular-nums;}}
+  .tc .tc-ayuda {{display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
+                 border-radius:999px; border:1px solid #CFCBC3; font:600 10px Inter, sans-serif; color:{TEXTO_3};
+                 cursor:help; letter-spacing:0; text-transform:none; flex:none;}}
+  .tc .tc-abierto {{display:inline-flex; align-items:center; height:17px; padding:0 6px; border-radius:5px;
+                   background:#EAF0F8; color:#164279; font-size:10px; font-weight:600; letter-spacing:.03em;}}
+  .tc .tc-proyectada {{display:inline-flex; align-items:center; gap:5px; height:20px; padding:0 7px; border-radius:5px;
+                      background:#F1EFEA; color:{TEXTO_2}; font-size:11px; font-weight:500;}}
+
   /* Semáforo */
   .semaforo {{display:inline-flex; align-items:center; gap:6px; height:24px; padding:0 10px; border-radius:999px;
               font-size:12px; font-weight:600;}}
@@ -161,9 +188,9 @@ def esc(texto) -> str:
 
 
 def encabezado(titulo: str, descripcion: str = "", acciones=None) -> Filtros:
-    """Título de la página, descripción y, abajo, los filtros que se están usando.
+    """Título de la página y descripción (que ya dice la fecha de corte y la materia).
     `acciones`: función sin argumentos que dibuja botones a la derecha del título
-    (por ejemplo, descargas)."""
+    (por ejemplo, el menú de descargas)."""
     estilos()
     f = filtros()
     descripcion = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", descripcion)  # admite **negrita**
@@ -177,8 +204,6 @@ def encabezado(titulo: str, descripcion: str = "", acciones=None) -> Filtros:
             acciones()
     else:
         pintar(bloque)
-    st.caption(f"Corte: **{fmt_fecha(f.fecha_corte)}** · {f.materia} · "
-               f"Inactivo después de {f.umbral} días sin entrar")
     return f
 
 
@@ -240,3 +265,32 @@ def nombre_corto(instrumento: str) -> str:
     """Para ejes y leyendas: saca los emojis y espacios del principio
     ('👉  Actividad Rápida 1' -> 'Actividad Rápida 1')."""
     return re.sub(r"^\W+", "", str(instrumento)).strip()
+
+
+def ayuda(texto: str) -> str:
+    """Círculo (?) con el texto al pasar el mouse: definiciones y códigos D (nunca en las oraciones)."""
+    return f'<span class="tc-ayuda" title="{esc(texto)}" aria-label="{esc(texto)}">?</span>'
+
+
+def kpi(etiqueta: str, valor: str, detalle: str = "", tip: str = "", alerta: bool = False) -> str:
+    """Tarjeta de KPI: etiqueta con su (?), número grande (sin colores de semáforo) y detalle.
+    alerta=True: etiqueta roja y borde izquierdo rojo. Se dibujan juntas con kpis()."""
+    clase = " alerta" if alerta else ""
+    return (f'<div class="tc-kpi-card{clase}"><p class="tc-kpi-etq{clase}">{esc(etiqueta)}'
+            f'{ayuda(tip) if tip else ""}</p><p class="tc-kpi-num">{valor}</p>'
+            + (f'<p class="tc-kpi-det">{detalle}</p>' if detalle else "") + "</div>")
+
+
+def kpis(tarjetas: list[str]) -> None:
+    """Fila de KPIs en una grilla: todas del mismo alto (en pantallas angostas, de a dos)."""
+    pintar(f'<section class="tc-kpis" aria-label="Indicadores">{"".join(tarjetas)}</section>')
+
+
+def estilo_tabla(df: pd.DataFrame, decimales: dict | None = None):
+    """Styler en es-AR (miles con punto, decimales con coma) que conserva los números,
+    así la tabla se sigue ordenando como número. `decimales`: {columna: cantidad} (0 por defecto)."""
+    decimales = decimales or {}
+    sty = df.style
+    for col in df.select_dtypes("number").columns:
+        sty = sty.format(precision=decimales.get(col, 0), subset=[col], thousands=".", decimal=",")
+    return sty

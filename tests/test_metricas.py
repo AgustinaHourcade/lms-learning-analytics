@@ -728,3 +728,112 @@ def test_evolucion_marca_periodos_incompletos(d):
     mes = m.evolucion_interacciones(d, "2025-10-24", frecuencia="M").drop_duplicates("periodo")
     assert mes.set_index("periodo").loc[T("2025-09-01"), "completo"]
     assert not mes.set_index("periodo").loc[T("2025-10-01"), "completo"]
+
+
+# ---------------------------------------------------------------------------
+# Entregas: instrumentos cerrados, dejaron de entregar, libres recuperables (D81-D83)
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def entregas() -> m.Datos:
+    """PyE con 4 instrumentos (01/09, 08/09, 15/09, 22/09) + recuperatorio del primero (10/09).
+      E1 rinde todo                       -> sigue
+      E2 rinde solo el 1                  -> dejó (si hay 3+ cerrados)
+      E3 rinde el 1 y el 4                -> sigue (el 4 es uno de los últimos o está abierto)
+      E4 solo rinde el recuperatorio      -> nunca empezó: no cuenta
+      E5 no rinde nada                    -> no cuenta
+    Álgebra con un solo instrumento: nunca tiene "dejaron"."""
+    p = [_instrumento(f"PYE-{i}", PYE, f"Semanal {i}", 100.0, f) for i, f in
+         [(1, "2025-09-01"), (2, "2025-09-08"), (3, "2025-09-15"), (4, "2025-09-22")]]
+    rec = _instrumento("PYE-5", PYE, "Recuperatorio: Semanal 1", 100.0, "2025-09-10", recupera=True)
+    alg = _instrumento("ALG-1", ALG, "Autoevaluación", 10.0, "2025-09-01")
+    rinde = {"E1": {1: 90, 2: 80, 3: 70, 4: 60}, "E2": {1: 55}, "E3": {1: 70, 4: 100}, "E4": {}, "E5": {}}
+    filas = []
+    for alumno, notas in rinde.items():
+        for i, inst in enumerate(p, start=1):
+            recu = 50.0 if (alumno == "E4" and i == 1) else None
+            filas.append(_nota(alumno, inst, notas.get(i), recu=recu, fecha_recu="2025-09-10" if recu else None))
+        filas.append(_nota(alumno, rec, 50.0 if alumno == "E4" else None))
+    filas += [_nota("G1", alg, 4.5), _nota("G2", alg, None)]
+    ids = list(rinde) + ["G1", "G2"]
+    matricula = pd.DataFrame({"asignatura": [PYE] * 5 + [ALG] * 2, "id_alumno": ids, "en_base": True,
+                              "inscripto": True, "en_matriculados": True, "estado": "Aceptada"})
+    alumnos = pd.DataFrame({"id_alumno": ids, "apellido": ids, "nombre": "X"})
+    alumnos["nombre_completo"] = alumnos["apellido"] + ", X"
+    vacio = pd.DataFrame()
+    return m.Datos(alumnos=alumnos, instrumentos=pd.DataFrame([*p, rec, alg]), interacciones=vacio,
+                   sesiones=vacio, calificaciones=pd.DataFrame(filas), participacion=vacio, matricula=matricula)
+
+
+def test_instrumento_cerrado():
+    fechas = pd.Series([T("2025-10-17"), T("2025-10-18"), pd.NaT])
+    assert m.cerrado(fechas, "2025-10-24").tolist() == [True, False, True]   # 7 días justos = cerrado
+
+
+def test_pct_aprobada_usa_la_nota(d):
+    """D81: aprobada = nota >= 60 sobre 100, no la columna Observaciones."""
+    p = m.promedio_por_instrumento(d).set_index("id_instrumento")
+    c = d.calificaciones[d.calificaciones["rindio"]]
+    c = c.assign(pct=c["nota_obtenida"] / c["puntaje_maximo"] * 100)
+    esperado = c.groupby("id_instrumento")["pct"].apply(lambda s: (s.round(2) >= 60).mean() * 100).round(1)
+    assert (p.loc[esperado.index, "pct_aprobada"] == esperado).all()
+    assert (p["pct_aprobada"] != p["pct_aprobada_lms"]).any()   # el LMS marca "aprobada" con notas menores a 60
+
+
+def test_dejaron_de_entregar_casos_borde(entregas):
+    # 24/10: los 4 cerrados; últimos 2 = 3 y 4. Solo E2 dejó (E3 rindió el 4, E4 solo el recuperatorio)
+    dj = m.dejaron_de_entregar(entregas, "2025-10-24")
+    assert dj["id_alumno"].tolist() == ["E2"]
+    fila = dj.iloc[0]
+    assert fila["ultimo_rendido"] == "Semanal 1" and fila["fecha_ultimo_rendido"] == T("2025-09-01")
+    assert (fila["rendidos"], fila["instrumentos"], fila["nombre"]) == (1, 4, "E2, X")
+    # 25/09: el 4 está abierto (3 días) -> cerrados 1, 2, 3: los últimos son 2 y 3, y E3, que rindió el abierto, sigue
+    assert m.dejaron_de_entregar(entregas, "2025-09-25")["id_alumno"].tolist() == ["E2"]
+    # 20/09: solo 2 cerrados (1 y 2) -> menos de 3: vacío
+    assert m.dejaron_de_entregar(entregas, "2025-09-20").empty
+    # sin instrumentos cerrados ni disponibles
+    assert m.dejaron_de_entregar(entregas, "2025-08-01").empty
+    # Álgebra tiene un solo instrumento: nunca aparece
+    assert m.dejaron_de_entregar(entregas, "2025-10-24", ALG).empty
+
+
+def test_caida_entrega_casos_borde(entregas):
+    c = m.caida_entrega(entregas, "2025-10-24").set_index("asignatura")
+    pye = c.loc[PYE]
+    assert (pye["cerrados"], pye["abiertos"]) == (4, 0)
+    assert (pye["pct_primero"], pye["pct_ultimo"], pye["diferencia_pp"]) == (60.0, 40.0, -20.0)  # 3/5 -> 2/5
+    assert (pye["empezaron"], pye["dejaron"]) == (3, 1)          # E4 (solo recuperatorio) no empezó
+    alg = c.loc[ALG]                                             # un solo instrumento: sin diferencia ni "dejaron"
+    assert alg["cerrados"] == 1 and pd.isna(alg["diferencia_pp"]) and pd.isna(alg["dejaron"])
+    abierto = m.caida_entrega(entregas, "2025-09-25").set_index("asignatura").loc[PYE]
+    assert (abierto["cerrados"], abierto["abiertos"], abierto["ultimo"]) == (3, 1, "Semanal 3")
+    assert m.caida_entrega(entregas, "2025-08-01").empty
+
+
+def test_libres_recuperables_casos_borde(entregas):
+    # 24/10: E2 = 55/400 -> 13,75 (lejos); E3 = 170/400 = 42,5 (lejos); E1 = 75 Regular. Nadie.
+    assert m.libres_recuperables(entregas, "2025-10-24", PYE).empty
+    # Álgebra: G1 = 4,5/10 × 120 = 54 -> Libre a 6 del corte; G2 no rindió nada -> no cuenta
+    lr = m.libres_recuperables(entregas, "2025-10-24", ALG)
+    assert lr["id_alumno"].tolist() == ["G1"] and lr.iloc[0]["faltan"] == 6
+    # E4 solo rindió el recuperatorio (50 en el 1, 0 en el resto): cuenta como rendido
+    n = m.nota_final(entregas, "2025-09-10", PYE).set_index("id_alumno")
+    assert n.loc["E4", "rendidos"] == 1
+
+
+def test_entregas_coinciden_con_la_pagina(d):
+    """Mismo cálculo que hacía la página de Rendimiento al 24/10 (libres a menos de 10 del corte)."""
+    n = m.nota_final(d, FECHA_CORTE_DEFECTO)
+    h = n[n["nota_final"].notna() & (n["rendidos"] > 0)]
+    reg = h["asignatura"].map({ALG: 60, PYE: 60, AED: 60})
+    esperado = h[(h["condicion"] == "Libre") & (h["nota_final"] >= reg - 10)].groupby("asignatura").size()
+    lr = m.libres_recuperables(d, FECHA_CORTE_DEFECTO).groupby("asignatura").size()
+    assert lr.to_dict() == esperado.to_dict()
+    assert lr[ALG] == 5 and lr[AED] == 12
+    # dejaron: todos rindieron algo cerrado y nada de los 2 últimos cerrados ni de los abiertos
+    dj = m.dejaron_de_entregar(d, FECHA_CORTE_DEFECTO)
+    assert (dj["rendidos"] >= 1).all() and dj["condicion"].isin(m.CONDICIONES).all()
+    c = m.caida_entrega(d, FECHA_CORTE_DEFECTO).set_index("asignatura")
+    assert dj.groupby("asignatura").size().to_dict() == c["dejaron"].dropna().astype(int).to_dict()
+    assert (c["dejaron"] <= c["empezaron"]).all()
+    # AED Unidad 5 (21/10) sigue abierta al 24/10: el último cerrado es la Unidad 4
+    assert c.loc[AED, "abiertos"] == 1 and "Unidad 4" in c.loc[AED, "ultimo"]
