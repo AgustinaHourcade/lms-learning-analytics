@@ -154,7 +154,11 @@ CSS = f"""
   [data-testid="stSidebar"] {{border-right: 1px solid {_T['borde']};}}
   [data-testid="stNavSectionHeader"] {{font: 600 10px {FUENTE} !important; letter-spacing: .08em;
       text-transform: uppercase; color: {_T['texto_4']} !important;}}
-  [data-testid="stNavSectionHeader"] * {{font: inherit !important; color: inherit !important;}}
+  [data-testid="stNavSectionHeader"] *:not([data-testid="stIconMaterial"]) {{font: inherit !important;
+      color: inherit !important;}}
+  /* El ícono (expand_more) es una ligadura de Material Symbols: necesita su fuente, minúsculas y sin espaciado. */
+  [data-testid="stNavSectionHeader"] [data-testid="stIconMaterial"] {{text-transform: none; letter-spacing: normal;
+      color: inherit !important;}}
   a[data-testid="stSidebarNavLink"] {{border-radius: 8px;}}
   a[data-testid="stSidebarNavLink"] span {{font-weight: 500; color: {_T['texto']};}}
   a[data-testid="stSidebarNavLink"][aria-current="page"] {{background: {_T['azul_suave']};}}
@@ -391,10 +395,9 @@ CSS = f"""
 
 
 def estilos() -> None:
-    """CSS global del sistema de diseño y el logo del menú. Se llama una vez, desde Inicio.py."""
+    """CSS global del sistema de diseño. Se llama una vez, desde Inicio.py."""
     # Sin líneas en blanco: el markdown cortaría el bloque <style> en la primera.
     st.markdown("\n".join(linea for linea in CSS.splitlines() if linea.strip()), unsafe_allow_html=True)
-    st.logo(str(Path(__file__).parent / "assets" / "logo.svg"), size="large")
 
 
 # ---------------------------------------------------------------------------
