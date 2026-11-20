@@ -31,6 +31,13 @@ def _valores_metricas(at) -> dict:
     return {m.label: m.value for m in at.metric}
 
 
+def _kpis_participacion(at) -> str:
+    """El HTML de la grilla de KPIs de Participación (se dibuja con st.html, no con st.metric)."""
+    cuerpos = [e.proto.body for e in at.get("html") if "pa-kpis" in e.proto.body]
+    assert len(cuerpos) == 1
+    return cuerpos[0]
+
+
 def test_inicio_muestra_las_tres_materias(app):
     assert len(app.metric) == 3 * 5
     assert app.selectbox(key="materia").value == "Todas las materias"
@@ -108,11 +115,20 @@ def test_participacion(app):
     """Dashboard de Participación: tarjetas, pestañas, período, frecuencia y medida."""
     app.switch_page("paginas/2_participacion.py").run()
     assert not app.exception, app.exception
-    assert len(app.tabs) == 3
-    antes = _valores_metricas(app)
+    assert len(app.tabs) == 2
+    antes = _kpis_participacion(app)
+    for nombre in ["Sesiones por alumno por semana", "Minutos por alumno por semana", "Avance promedio",
+                   "Retención semanal"]:
+        assert nombre in antes
+    assert "semanas previas" not in antes          # toda la cursada: sin período anterior, sin Δ
     app.button_group(key="part_periodo").set_value("Últimas 2 semanas").run()
     assert not app.exception, app.exception
-    assert _valores_metricas(app)["Sesiones por alumno"] != antes["Sesiones por alumno"]
+    despues = _kpis_participacion(app)
+    assert despues != antes and "vs. 2 semanas previas" in despues
+    app.selectbox(key="materia").set_value("Álgebra").run()
+    assert not app.exception, app.exception
+    assert _kpis_participacion(app) != despues
+    app.selectbox(key="materia").set_value("Todas las materias").run()
     app.button_group(key="part_periodo").set_value("Desde una fecha").run()
     app.date_input(key="part_desde").set_value("2025-09-01").run()
     assert not app.exception, app.exception

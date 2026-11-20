@@ -63,3 +63,22 @@ Formato: número, decisión, por qué, estado.
 - **Por qué:** los 4 pedidos de la consigna tienen que verse sin clicks y el verde/naranja de las materias chocaba
   con Promociona/Activo y Regular.
 - **Estado:** vigente.
+
+## D79 · Rediseño del dashboard Participación
+- **Decisión:** la página responde "quién sigue entrando, quién se está yendo y en qué materia". Hero con el % de
+  activos, su Δ contra el mismo % medido 7 días antes (ventana móvil) y la referencia al cierre de la semana 2
+  (primer dato + 13 días), y la lista de los que se están enfriando. Cuatro KPIs con su base temporal:
+  sesiones y minutos por alumno **por semana** (período; semanas = días / 7; Δ contra el período anterior de igual
+  duración solo si entra entero en los datos), avance (foto del LMS) y **retención semanal** (al corte:
+  de los que entraron en [corte−13, corte−7], qué % entró en [corte−6, corte]). Funciones `ritmo_semanal`,
+  `retencion_semanal`, `acceso_semanal` y `semanas_sin_actividad` en `src/metricas.py`. Se quitan "Qué se movió
+  esta semana", "Resumen por materia", "Uso de foros" y el control de calidad, que pasa a
+  `analysis/validacion_sesiones.py` (guarda gráfico y ρ en `reports/`).
+- **Avance al corte (descartado):** la trazabilidad trae el recurso (nombre entre comillas en Descripción) pero no su
+  fecha de publicación; con denominador = recursos abiertos por al menos un alumno de la materia hasta el corte, la
+  validación al 24/10 contra el avance del LMS dio ρ = 0,993 en AED, 0,986 en PyE y 0,852 en Álgebra (diferencia
+  media −0,9, +3,7 y −17,6 pts). Álgebra queda debajo de 0,9, así que se mantiene la foto del LMS en las tres
+  materias, con el chip "Foto LMS 24/10" y la tarjeta atenuada cuando la fecha de corte es otra (D36, D76).
+- **Por qué:** los totales por alumno no se comparan entre períodos de distinto largo; por semana sí. La retención
+  dice si los que venían entrando siguen, que el % de activos solo no muestra.
+- **Estado:** vigente.

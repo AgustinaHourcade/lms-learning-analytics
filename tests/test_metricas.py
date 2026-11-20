@@ -417,6 +417,58 @@ def test_concordancia_tiempo(d):
     assert len(c) == 3 and (c["rho"] > 0.9).all()
 
 
+@pytest.mark.parametrize("desde", [None, "2025-09-27"])
+def test_ritmo_semanal_cierra_con_las_sesiones(d, desde):
+    r = m.ritmo_semanal(d, desde=desde).set_index("asignatura")
+    p = m.participacion_alumnos(d, desde=desde)
+    inicio = T(desde) if desde else d.interacciones["fecha"].min()
+    semanas = ((T(FECHA_CORTE_DEFECTO) - inicio).days + 1) / 7
+    todas = r.loc[m.TODAS_LAS_MATERIAS]
+    assert todas["alumnos"] == len(p)
+    assert todas["sesiones_semana"] == pytest.approx(p["sesiones"].sum() / len(p) / semanas)
+    assert todas["minutos_semana_mediana"] == pytest.approx((p["minutos"] / semanas).median())
+    assert (r["semanas_activas_mediana"] <= r["semanas_periodo"]).all()
+    assert r.loc[ALG, "alumnos"] == (p["asignatura"] == ALG).sum()
+
+
+def test_ritmo_semanal_respeta_la_materia(d):
+    alg = m.ritmo_semanal(d, asignatura=ALG).set_index("asignatura")
+    todas = m.ritmo_semanal(d).set_index("asignatura")
+    assert list(alg.index) == [ALG, m.TODAS_LAS_MATERIAS]
+    assert alg.loc[m.TODAS_LAS_MATERIAS, "sesiones_semana"] == pytest.approx(todas.loc[ALG, "sesiones_semana"])
+
+
+@pytest.mark.parametrize("fecha", ["2025-09-15", FECHA_CORTE_DEFECTO])
+def test_retencion_semanal(d, fecha):
+    r = m.retencion_semanal(d, fecha).set_index("asignatura")
+    corte = T(fecha)
+    ev = d.interacciones[d.interacciones["en_base"] & (d.interacciones["fecha"] <= corte)
+                         & (d.interacciones["fecha"] >= corte - pd.Timedelta(days=13))]
+    esta = set(map(tuple, ev.loc[ev["fecha"] >= corte - pd.Timedelta(days=6), ["asignatura", "id_alumno"]].values))
+    antes = set(map(tuple, ev.loc[ev["fecha"] < corte - pd.Timedelta(days=6), ["asignatura", "id_alumno"]].values))
+    todas = r.loc[m.TODAS_LAS_MATERIAS]
+    assert todas["activos_semana_anterior"] == len(antes) and todas["volvieron"] == len(antes & esta)
+    assert r["retencion"].between(0, 100).all()
+    assert r.drop(m.TODAS_LAS_MATERIAS)["volvieron"].sum() == todas["volvieron"]
+
+
+def test_acceso_semanal_es_el_promedio_ponderado(d):
+    s = m.acceso_semanal(d)
+    e = m.evolucion_participacion(d, frecuencia="W")
+    n = m.base(d).groupby("asignatura").size()
+    fila = s.iloc[2]
+    semana = e[e["periodo"] == fila["periodo"]]
+    assert fila["pct"] == pytest.approx(semana["alumnos_activos"].sum() / n.sum() * 100)
+    assert s["completa"].iloc[:-1].all() and not s["completa"].iloc[-1]   # el 24/10/2025 es viernes
+
+
+def test_semanas_sin_actividad(d):
+    nunca = m.actividad_alumnos(d).query("eventos == 0").iloc[0]
+    r = m.semanas_sin_actividad(d, nunca["id_alumno"], nunca["asignatura"])
+    assert r == {"semanas": 3, "sin_actividad": 3}
+    assert m.semanas_sin_actividad(d, nunca["id_alumno"], nunca["asignatura"], "2025-08-12")["semanas"] == 1
+
+
 # ---------------------------------------------------------------------------
 # Tramos de actividad y movimientos de la semana (D54)
 # ---------------------------------------------------------------------------

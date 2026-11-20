@@ -502,6 +502,101 @@ def concordancia_tiempo(d: Datos, asignatura=None) -> pd.DataFrame:
     return pd.DataFrame(filas)
 
 
+TODAS_LAS_MATERIAS = "Todas"
+
+
+def _inicio_periodo(d: Datos, desde) -> pd.Timestamp:
+    return pd.Timestamp(desde).normalize() if desde is not None else pd.Timestamp(d.interacciones["fecha"].min())
+
+
+def _lunes(f) -> pd.Timestamp:
+    f = pd.Timestamp(f).normalize()
+    return f - pd.Timedelta(days=f.day_of_week)
+
+
+def ritmo_semanal(d: Datos, fecha_corte=None, asignatura=None, umbral: int = UMBRAL_INACTIVIDAD_DIAS,
+                  desde=None) -> pd.DataFrame:
+    """Sesiones y minutos por alumno por semana entre `desde` (o el primer dato) y
+    la fecha de corte, por materia y en total (fila asignatura = "Todas"):
+      semanas            días del período / 7 (admite fracción)
+      sesiones_semana    Σ sesiones / alumnos de la base / semanas (incluye a los que no entraron)
+      sesiones_semana_mediana  mediana entre alumnos de sesiones del alumno / semanas
+      minutos_semana(_mediana) lo mismo con los minutos de sesión
+      semanas_periodo    semanas de calendario (lunes a domingo) que toca el período
+      semanas_activas_mediana  mediana de semanas con al menos un ingreso por alumno (regularidad)"""
+    corte = fecha_de_corte(fecha_corte)
+    inicio = _inicio_periodo(d, desde)
+    semanas = ((corte - inicio).days + 1) / 7
+    semanas_cal = ((_lunes(corte) - _lunes(inicio)).days // 7 + 1) if corte >= inicio else 0
+    act = actividad_alumnos(d, corte, asignatura, umbral, desde)
+    grupos = [(a, g) for a, g in act.groupby("asignatura")] + [(TODAS_LAS_MATERIAS, act)]
+    filas = []
+    for asig, g in grupos:
+        div = semanas if semanas > 0 else np.nan
+        filas.append({"asignatura": asig, "alumnos": len(g), "semanas": round(semanas, 3),
+                      "sesiones_semana": g["sesiones"].mean() / div,
+                      "sesiones_semana_mediana": (g["sesiones"] / div).median(),
+                      "minutos_semana": g["minutos"].mean() / div,
+                      "minutos_semana_mediana": (g["minutos"] / div).median(),
+                      "semanas_periodo": semanas_cal,
+                      "semanas_activas_mediana": g["semanas_activas"].median()})
+    return pd.DataFrame(filas)
+
+
+def retencion_semanal(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
+    """De los alumnos que entraron la semana anterior ([corte−13, corte−7]), qué %
+    volvió a entrar esta semana ([corte−6, corte]). Por materia y en total
+    ("Todas", contando alumno × materia)."""
+    corte = fecha_de_corte(fecha_corte)
+    ev = _eventos(d, corte, asignatura, desde=corte - pd.Timedelta(days=13))
+    dia = ev["fecha_hora"].dt.normalize()
+    pares = ev.assign(esta=dia >= corte - pd.Timedelta(days=6))[["asignatura", "id_alumno", "esta"]]
+    esta = set(map(tuple, pares.loc[pares["esta"], ["asignatura", "id_alumno"]].drop_duplicates().values))
+    antes = set(map(tuple, pares.loc[~pares["esta"], ["asignatura", "id_alumno"]].drop_duplicates().values))
+    filas = []
+    for asig in [*_materias(asignatura), TODAS_LAS_MATERIAS]:
+        a = {p for p in antes if asig == TODAS_LAS_MATERIAS or p[0] == asig}
+        e = {p for p in esta if asig == TODAS_LAS_MATERIAS or p[0] == asig}
+        volvieron = len(a & e)
+        filas.append({"asignatura": asig, "activos_semana_anterior": len(a), "activos_semana": len(e),
+                      "volvieron": volvieron, "retencion": volvieron / len(a) * 100 if a else np.nan})
+    return pd.DataFrame(filas)
+
+
+def acceso_semanal(d: Datos, fecha_corte=None, asignatura=None, desde=None) -> pd.DataFrame:
+    """% de la base que entró al menos una vez en cada semana (lunes a domingo)
+    del período, sumando las materias elegidas (promedio ponderado por el tamaño
+    de la base). completa = False en la última semana si la fecha de corte cae
+    antes del domingo."""
+    corte = fecha_de_corte(fecha_corte)
+    evo = evolucion_actividad(d, corte, asignatura, "W", desde)
+    n_base = base(d, asignatura).groupby("asignatura").size()
+    evo = evo.assign(base=evo["asignatura"].map(n_base))
+    df = evo.groupby("periodo")[["alumnos_activos", "base"]].sum().reset_index()
+    df["pct"] = df["alumnos_activos"] / df["base"].replace(0, np.nan) * 100
+    df["completa"] = df["periodo"] + pd.Timedelta(days=6) <= corte
+    return df
+
+
+def semanas_sin_actividad(d: Datos, id_alumno: str, asignatura: str, fecha_corte=None, semanas: int = 3) -> dict:
+    """En cuántas de las últimas `semanas` semanas completas (lunes a domingo,
+    terminadas a la fecha de corte) el alumno no tuvo ninguna interacción en la
+    materia. Solo cuenta semanas desde el primer dato."""
+    corte = fecha_de_corte(fecha_corte)
+    ultima = _lunes(corte) if corte.day_of_week == 6 else _lunes(corte) - pd.Timedelta(days=7)
+    primera = _lunes(d.interacciones["fecha"].min())
+    lunes = [ultima - pd.Timedelta(days=7 * k) for k in range(semanas)]
+    lunes = [x for x in lunes if x >= primera]
+    ev = _eventos(d, corte, asignatura)
+    ev = ev[ev["id_alumno"] == id_alumno]
+    con_actividad = set(_lunes_serie(ev["fecha_hora"]))
+    return {"semanas": len(lunes), "sin_actividad": sum(x not in con_actividad for x in lunes)}
+
+
+def _lunes_serie(f: pd.Series) -> pd.Series:
+    return f.dt.normalize() - pd.to_timedelta(f.dt.day_of_week, unit="D")
+
+
 # ---------------------------------------------------------------------------
 # Trazabilidad
 # ---------------------------------------------------------------------------

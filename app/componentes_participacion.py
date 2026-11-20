@@ -119,7 +119,37 @@ CSS = """
   .pa-label {font: 600 11px Inter, sans-serif; letter-spacing: .06em; text-transform: uppercase; color: #6B6861;}
   .pa-h3 {margin: 0 0 4px !important; font: 600 15px 'Space Grotesk', Inter, sans-serif; color: #1A1917;}
   .pa-desc {max-width: 78ch; font: 400 12px/1.55 Inter, sans-serif; color: #57544C;}
-  .pa-big {font: 600 40px/1.1 'Space Grotesk', Inter, sans-serif; letter-spacing: -.02em;}
+  .pa-big {font: 600 64px/1 'Space Grotesk', Inter, sans-serif; letter-spacing: -.03em;}
+  .pa-chip-sm {display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px;
+                font: 600 10.5px Inter, sans-serif; letter-spacing: .02em; background: #F1EFEA; color: #57544C;
+                white-space: nowrap;}
+  /* KPIs del hero: grilla 2 × 2 de tarjetas de la misma altura */
+  .pa-kpis {display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;}
+  .pa-kpi {display: flex; flex-direction: column; min-height: 0; padding: 14px 16px; background: #FFFFFF;
+           border: 1px solid #E3E1DC; border-radius: 13px;}
+  .pa-kpi-cab {display: flex; justify-content: space-between; align-items: center; gap: 10px;}
+  .pa-kpi-label {margin: 8px 0 0 !important; font: 600 11px/1.45 Inter, sans-serif; letter-spacing: .06em;
+                 text-transform: uppercase; color: #6B6861;}
+  .pa-kpi-valor {margin: 6px 0 0 !important; font: 600 38px/1 'Space Grotesk', Inter, sans-serif;
+                 letter-spacing: -.02em; color: #1A1917;}
+  .pa-kpi-pie {margin-top: auto; padding-top: 10px; border-top: 1px solid #EFEDE8;}
+  .pa-kpi-delta {margin: 0 0 3px !important; font: 500 12px Inter, sans-serif; color: #6B6861;}
+  .pa-kpi-delta span {font-weight: 700;}
+  .pa-kpi-sec {font: 400 12px Inter, sans-serif; color: #6B6861;}
+  .pa-kpi-aviso {margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: #FBF0DC; color: #7A5000;
+                 font-weight: 600;}
+  /* Atenuada: el dato no corresponde a la fecha de corte elegida (el aviso queda a pleno) */
+  .pa-kpi-atenuada {background: #FBFAF8;}
+  .pa-kpi-atenuada .pa-kpi-valor, .pa-kpi-atenuada .pa-kpi-label {opacity: .5;}
+  /* Ícono de ayuda con tooltip propio */
+  .pa-ayuda {position: relative; display: inline-flex; align-items: center; justify-content: center; width: 15px;
+             height: 15px; flex: none; border: 1.3px solid #8A867C; border-radius: 50%;
+             font: 600 9.5px Inter, sans-serif; color: #6B6861; letter-spacing: 0; cursor: help;}
+  .pa-ayuda:hover::after, .pa-ayuda:focus::after {content: attr(data-tip); position: absolute; z-index: 10;
+             top: 22px; right: -8px; width: 250px; padding: 10px 12px; border-radius: 8px; background: #1A1917;
+             color: #FFFFFF; font: 400 12px/1.5 Inter, sans-serif; text-transform: none; letter-spacing: 0;
+             box-shadow: 0 6px 18px rgba(0,0,0,.18);}
+  @media (max-width: 640px) {.pa-kpis {grid-template-columns: 1fr;} .pa-kpi {min-height: 0;}}
   .pa-num {font: 600 22px/1.2 'Space Grotesk', Inter, sans-serif;}
   .pa-sub {font: 500 14px Inter, sans-serif; color: #57544C;}
   .pa-chip {display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px;
