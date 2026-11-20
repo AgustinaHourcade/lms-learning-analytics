@@ -60,12 +60,13 @@ with izq:
     st.html('<div class="tfi tfi-card" style="height:100%">'
             + comp.titulo_tarjeta("Qué mira el modelo")
             + '<div class="tfi-chips" style="margin:8px 0 14px">'
-            + "".join(comp.chip(x) for x in ["Días sin entrar", f"Días activos en las últimas {H // 7} semanas",
-                                             "Interacciones recientes", "Si la actividad viene bajando",
-                                             "Si hizo evaluaciones", "Semanas con actividad"])
+            + "".join(comp.chip(x) for x in ["Días sin entrar", "Su pausa habitual", "Interacciones recientes",
+                                             "Si la actividad viene bajando", "Si sigue en sus otras materias",
+                                             "Días desde la última evaluación", "Nota a la fecha",
+                                             "Si rindió la última evaluación"])
             + "</div>"
-            + '<p class="tfi-p">Solo actividad hasta la fecha de corte: <strong>no usa notas</strong>, así que su '
-              "señal es independiente de la condición académica. Devuelve una probabilidad por alumno.</p></div>")
+            + '<p class="tfi-p">Todo con lo que se sabía a la fecha de corte: cada nota cuenta desde el día en que '
+              "el alumno rindió, no la foto de notas del final. Devuelve una probabilidad por alumno.</p></div>")
 
 conocido = riesgo[riesgo["abandono_real"].notna()]
 with der:
@@ -309,7 +310,8 @@ with comp.tarjeta("alumno"):
         todos = comp.metrica("riesgo_abandono", asignatura=None)
         suyo = todos[todos["id_alumno"].eq(id_alumno)]
         curso = todos[todos["estado_abandono"].eq(ab.CURSANDO)].groupby("asignatura")
-        indicadores = ["dias_sin_actividad", "eventos_7d", "eventos_14d", "eventos_14d_previos", "dias_activos_14d",
+        indicadores = ["dias_sin_actividad", "pausa_habitual", "dias_desde_evaluacion", "nota_pct", "pct_rendidos",
+                       "eventos_14d_otras", "eventos_7d", "eventos_14d", "eventos_14d_previos", "dias_activos_14d",
                        "sesiones_14d", "minutos_14d", "evaluaciones_14d", "pct_semanas_activas", "eventos_total"]
         nombres_ind = {**ab.VARIABLES, "eventos_14d_previos": "Interacciones en las 2 semanas anteriores"}
         resumen = pd.DataFrame({"Indicador": [nombres_ind[c] for c in indicadores]})
@@ -334,8 +336,11 @@ with st.expander("Cómo se armó el modelo y qué tan bueno es", icon=":material
         f"{comp.fmt_fecha(info['ultima_foto'])} ({info['fotos']} fotos), se miró a cada alumno que venía entrando y "
         f"se anotó si entró o no en los {H} días siguientes. Son {comp.num(info['filas'])} casos de "
         f"{comp.num(info['alumnos'])} alumnos; abandona el **{comp.pct(info['tasa_abandono'])}**.\n"
-        "2. **Variables:** solo la actividad hasta el día de la foto. Las notas no se usan: son una foto al 24/10 y "
-        "le contarían al modelo cosas que todavía no habían pasado.\n"
+        f"2. **Variables ({len(ab.VARIABLES)}):** todo con lo que se sabía el día de la foto. Actividad reciente, "
+        "su pausa habitual entre días activos, lo que hace en sus otras materias, los días desde la última "
+        "evaluación de la materia y su nota a la fecha. Cada nota cuenta desde el día en que ese alumno rindió "
+        "(su evento «Realizar evaluación»), así el modelo no ve notas que todavía no existían. El reporte de "
+        "participación no se usa porque es una foto al 24/10.\n"
         "3. **Validación separando por alumno:** el 25 % de los alumnos "
         f"({comp.num(info['alumnos_prueba'])}) quedó afuera del entrenamiento en todas sus fotos y materias, y se "
         "usó solo para medir. Así el modelo no \"reconoce\" a un alumno que ya vio.\n"
@@ -345,13 +350,18 @@ with st.expander("Cómo se armó el modelo y qué tan bueno es", icon=":material
         f"5. **Modelo elegido: {info['nombre']}**, el de menor costo en la validación cruzada.")
     comparacion = comp.metrica("comparacion_modelos")
     prueba = comparacion[comparacion["conjunto"].eq("prueba")]
+    costo_cv = comparacion[comparacion["conjunto"].eq("validación cruzada")].set_index("modelo")["costo_por_100"]
     st.markdown("**Comparación en los alumnos de prueba**")
     st.dataframe(pd.DataFrame({
         "Modelo": prueba["modelo"] + prueba["elegido"].map({True: " ✓", False: ""}),
+        "Costo cada 100 (validación cruzada)": prueba["modelo"].map(costo_cv),
         "AUC ROC": prueba["auc_roc"], "AUC PR": prueba["auc_pr"],
         "Precisión (%)": prueba["precision"], "Recall (%)": prueba["recall"],
-        "Marcados (%)": prueba["pct_marcados"], "Costo cada 100 casos": prueba["costo_por_100"],
+        "Marcados (%)": prueba["pct_marcados"], "Costo cada 100 (prueba)": prueba["costo_por_100"],
     }), hide_index=True, width="stretch")
+    st.caption("El modelo se elige por el costo en validación cruzada (✓), que usa a todos los alumnos de "
+               "entrenamiento repartidos en 5 grupos. La prueba es una sola partición de un cuarto de los alumnos: "
+               "sirve para informar, y con tan pocos alumnos puede ordenar los modelos distinto.")
     st.caption("AUC ROC: qué tan bien ordena (0,5 = azar, 1 = perfecto). AUC PR: lo mismo, mirando solo a los que "
                f"abandonan (azar = {comp.num(info['tasa_abandono'] / 100, 2)}). Precisión: de los marcados, cuántos "
                "abandonaron. Recall: de los que abandonaron, a cuántos marcó. La regla simple marca a quien lleva más "
@@ -376,16 +386,18 @@ with st.expander("Cómo se armó el modelo y qué tan bueno es", icon=":material
     fig.update_layout(height=300, title="Lo que se gana y se pierde con el umbral", xaxis_title="Umbral (%)",
                       yaxis_title="%", legend=dict(y=-0.25, yanchor="top"))
     c2.plotly_chart(fig, width="stretch", theme=None)
-    imp = comp.metrica("importancia_variables").sort_values("importancia")
+    imp = comp.metrica("importancia_variables").sort_values("importancia").tail(12)   # las 12 que más pesan
     fig = go.Figure(go.Bar(x=imp["importancia"], y=imp["descripcion"], orientation="h", marker_color=azul,
                            error_x=dict(type="data", array=imp["desvio"], color=comp.TOKENS["texto_4"])))
-    fig.update_layout(height=380, title="Qué variables usa más el modelo",
+    fig.update_layout(height=420, title="Las 12 variables que más usa el modelo",
                       xaxis_title="Cuánto empeora el AUC PR si se mezcla la variable")
     fig.update_yaxes(automargin=True, ticklabelstandoff=6)
     st.plotly_chart(fig, width="stretch", theme=None)
     st.markdown(
         "**Limitaciones.** Una sola cursada y unos 210 alumnos por materia (226 personas distintas): el modelo "
         "aprende cómo se comportó esta cohorte y habría que revalidarlo con la próxima. \"Abandono\" acá es dejar "
-        f"de entrar {H} días, no la baja formal: algunos vuelven. Los modelos mejoran a la regla simple, pero no por "
-        "mucho: la mayoría de los marcados no abandona. Por eso sirve para **priorizar a quién contactar**, no para "
-        "decidir nada sobre un alumno.")
+        f"de entrar {H} días, no la baja formal: algunos vuelven, por ejemplo después de un parcial. Los modelos "
+        "mejoran a la regla simple, pero la mayoría de los marcados igual no abandona. Por eso sirve para "
+        "**priorizar a quién contactar**, no para decidir nada sobre un alumno. Además, el modelo solo aprende de "
+        f"fotos con {H} días posteriores conocidos: la pausa que sigue a una evaluación muy reciente todavía no la "
+        "vio, y en esos casos puede exagerar el riesgo (la página lo avisa).")

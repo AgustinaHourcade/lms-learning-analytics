@@ -287,7 +287,8 @@ if not cursando.empty:
     titulo_r = f"Riesgo de abandono · {esc(comp.SIGLAS[m_r])}"
     barra_r = comp.barra(r["probabilidad"], comp.TONOS_ESTADO[tono][2], alto=9, marca=curso)
     explica = (f"Probabilidad de que no entre en los próximos {ab.ABANDONO_HORIZONTE_DIAS} días. "
-               + (f"Pesan más: {esc(r['motivos'])}." if r["motivos"] else ""))
+               + (f"Pesan más: {esc(r['motivos'])}." if r["motivos"] else "")
+               + (f" <i>{esc(r['advertencia'])}</i>" if r.get("advertencia") else ""))
     otros = [m for m in riesgo.index if m != m_r]
     nivel_txt = f"Nivel {r['nivel_riesgo']}"
 else:

@@ -906,6 +906,8 @@ def riesgo_abandono_alumno(id_alumno: str) -> None:
                            f"(riesgo alto desde {pct(umbral, 0)}).")
                 if fila["motivos"]:
                     st.markdown(f"Señales: {fila['motivos']}.")
+                if fila.get("advertencia"):
+                    st.caption(fila["advertencia"])
             elif fila["estado_abandono"] == ml_abandono.YA_ABANDONO:
                 st.caption(f"Hace {num(fila['dias_sin_actividad'])} días que no entra: ya cumple la definición "
                            "de abandono. Conviene contactarlo.")

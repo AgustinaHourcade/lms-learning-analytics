@@ -13,13 +13,18 @@ entrar en las próximas 2 semanas?
   * Datos de entrenamiento: "fotos" de la cursada cada 3 días
     (ABANDONO_PASO_DIAS), desde el día 14 hasta 14 días antes del último dato,
     para saber qué pasó después. Un mismo alumno aparece en varias fotos.
-  * Variables: solo la actividad hasta la fecha de la foto (trazabilidad), sin
-    nada del futuro: días sin entrar, interacciones y sesiones de las últimas
-    1 y 2 semanas, tendencia contra las 2 semanas anteriores, evaluaciones
-    hechas, % de semanas con actividad, etc. (VARIABLES). No se usan las notas:
-    son una foto al 24/10 y "filtrarían" el futuro (D34).
-  * Modelos: regresión logística y Random Forest, comparados contra la regla
-    simple "más de 7 días sin entrar" (ABANDONO_REGLA_DIAS).
+  * Variables (VARIABLES), todas con lo que se sabía el día de la foto, sin nada
+    del futuro: días sin entrar, interacciones y sesiones de las últimas 1 y 2
+    semanas, tendencia, % de semanas con actividad, etc. Desde D64 también:
+      - ritmo propio: su pausa habitual entre días activos;
+      - calendario: días desde la última evaluación de la materia;
+      - notas a la fecha: cada nota cuenta desde el día en que ese alumno la
+        rindió (su evento 'Realizar evaluación'), no la foto de notas al 24/10;
+      - otras materias: si sigue entrando a las demás;
+      - mezcla: % de evaluación y de mirar notas.
+    El reporte de participación no se usa: es una foto al 24/10 (D36).
+  * Modelos: regresión logística, Random Forest y gradient boosting, comparados
+    contra la regla simple "más de 7 días sin entrar" (ABANDONO_REGLA_DIAS).
   * Validación separando por alumno: los alumnos de prueba (25 %) no aparecen
     en entrenamiento en ninguna foto ni materia (GroupShuffleSplit). Dentro de
     entrenamiento, validación cruzada también por alumno (GroupKFold) para
@@ -50,6 +55,7 @@ Probar desde la raíz:
 """
 from __future__ import annotations
 
+import html
 import time
 import warnings
 from dataclasses import dataclass, field
@@ -61,7 +67,7 @@ import pandas as pd
 import sklearn
 from sklearn.base import clone
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.inspection import permutation_importance
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, brier_score_loss, roc_auc_score
@@ -71,11 +77,12 @@ from sklearn.preprocessing import FunctionTransformer, StandardScaler
 
 from src import metricas as m
 from src.config import (ABANDONO_ARCHIVO, ABANDONO_COSTO_FN, ABANDONO_COSTO_FP, ABANDONO_HORIZONTE_DIAS,
-                        ABANDONO_PASO_DIAS, ABANDONO_REGLA_DIAS, ABANDONO_SEMILLA, GOLD,
+                        ABANDONO_PASO_DIAS, ABANDONO_REGLA_DIAS, ABANDONO_SEMILLA, ESQUEMA, GOLD,
                         UMBRAL_INACTIVIDAD_DIAS)
+from src.modelo import clave_instrumento
 
 CLAVES = ["asignatura", "id_alumno"]
-EVALUACION = "Evaluación"   # categoría de dim_accion (D44)
+EVALUACION, NOTAS = "Evaluación", "Notas"   # categorías de dim_accion (D44)
 
 # Variable -> descripción para el tutor. Todas se calculan con datos hasta la fecha de corte.
 VARIABLES = {
@@ -90,15 +97,40 @@ VARIABLES = {
     "pct_semanas_activas": "% de las semanas de cursada en que entró",
     "eventos_total": "Interacciones desde el inicio de la cursada",
     "dias_de_cursada": "Días desde el inicio de la cursada",
+    # D64: ritmo propio del alumno (una pausa larga preocupa menos si siempre hace pausas así)
+    "dias_activos_total": "Días con actividad desde el inicio de la cursada",
+    "pausa_habitual": "Su pausa habitual entre días activos (percentil 90, días)",
+    "sin_vs_habitual": "Días sin entrar contra su pausa habitual",
+    # D64: calendario de evaluaciones de la materia (después de un parcial es normal no entrar)
+    "dias_desde_evaluacion": "Días desde la última evaluación de la materia",
+    "entro_despues_evaluacion": "Entró después de la última evaluación de la materia",
+    # D64: notas a la fecha (cada nota cuenta desde el día en que el alumno rindió)
+    "tiene_notas": "Ya tiene alguna evaluación tomada",
+    "nota_pct": "Nota a la fecha (sobre 100; lo no rendido cuenta 0)",
+    "margen_promocion": "Nota a la fecha menos el corte de promoción (puntos sobre 100)",
+    "pct_rendidos": "% de las evaluaciones tomadas que rindió",
+    "rindio_ultima": "Rindió la última evaluación tomada",
+    # D64: lo que hace en sus otras materias
+    "eventos_14d_otras": "Interacciones en sus otras materias en los últimos 14 días",
+    "materias_activas_14d": "Materias en las que entró en los últimos 14 días",
+    "dias_sin_actividad_global": "Días desde que entró a cualquiera de sus materias",
+    # D64: qué hace cuando entra
+    "pct_evaluacion": "% de sus interacciones que son de evaluación",
+    "pct_notas": "% de sus interacciones que son mirar notas",
 }
-CONTEOS = ["eventos_7d", "eventos_14d", "sesiones_14d", "minutos_14d", "evaluaciones_14d", "eventos_total"]
+# D65: sentido obligado de algunas variables en el gradient boosting (+1 = más valor, más riesgo).
+MONOTONAS = {"dias_sin_actividad": 1, "sin_vs_habitual": 1, "dias_sin_actividad_global": 1, "eventos_7d": -1,
+             "eventos_14d": -1, "dias_activos_14d": -1, "eventos_14d_otras": -1, "materias_activas_14d": -1}
+CONTEOS = ["eventos_7d", "eventos_14d", "sesiones_14d", "minutos_14d", "evaluaciones_14d", "eventos_total",
+           "dias_activos_total", "eventos_14d_otras"]
 
 # Estados de cada alumno a la fecha de corte y niveles de riesgo.
 CURSANDO, YA_ABANDONO, SIN_ACTIVIDAD = "Cursando", "Ya abandonó", m.SIN_ACTIVIDAD
 ALTO, MEDIO, BAJO = "Alto", "Medio", "Bajo"
 NIVELES = [ALTO, MEDIO, BAJO, YA_ABANDONO, SIN_ACTIVIDAD]
 REGLA = "Regla simple"
-NOMBRES_MODELOS = {"logistica": "Regresión logística", "random_forest": "Random Forest", "regla": REGLA}
+NOMBRES_MODELOS = {"logistica": "Regresión logística", "random_forest": "Random Forest",
+                   "gradient_boosting": "Gradient boosting", "regla": REGLA}
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +150,7 @@ def variables(d: m.Datos, fecha_corte=None) -> pd.DataFrame:
     ses = m._sesiones(d, corte, None)
     if ev.empty:   # antes del primer evento: nadie entró todavía
         v = m.base(d)[CLAVES].assign(ultima=pd.NaT, eventos_14d_previos=0.0, semanas_activas=0.0,
-                                     **{c: 0.0 for c in VARIABLES})
+                                     materias_en_base=1, **{c: 0.0 for c in VARIABLES})
         v["dias_sin_actividad"] = np.nan
         v.insert(2, "fecha_corte", corte)
         return v
@@ -147,7 +179,102 @@ def variables(d: m.Datos, fecha_corte=None) -> pd.DataFrame:
     v["pct_semanas_activas"] = (100 * v["semanas_activas"] / (dias // 7 + 1)).fillna(0).clip(upper=100).round(1)
     v["tendencia"] = np.log((v["eventos_14d"] + 1) / (v["eventos_14d_previos"] + 1)).round(3)
     v["minutos_14d"] = v["minutos_14d"].round(1)
+    v = _ritmo(v, ev)
+    v = _calendario(d, v, corte)
+    v = _notas_a_la_fecha(d, v, corte)
+    v = _otras_materias(v)
+    v = _mezcla(v, ev)
     v.insert(2, "fecha_corte", corte)
+    return v
+
+
+def _ritmo(v: pd.DataFrame, ev: pd.DataFrame) -> pd.DataFrame:
+    """Días activos y pausa habitual (percentil 90 de los huecos entre días con
+    actividad, sin contar el hueco actual). Sin pausas todavía: los días de cursada."""
+    dias = ev[[*CLAVES, "fecha"]].drop_duplicates().sort_values([*CLAVES, "fecha"])
+    dias["hueco"] = dias.groupby(CLAVES)["fecha"].diff().dt.days
+    g = pd.concat([dias.groupby(CLAVES).size().rename("dias_activos_total"),
+                   dias.groupby(CLAVES)["hueco"].quantile(0.9).rename("pausa_habitual")], axis=1).reset_index()
+    v = v.merge(g, on=CLAVES, how="left")
+    v["dias_activos_total"] = v["dias_activos_total"].fillna(0)
+    v["pausa_habitual"] = v["pausa_habitual"].fillna(v["dias_de_cursada"]).round(1)
+    v["sin_vs_habitual"] = (v["dias_sin_actividad"] / (v["pausa_habitual"] + 1)).round(3)
+    return v
+
+
+def _calendario(d: m.Datos, v: pd.DataFrame, corte: pd.Timestamp) -> pd.DataFrame:
+    """Días desde la última evaluación de la materia (fecha del instrumento, D18)
+    y si el alumno entró después. Sin evaluaciones todavía: los días de cursada."""
+    inst = d.instrumentos[d.instrumentos["fecha_instrumento"] <= corte]
+    por_materia = inst.groupby("asignatura")["fecha_instrumento"].max()
+    ultima = v["asignatura"].map(por_materia.to_dict()).astype("datetime64[us]")   # dict: anda aunque esté vacío
+    v["dias_desde_evaluacion"] = (corte - ultima).dt.days.astype(float).fillna(v["dias_de_cursada"])
+    v["entro_despues_evaluacion"] = v["dias_sin_actividad"].lt(v["dias_desde_evaluacion"]).astype(float)
+    return v
+
+
+def _realizaciones(d: m.Datos) -> pd.DataFrame:
+    """Primer evento 'Realizar evaluación' de cada alumno en cada instrumento
+    (la descripción dice cuál es): el día en que su nota pasa a conocerse."""
+    i = d.interacciones
+    ev = i[i["en_base"] & i["accion"].eq("Realizar evaluación")]
+    nombre = ev["descripcion"].map(html.unescape).str.extract(r"evaluaci[oó]n '(.+?)' de la unidad", expand=False)
+    claves = d.instrumentos.assign(clave=d.instrumentos["instrumento"].map(clave_instrumento))
+    ev = ev.assign(clave=nombre.map(clave_instrumento, na_action="ignore")).dropna(subset=["clave"])
+    ev = ev.merge(claves[["asignatura", "clave", "id_instrumento"]], on=["asignatura", "clave"])
+    return ev.groupby([*CLAVES, "id_instrumento"])["fecha_hora"].min().rename("rindio_el").reset_index()
+
+
+def _notas_a_la_fecha(d: m.Datos, v: pd.DataFrame, corte: pd.Timestamp) -> pd.DataFrame:
+    """Nota de cada alumno con lo que se sabía a la fecha de corte, sin usar el futuro:
+      * una evaluación está "tomada" si su fecha (D18) ya pasó o si el alumno ya la rindió;
+      * cada nota cuenta desde el día en que ESE alumno la rindió (su evento 'Realizar
+        evaluación'); si no hay evento, desde la última realización del instrumento;
+      * lo tomado y no rendido cuenta 0 (D16) y el recuperatorio reemplaza (D19) desde que se rinde.
+    Los instrumentos sin ninguna fecha (sin eventos en la trazabilidad) no se usan."""
+    fin = m._fin_del_dia(corte)
+    inst = d.instrumentos.set_index("id_instrumento")
+    c = d.calificaciones[d.calificaciones["cuenta_en_final"]].merge(_realizaciones(d), how="left",
+                                                                     on=[*CLAVES, "id_instrumento"])
+    c["conocida"] = c["rindio_el"].fillna(c["id_instrumento"].map(inst["fecha_ultima_realizacion"]))
+    rec = _realizaciones(d).rename(columns={"id_instrumento": "id_recuperatorio", "rindio_el": "recupero_el"})
+    c = c.merge(rec, how="left", on=[*CLAVES, "id_recuperatorio"])
+    c["recupero_el"] = c["recupero_el"].fillna(c["id_recuperatorio"].map(inst["fecha_ultima_realizacion"]))
+    rindio = c["rindio"] & (c["conocida"] < fin)
+    recupero = c["rindio_recuperatorio"] & (c["recupero_el"] < fin)
+    tomada = (c["id_instrumento"].map(inst["fecha_instrumento"]) <= corte) | rindio | recupero
+    c = c.assign(pts=np.where(recupero, c["puntos"], np.where(rindio, c["puntos_sin_recuperatorio"], 0.0)),
+                 rend=rindio | recupero, fecha=c["id_instrumento"].map(inst["fecha_instrumento"]))[tomada]
+    g = c.groupby(CLAVES).agg(pts=("pts", "sum"), maximo=("puntaje_maximo", "sum"), rendidos=("rend", "sum"),
+                              tomadas=("id_instrumento", "size")).reset_index()
+    ultima = c.sort_values("fecha").groupby(CLAVES).tail(1)[[*CLAVES, "rend"]].rename(columns={"rend": "rindio_ultima"})
+    v = v.merge(g, on=CLAVES, how="left").merge(ultima, on=CLAVES, how="left")
+    promo = v["asignatura"].map({a: 100 * e["cortes"]["Promociona"] / e["total_max"] for a, e in ESQUEMA.items()})
+    v["tiene_notas"] = v["tomadas"].fillna(0).gt(0).astype(float)
+    v["nota_pct"] = (100 * v["pts"] / v["maximo"]).fillna(0).round(2)
+    v["margen_promocion"] = np.where(v["tiene_notas"] > 0, v["nota_pct"] - promo, 0.0).round(2)
+    v["pct_rendidos"] = (100 * v["rendidos"] / v["tomadas"]).fillna(0).round(1)
+    v["rindio_ultima"] = v["rindio_ultima"].astype("boolean").fillna(False).astype(float)
+    return v.drop(columns=["pts", "maximo", "rendidos", "tomadas"])
+
+
+def _otras_materias(v: pd.DataFrame) -> pd.DataFrame:
+    """Lo que hace el mismo alumno en sus otras materias de la base."""
+    por_alumno = v.groupby("id_alumno")
+    v["materias_en_base"] = por_alumno["asignatura"].transform("size")   # no es variable: solo para los motivos
+    v["eventos_14d_otras"] = por_alumno["eventos_14d"].transform("sum") - v["eventos_14d"]
+    v["materias_activas_14d"] = por_alumno["eventos_14d"].transform(lambda s: (s > 0).sum()).astype(float)
+    v["dias_sin_actividad_global"] = por_alumno["dias_sin_actividad"].transform("min").fillna(v["dias_de_cursada"])
+    return v
+
+
+def _mezcla(v: pd.DataFrame, ev: pd.DataFrame) -> pd.DataFrame:
+    """% de sus interacciones que son de evaluación y de mirar notas (D44)."""
+    mezcla = pd.crosstab([ev["asignatura"], ev["id_alumno"]], ev["categoria"], normalize="index")
+    mezcla = (100 * mezcla.reindex(columns=[EVALUACION, NOTAS], fill_value=0)).round(1)
+    mezcla.columns = ["pct_evaluacion", "pct_notas"]
+    v = v.merge(mezcla.reset_index(), on=CLAVES, how="left")
+    v[["pct_evaluacion", "pct_notas"]] = v[["pct_evaluacion", "pct_notas"]].fillna(0)
     return v
 
 
@@ -198,17 +325,26 @@ def dataset(d: m.Datos, cortes=None) -> pd.DataFrame:
 # Modelos, umbral y comparación
 # ---------------------------------------------------------------------------
 def modelos() -> dict:
-    """Los dos modelos a comparar. La logística necesita log en los conteos (muy
-    asimétricos) y variables estandarizadas; al Random Forest no le hace falta."""
+    """Los tres modelos a comparar. La logística necesita log en los conteos (muy
+    asimétricos) y variables estandarizadas; a los de árboles no les hace falta.
+    Los árboles van con hojas grandes y poca profundidad: hay pocos alumnos (D64)."""
     columnas = list(VARIABLES)
     prep = ColumnTransformer([("log", FunctionTransformer(np.log1p), CONTEOS)], remainder="passthrough")
+    todas = ColumnTransformer([("todas", "passthrough", columnas)])
     return {
         "logistica": Pipeline([("log", prep), ("escala", StandardScaler()),
-                               ("modelo", LogisticRegression(max_iter=2000))]),
-        "random_forest": Pipeline([("sel", ColumnTransformer([("todas", "passthrough", columnas)])),
+                               ("modelo", LogisticRegression(max_iter=3000, C=0.5))]),
+        "random_forest": Pipeline([("sel", todas),
                                    ("modelo", RandomForestClassifier(
-                                       n_estimators=300, min_samples_leaf=20, max_features="sqrt",
+                                       n_estimators=400, min_samples_leaf=20, max_features="sqrt",
                                        n_jobs=-1, random_state=ABANDONO_SEMILLA))]),
+        # D65: árboles de profundidad 2 (casi aditivo) y restricciones monótonas, para que el riesgo
+        # nunca baje por llevar más días sin entrar ni suba por entrar más.
+        "gradient_boosting": Pipeline([("sel", todas),
+                                       ("modelo", HistGradientBoostingClassifier(
+                                           max_depth=2, learning_rate=0.05, max_iter=200, min_samples_leaf=50,
+                                           l2_regularization=1.0, random_state=ABANDONO_SEMILLA,
+                                           monotonic_cst=[MONOTONAS.get(c, 0) for c in columnas]))]),
     }
 
 
@@ -382,6 +518,12 @@ def _motivos(v: pd.DataFrame) -> pd.Series:
         (v["dias_activos_14d"] <= 2, lambda r: f"entró solo {r.dias_activos_14d:.0f} día(s) en las últimas 2 semanas"),
         ((v["evaluaciones_14d"] == 0) & (v["dias_de_cursada"] >= 14), lambda r: "no hizo evaluaciones en las últimas 2 semanas"),
         (v["pct_semanas_activas"] < 50, lambda r: f"entró en el {r.pct_semanas_activas:.0f} % de las semanas"),
+        (v["dias_sin_actividad"] > v["pausa_habitual"] + 1,
+         lambda r: f"lleva más días sin entrar que su pausa habitual ({r.pausa_habitual:.0f})"),
+        ((v["tiene_notas"] > 0) & (v["rindio_ultima"] == 0), lambda r: "no rindió la última evaluación"),
+        ((v["tiene_notas"] > 0) & (v["margen_promocion"] < -25), lambda r: f"nota a la fecha baja ({r.nota_pct:.0f} sobre 100)"),
+        ((v["materias_en_base"] > 1) & (v["dias_sin_actividad_global"] >= v["dias_sin_actividad"])
+         & (v["dias_sin_actividad"] > ABANDONO_REGLA_DIAS), lambda r: "tampoco entra a sus otras materias"),
     ]
     textos = pd.Series([[] for _ in range(len(v))], index=v.index, dtype=object)
     for mascara, texto in reglas:
@@ -426,14 +568,40 @@ def riesgo_abandono(d: m.Datos, fecha_corte=None, asignatura=None, umbral: int =
     v = v.merge(nombres, on="id_alumno", how="left").merge(ins, on=CLAVES, how="left")
     columnas = [*CLAVES, "nombre_completo", "inscripto", "fecha_corte", "estado_abandono", "probabilidad",
                 "nivel_riesgo", "regla_simple", "motivos", "abandono_real", *VARIABLES, "eventos_14d_previos"]
+    # Evaluaciones posteriores a la última foto con desenlace: la pausa que suele venir
+    # después todavía no la vio el modelo, así que puede sobrestimar el riesgo (D64).
+    # Solo para quien entró por última vez a rendir una evaluación posterior a esa foto.
+    ultima_foto = mod.resumen.get("ultima_foto", corte)
+    real = _realizaciones(d)
+    real = real[(real["rindio_el"] >= ultima_foto + pd.Timedelta(days=1)) & (real["rindio_el"] < m._fin_del_dia(corte))]
+    real = (real.sort_values("rindio_el").groupby(CLAVES).tail(1)
+                .merge(d.instrumentos[["id_instrumento", "instrumento"]], on="id_instrumento"))
+    v = v.merge(real[[*CLAVES, "rindio_el", "instrumento"]], on=CLAVES, how="left")
+    pausa = v["estado_abandono"].eq(CURSANDO) & (v["ultima"].dt.normalize() <= v["rindio_el"].dt.normalize()
+                                                 + pd.Timedelta(days=1))
+    v["advertencia"] = ""
+    v.loc[pausa, "advertencia"] = [
+        f"Su último ingreso fue para rendir «{html.unescape(str(r.instrumento)).strip()}» el {r.rindio_el:%d/%m}. "
+        "Después de una evaluación es normal una pausa, y el modelo (entrenado con fotos hasta el "
+        f"{ultima_foto:%d/%m}) todavía no vio cómo siguen esas pausas: puede exagerar el riesgo."
+        for r in v[pausa].itertuples()]
+    columnas.append("advertencia")
     v = m._filtrar(v[columnas], asignatura)
     v["_orden"] = v["nivel_riesgo"].map({n: i for i, n in enumerate(NIVELES)})
     v = v.sort_values(["asignatura", "_orden", "probabilidad"], ascending=[True, True, False])
     v = v.drop(columns="_orden").reset_index(drop=True)
-    v.attrs.update(umbral=u, modelo=mod.nombre,
-                   aviso=("La fecha de corte es anterior al día 14 de la cursada: el modelo se entrenó desde ese "
-                          "día, así que la predicción es poco confiable." if v["dias_de_cursada"].max() < ABANDONO_HORIZONTE_DIAS
-                          else ""))
+    avisos = []
+    if v["dias_de_cursada"].max() < ABANDONO_HORIZONTE_DIAS:
+        avisos.append("La fecha de corte es anterior al día 14 de la cursada: el modelo se entrenó desde ese "
+                      "día, así que la predicción es poco confiable.")
+    en_pausa = v["advertencia"].ne("") & v["nivel_riesgo"].eq(ALTO)
+    if en_pausa.any():
+        materias = ", ".join(f"{n} de {a}" for a, n in v[en_pausa].groupby("asignatura").size().items())
+        avisos.append(f"{en_pausa.sum()} de los alumnos en riesgo alto ({materias}) entraron por última vez a rendir "
+                      f"una evaluación posterior al {ultima_foto:%d/%m}, la última foto con desenlace conocido. "
+                      "Después de una evaluación es normal una pausa y el modelo todavía no vio cómo siguen esas "
+                      "pausas, así que en ellos puede exagerar el riesgo.")
+    v.attrs.update(umbral=u, modelo=mod.nombre, aviso=" ".join(avisos))
     return v
 
 

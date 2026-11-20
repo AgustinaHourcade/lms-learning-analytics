@@ -73,12 +73,40 @@ def test_variables_no_usan_datos_del_futuro(d, corte):
 def test_variables_cubren_la_base(d):
     v = ab.variables(d)
     assert len(v) == len(m.base(d)) and not v.duplicated(ab.CLAVES).any()
-    assert v[list(ab.VARIABLES)].drop(columns="dias_sin_actividad").notna().all().all()
+    # vacías solo para quien nunca entró (no se le predice nada)
+    assert v[list(ab.VARIABLES)].drop(columns=["dias_sin_actividad", "sin_vs_habitual"]).notna().all().all()
+    assert v["sin_vs_habitual"].isna().equals(v["dias_sin_actividad"].isna())
     assert v["pct_semanas_activas"].between(0, 100).all()
     assert (v["eventos_7d"] <= v["eventos_14d"]).all() and (v["eventos_14d"] <= v["eventos_total"]).all()
     # días sin actividad = lo mismo que usa el estado de actividad (D35)
     act = m.actividad_alumnos(d).set_index(ab.CLAVES)["dias_sin_actividad"]
     assert v.set_index(ab.CLAVES)["dias_sin_actividad"].equals(act.astype(float).reindex(v.set_index(ab.CLAVES).index))
+
+
+def test_nota_cuenta_desde_que_el_alumno_rinde(d):
+    """D64: la nota de un instrumento entra a las variables el día en que ESE alumno lo rindió."""
+    real = ab._realizaciones(d)
+    fila = real[real["id_instrumento"].eq("ALG-03")].sort_values("rindio_el").iloc[-1]   # el último en rendir
+    dia = fila["rindio_el"].normalize()
+    clave = (fila["asignatura"], fila["id_alumno"])
+    antes = ab.variables(d, dia - pd.Timedelta(days=1)).set_index(ab.CLAVES).loc[clave]
+    ese_dia = ab.variables(d, dia).set_index(ab.CLAVES).loc[clave]
+    nota = d.calificaciones.set_index([*ab.CLAVES, "id_instrumento"]).loc[(*clave, "ALG-03")]
+    if dia - pd.Timedelta(days=1) >= d.instrumentos.set_index("id_instrumento").loc["ALG-03", "fecha_instrumento"]:
+        assert ese_dia["pct_rendidos"] > antes["pct_rendidos"]   # ya estaba tomada: pasa de no rendida a rendida
+    if nota["puntos"] > 0:
+        assert ese_dia["nota_pct"] != antes["nota_pct"]
+    assert ese_dia["rindio_ultima"] == 1
+
+
+def test_variables_nuevas_tienen_sentido(d):
+    v = ab.variables(d, "2025-10-01")
+    assert v["pct_rendidos"].between(0, 100).all() and v["nota_pct"].between(0, 100).all()
+    assert v["materias_activas_14d"].between(0, 3).all()
+    # sin actividad global nunca supera la de la propia materia
+    entro = v["dias_sin_actividad"].notna()
+    assert (v.loc[entro, "dias_sin_actividad_global"] <= v.loc[entro, "dias_sin_actividad"]).all()
+    assert (v["dias_desde_evaluacion"] >= 0).all()
 
 
 def test_objetivo_es_no_entrar_en_los_14_dias_siguientes(d):
