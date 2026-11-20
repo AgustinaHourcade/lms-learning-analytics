@@ -17,10 +17,15 @@ El color de materia identifica y el del semáforo evalúa: nunca se mezclan (D48
 """
 from __future__ import annotations
 
+import html as _html
+
+import pandas as pd
 import streamlit as st
 
+import componentes as _base
 from componentes import *  # noqa: F401,F403  (datos, metrica, filtros, num, pct, boton_csv, TODAS, ...)
 from componentes import Filtros, filtros, fmt_fecha  # noqa: F401  (explícitos para los linters)
+from src import textos
 from src.config import ASIGNATURAS, SIN_EVALUACIONES
 from src.metricas import ACTIVO, INACTIVO, SIN_ACTIVIDAD
 
@@ -32,10 +37,11 @@ TEXTO, TEXTO_2, TEXTO_3, TEXTO_4 = "#1A1917", "#57544C", "#6B6861", "#8A867C"
 ACCION = "#1B4B8F"
 
 SIGLAS = {nombre: datos["sigla"] for nombre, datos in ASIGNATURAS.items()}
-_POR_SIGLA = {"ALG": "#2563C9", "AED": "#D4661F", "PYE": "#0E8F62"}
+# Paleta de materias de General (D78): fuera del semáforo, para que PYE no choque con el verde de Promociona.
+_POR_SIGLA = {"ALG": "#1E4FA8", "AED": "#7C3AED", "PYE": "#0891B2"}
 COLORES_MATERIA = {m: _POR_SIGLA[s] for m, s in SIGLAS.items()}
 # Etiqueta de materia (fondo, texto): tinte suave del color de la materia.
-TINTES_MATERIA = {"ALG": ("#EAF0F8", "#164279"), "AED": ("#FBEFE6", "#8A4415"), "PYE": ("#E6F2EB", "#0B6B49")}
+TINTES_MATERIA = {"ALG": ("#E8EEF8", "#1E3F80"), "AED": ("#F1EBFD", "#5B21B6"), "PYE": ("#E3F4F8", "#0E6378")}
 
 # Estados: (color de la marca, fondo del chip, texto del chip) y su forma.
 #   bien = círculo, atención = triángulo, crítico = octágono, neutro = cuadrado; "serio" (naranja) = rombo.
@@ -111,6 +117,56 @@ CSS = """
 .tfi-cuadrante .n {margin:0 0 3px; font:600 20px 'Space Grotesk', Inter, sans-serif;}
 .tfi-cuadrante .t {margin:0; font:500 11px Inter, sans-serif; line-height:1.45;}
 .tfi-grilla {display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:14px 22px;}
+/* nvp-*: piezas del rediseño. Los selectores llevan elemento + dos clases (p.tfi.nvp-x o .tfi p.nvp-x)
+   para ganarle al estilo de párrafo de Streamlit (si no, todo sale a 16 px). */
+p.tfi.nvp-lectura {margin:4px 0 16px; padding:12px 16px; max-width:none; background:#FFFFFF; border:1px solid #E3E1DC;
+  border-left:3px solid #1B4B8F; border-radius:10px; font:500 14px/1.55 Inter, sans-serif; color:#1A1917;}
+.nvp-ayuda {display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
+  border-radius:999px; border:1px solid #C9C6BF; font:600 10px Inter, sans-serif; color:#6B6861; cursor:help;
+  text-transform:none; letter-spacing:0; vertical-align:middle; margin-left:5px; flex:0 0 15px;}
+.tfi p.nvp-etq {margin:0 0 10px; display:flex; align-items:center; gap:2px; font:600 11px/1.3 Inter, sans-serif;
+  letter-spacing:.06em; text-transform:uppercase; color:#6B6861; white-space:nowrap;}
+.tfi p.nvp-etq.alerta {color:#8A3A31;}
+.tfi p.nvp-num {margin:0 0 6px; font:600 32px/1.1 'Space Grotesk', Inter, sans-serif; letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums; color:#1A1917;}
+.tfi p.nvp-num small {font:500 13px Inter, sans-serif; color:#6B6861; letter-spacing:0; margin-left:4px;}
+.tfi p.nvp-num.alerta {color:#93241C;}
+.tfi p.nvp-det {margin:8px 0 0; font:400 12px/1.5 Inter, sans-serif; color:#6B6861;}
+.tfi p.nvp-det strong {font-weight:600; color:#1A1917;}
+.tfi p.nvp-det.alerta, .tfi p.nvp-det.alerta strong {color:#7A3028;}
+.tfi p.nvp-linea {margin:0 0 4px; font:500 12.5px/1.5 Inter, sans-serif; color:#57544C;}
+.tfi p.nvp-linea.alerta {color:#7A3028;}
+.nvp-filas {margin:0; display:grid; gap:4px;}
+.nvp-filas div {display:grid; grid-template-columns:34px 64px 1fr; align-items:baseline; gap:6px;
+  font:400 12px Inter, sans-serif; color:#6B6861;}
+.nvp-filas b {font:600 11px Inter, sans-serif; color:#35332D; letter-spacing:.03em;}
+.nvp-filas span.v {font:600 19px 'Space Grotesk', Inter, sans-serif; color:#1A1917; font-variant-numeric:tabular-nums;
+  white-space:nowrap;}
+.nvp-filas span.s {font-variant-numeric:tabular-nums; white-space:nowrap;}
+.nvp-delta {display:inline-block; padding:1px 7px; border-radius:999px; background:#FFFFFF; border:1px solid #F2CFC9;
+  color:#7A3028; font:600 11px Inter, sans-serif; font-variant-numeric:tabular-nums;}
+p.tfi.nvp-titulo, .tfi p.nvp-titulo {margin:0 0 4px; font:600 15px/1.4 'Space Grotesk', Inter, sans-serif;
+  color:#1A1917; display:flex; align-items:center; gap:2px;}
+p.tfi.nvp-intro, .tfi p.nvp-intro {margin:0 0 12px; font:400 12.5px/1.5 Inter, sans-serif; color:#6B6861;}
+p.tfi.nvp-pie {margin:2px 0 0; font:400 12px/1.5 Inter, sans-serif; color:#6B6861;}
+p.tfi.nvp-pie strong {font-weight:600; color:#35332D;}
+.nvp-grillas {display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); gap:22px;}
+.nvp-cuad {display:grid; grid-template-columns:52px 1fr 1fr; gap:6px; align-items:stretch;}
+.nvp-cuad .col {font:500 11px Inter, sans-serif; color:#6B6861; text-align:center; padding-bottom:2px;}
+.nvp-cuad .fila {font:500 11px Inter, sans-serif; color:#6B6861; align-self:center;}
+.nvp-cuad .celda {border:1px solid; border-radius:9px; padding:10px 12px; display:flex; align-items:baseline;
+  justify-content:space-between; gap:6px;}
+.nvp-cuad .n {font:600 22px/1.1 'Space Grotesk', Inter, sans-serif;}
+.nvp-cuad .p {font:500 12px Inter, sans-serif;}
+.nvp-acciones {display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:14px 24px;
+  margin-top:18px; padding-top:16px; border-top:1px solid #EFEDE8;}
+[class*="st-key-nvp_kpi_"] {background:#FFFFFF; border:1px solid #E3E1DC; border-radius:13px; padding:16px 18px 14px;
+  gap:0;}
+.st-key-nvp_kpi_riesgo {background:#FBE9E6; border-color:#F2CFC9; box-shadow:inset 4px 0 0 #B02A20;}
+.st-key-nvp_kpi_riesgo button {padding:0; min-height:0; margin-top:10px;}
+.st-key-nvp_kpi_riesgo button p {font-size:12.5px; font-weight:600; color:#93241C;}
+.st-key-nvp_caja_hacer {background:#FFFFFF; border:1px solid #E3E1DC; border-radius:13px; padding:18px 20px;}
+.st-key-nvp_lista {background:#FFFFFF; border:1px solid #E3E1DC; border-radius:13px; padding:18px 20px;}
 </style>
 """
 
@@ -118,6 +174,57 @@ CSS = """
 # ---------------------------------------------------------------------------
 # Piezas HTML (se pintan con html(); clases tfi-* en CSS)
 # ---------------------------------------------------------------------------
+def num(x, decimales: int = 0) -> str:
+    """Como componentes.num, pero con el redondeo de escuela de src.textos (144,5 -> 145),
+    el mismo que hacen los tooltips y las tablas: así un número se ve igual en todos lados."""
+    return "–" if x is None or pd.isna(x) else textos.numero(float(x), decimales)
+
+
+def pct(x, decimales: int = 1) -> str:
+    return "–" if x is None or pd.isna(x) else f"{num(x, decimales)} %"
+
+
+def esc(texto) -> str:
+    return _html.escape(str(texto), quote=True)
+
+
+def ayuda(texto: str) -> str:
+    """Círculo (?) con la definición al pasar el mouse (las explicaciones van acá, no en la página)."""
+    return f'<span class="nvp-ayuda" title="{esc(texto)}" aria-label="{esc(texto)}">?</span>'
+
+
+def titulo(texto: str, tip: str = "") -> str:
+    """Título de una pieza: la conclusión, calculada con los datos, con su (?)."""
+    return f'<p class="tfi nvp-titulo">{texto}{ayuda(tip) if tip else ""}</p>'
+
+
+def kpi(etiqueta: str, cuerpo: str, detalle: str = "", tip: str = "", alerta: bool = False) -> str:
+    """Contenido de una tarjeta de KPI (va dentro de st.container(key="nvp_kpi_...")).
+    cuerpo = número grande (clase nvp-num) o una línea por materia (filas_materia()).
+    etiqueta admite HTML (por ejemplo, la ρ sin pasar a mayúscula)."""
+    a = " alerta" if alerta else ""
+    return (f'<div class="tfi"><p class="nvp-etq{a}">{etiqueta}{ayuda(tip) if tip else ""}</p>{cuerpo}'
+            + (f'<p class="nvp-det{a}">{detalle}</p>' if detalle else "") + "</div>")
+
+
+def linea(texto: str, alerta: bool = False) -> str:
+    """Una línea de dato debajo del número grande de un KPI."""
+    return f'<p class="nvp-linea{" alerta" if alerta else ""}">{texto}</p>'
+
+
+def filas_materia(filas: list[tuple[str, str, str]]) -> str:
+    """[(sigla, valor, detalle)] -> una línea por materia dentro de una tarjeta de KPI."""
+    return ('<div class="nvp-filas">' + "".join(
+        f'<div><b>{s}</b><span class="v">{v}</span><span class="s">{d}</span></div>' for s, v, d in filas)
+        + "</div>")
+
+
+def grafico(fig, destino=st) -> None:
+    """componentes.grafico (sin barra de herramientas) con coma decimal y punto de miles en ejes y tooltips."""
+    fig.update_layout(separators=",.")
+    _base.grafico(fig, destino)
+
+
 def html(contenido: str, destino=st) -> None:
     """Pinta HTML. Se pasa a una sola línea: en markdown, una línea con sangría sería un bloque de código."""
     destino.markdown(" ".join(contenido.split("\n")), unsafe_allow_html=True)
@@ -159,19 +266,28 @@ def cuadrito(color: str) -> str:
     return f'<span class="tfi-cuadrito" style="background:{color}"></span>'
 
 
-def titulo_materia(materia: str, sub: str = "") -> str:
-    """Encabezado de un bloque por materia: cuadrito de color + nombre (+ dato a la derecha)."""
+def titulo_materia(materia: str, sub: str = "", sigla: bool = False) -> str:
+    """Encabezado de un bloque por materia: cuadrito de color + nombre o sigla (+ dato a la derecha).
+    sigla=True en grillas angostas, para que AED no ocupe dos líneas y desalinee la fila."""
     extra = f'<span class="sub num">{sub}</span>' if sub else ""
-    return (f'<p class="tfi tfi-titulo-materia">{cuadrito(COLORES_MATERIA.get(materia, NEUTRO))}'
-            f'{materia}{extra}</p>')
+    nombre = SIGLAS.get(materia, materia) if sigla else materia
+    return (f'<p class="tfi tfi-titulo-materia" title="{esc(materia)}">'
+            f'{cuadrito(COLORES_MATERIA.get(materia, NEUTRO))}{nombre}{extra}</p>')
 
 
 def leyenda(items: list[tuple[str, str, str]]) -> str:
-    """items = [(texto, color, forma)], forma en punto | cuadro | linea."""
+    """items = [(texto, color, forma)], forma en punto | cuadro | linea | linea_punteada, o un tono de
+    _FORMAS (bien, atencion, critico, neutro...) para dibujar la misma forma que el marcador del gráfico."""
     marcas = {"punto": "width:10px;height:10px;border-radius:999px", "cuadro": "width:11px;height:11px;border-radius:2px",
-              "linea": "width:18px;height:2px"}
-    partes = [f'<span class="item"><span style="{marcas[forma]};background:{color};display:inline-block"></span>'
-              f'{texto}</span>' for texto, color, forma in items]
+              "linea": "width:18px;height:2px", "linea_punteada": "width:18px;height:0;border-top:2px dashed"}
+
+    def marca(color, forma):
+        if forma in _FORMAS:
+            return icono(forma, 11, color)
+        fondo = f"border-color:{color}" if forma == "linea_punteada" else f"background:{color}"
+        return f'<span style="{marcas[forma]};{fondo};display:inline-block"></span>'
+
+    partes = [f'<span class="item">{marca(color, forma)}{texto}</span>' for texto, color, forma in items]
     return f'<div class="tfi tfi-leyenda">{"".join(partes)}</div>'
 
 

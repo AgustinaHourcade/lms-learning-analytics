@@ -371,6 +371,47 @@ def test_nota_por_nivel_actividad_sube_con_la_actividad(d):
         assert g["nota_pct"].iloc[-1] > g["nota_pct"].iloc[0]
 
 
+@pytest.mark.parametrize("fecha", ["2025-09-15", FECHA_CORTE_DEFECTO])
+def test_casos_en_riesgo(d, fecha):
+    """D85: casos alumno–materia vs. alumnos distintos, y la comparación contra 7 días antes."""
+    c = m.casos_en_riesgo(d, fecha).set_index("asignatura")
+    q = m.cuadrante_riesgo(d, fecha)
+    r = q[q["en_riesgo"]]
+    total = c.loc[m.TODAS_LAS_MATERIAS]
+    assert total["casos"] == len(r) == c.drop(m.TODAS_LAS_MATERIAS)["casos"].sum()
+    assert total["alumnos"] == r["id_alumno"].nunique() <= total["casos"]
+    assert total["sin_rendir"] == (r["rendidos"] == 0).sum()
+    por_materia = c.drop(m.TODAS_LAS_MATERIAS)
+    assert (por_materia["alumnos"] == por_materia["casos"]).all()   # en una materia, un caso = un alumno
+    antes = m.cuadrante_riesgo(d, T(fecha) - pd.Timedelta(days=7))
+    assert total["casos_antes"] == antes["en_riesgo"].sum()
+    una = m.casos_en_riesgo(d, fecha, asignatura=ALG).set_index("asignatura")
+    assert una.loc[ALG, "casos"] == una.loc[m.TODAS_LAS_MATERIAS, "casos"] == c.loc[ALG, "casos"]
+
+
+def test_brecha_libres(d):
+    b = m.brecha_libres(d).set_index("asignatura")
+    n = m.nota_por_nivel_actividad(d)
+    for materia, g in n.sort_values("orden").groupby("asignatura"):
+        assert b.loc[materia, "libre_menos"] == g["pct_libre"].iloc[0]
+        assert b.loc[materia, "libre_mas"] == g["pct_libre"].iloc[-1]
+        assert b.loc[materia, "brecha_pp"] == pytest.approx(g["pct_libre"].iloc[0] - g["pct_libre"].iloc[-1], abs=0.01)
+    assert (b["brecha_pp"] > 0).all()   # el quinto que menos entra tiene más libres en las tres materias
+    assert m.brecha_libres(d, "2025-07-01").empty or m.brecha_libres(d, "2025-07-01")["libre_menos"].eq(0).all()
+
+
+def test_activos_libres(d):
+    a = m.activos_libres(d).set_index("asignatura")
+    q = m.cuadrante_riesgo(d)
+    conteo = q.groupby(["asignatura", "cuadrante"]).size()
+    for materia in a.index:
+        libres = conteo.get((materia, "Activo con nota baja"), 0)
+        sanos = conteo.get((materia, "Activo con buena nota"), 0)
+        assert a.loc[materia, "libres"] == libres
+        assert a.loc[materia, "sobre_mediana"] == libres + sanos
+    assert a["pct"].between(0, 100).all()
+
+
 def test_ficha_individual(d):
     primero = m.buscar_alumnos(d)["id_alumno"].iloc[0]
     f = m.ficha_alumno(d, primero)

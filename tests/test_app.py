@@ -204,22 +204,41 @@ def test_participacion(app):
     assert not app.exception, app.exception
 
 
-def test_notas_vs_participacion_controles(app):
+def test_notas_vs_participacion_controles(app, carpeta_pipeline):
     app.switch_page("paginas/5_notas_vs_participacion.py").run()
     assert not app.exception, app.exception
-    def titular():  # el bloque HTML con el ρ de cada materia y la tarjeta de riesgo
-        return next(m.value for m in app.markdown if "tfi-rho" in m.value)
+    def kpis():  # las cuatro tarjetas de arriba (casos en riesgo, brecha, activos libres, ρ)
+        return " ".join(m.value for m in app.markdown if m.value.startswith('<div class="tfi"><p class="nvp-etq'))
 
-    antes = titular()
-    assert antes.count('class="tfi-rho"') == 3
-    for materia in ["Álgebra", "Algoritmos y Estructuras de Datos", "Probabilidad y Estadística"]:
-        assert materia in antes
+    def lectura():
+        return next(m.value for m in app.markdown if m.value.startswith('<p class="tfi nvp-lectura'))
+
+    from src import metricas
+    d = metricas.cargar(carpeta_pipeline / "gold")
+    casos = metricas.casos_en_riesgo(d).set_index("asignatura").loc[metricas.TODAS_LAS_MATERIAS].astype(int)
+    antes = kpis()
+    assert f"{casos['casos']}<small>casos</small>" in antes and f"{casos['alumnos']} alumnos distintos" in antes
+    for sigla in ["ALG", "AED", "PYE"]:
+        assert f"<b>{sigla}</b>" in antes and f"en {sigla}" in lectura()
+    assert "Va de 0" not in " ".join(m.value for m in app.markdown)   # Spearman va de −1 a 1
+    lista = next(df.value for df in app.dataframe if "Materias en riesgo" in df.value.columns)
+    assert len(lista) == casos["casos"] and lista["ID"].nunique() == casos["alumnos"]
+    assert "Mediana de la materia" not in lista.columns
+
+    app.button(key="nvp_ir_lista").click().run()   # "Prioridad de contacto →" abre la pestaña del cuadrante
+    assert not app.exception, app.exception
+    assert app.session_state["nvp_pestana"] == "Cuadrante de riesgo"
+
     app.selectbox(key="nvp_variable").set_value("avance").run()
     app.toggle(key="nvp_solo_rindieron").set_value(True).run()
     app.toggle(key="nvp_log").set_value(True).run()
     app.selectbox(key="nvp_riesgo_materia").set_value("Álgebra").run()
     assert not app.exception, app.exception
-    assert titular() != antes
+    assert kpis() != antes
+
+    app.selectbox(key="materia").set_value("Álgebra").run()   # una materia: sin siglas ni "alumnos distintos"
+    assert not app.exception, app.exception
+    assert "alumnos distintos" not in kpis() and "en ALG" not in lectura()
 
 
 def test_notas_vs_participacion_sin_evaluaciones(app):

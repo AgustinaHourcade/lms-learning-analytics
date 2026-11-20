@@ -1054,6 +1054,72 @@ def nota_por_nivel_actividad(d: Datos, fecha_corte=None, asignatura=None, umbral
     return df.round(2)
 
 
+def casos_en_riesgo(d: Datos, fecha_corte=None, asignatura=None, umbral: int = UMBRAL_INACTIVIDAD_DIAS,
+                    variable: str = "minutos", dias: int = 7) -> pd.DataFrame:
+    """Casos del cuadrante de riesgo (D37: debajo de la mediana de `variable` de
+    su materia y Libre al corte), por materia y en total (D85).
+    Un caso es un par alumno–materia: el mismo alumno puede estar en riesgo en
+    varias materias, así que en la fila TODAS_LAS_MATERIAS `alumnos` (distintos)
+    puede ser menor que `casos`. sin_rendir = casos sin ningún instrumento
+    rendido. *_antes = lo mismo a la fecha de corte − `dias` (con la mediana y la
+    condición de esa fecha). base = alumnos de la base de la materia."""
+    corte = fecha_de_corte(fecha_corte)
+    materias = _materias(asignatura)
+
+    def contar(c: pd.Timestamp) -> pd.DataFrame:
+        q = cuadrante_riesgo(d, c, asignatura, umbral, variable)
+        r = q[q["en_riesgo"]]
+        filas = [(m, r[r["asignatura"] == m], q[q["asignatura"] == m]) for m in materias]
+        filas.append((TODAS_LAS_MATERIAS, r, q))
+        return pd.DataFrame(
+            [{"asignatura": m, "casos": len(g), "alumnos": g["id_alumno"].nunique(),
+              "sin_rendir": int((g["rendidos"] == 0).sum()), "base": len(b)} for m, g, b in filas]
+        ).set_index("asignatura")
+
+    ahora, antes = contar(corte), contar(corte - pd.Timedelta(days=dias))
+    ahora["casos_antes"] = antes["casos"]
+    ahora["alumnos_antes"] = antes["alumnos"]
+    ahora["pct_base"] = (ahora["casos"] / ahora["base"].replace(0, np.nan) * 100).round(2)
+    return ahora.reset_index()
+
+
+def brecha_libres(d: Datos, fecha_corte=None, asignatura=None, umbral: int = UMBRAL_INACTIVIDAD_DIAS,
+                  variable: str = "minutos", solo_rindieron: bool = False) -> pd.DataFrame:
+    """Por materia (D85): % de Libres en el quinto con menos `variable` y en el
+    quinto con más (los grupos de nota_por_nivel_actividad) y la brecha en puntos
+    porcentuales = %Libre(menos) − %Libre(más). También la nota promedio (sobre
+    100 y en la escala de la materia) de los dos extremos."""
+    n = nota_por_nivel_actividad(d, fecha_corte, asignatura, umbral, variable, solo_rindieron)
+    columnas = ["asignatura", "libre_menos", "libre_mas", "brecha_pp", "nota_pct_menos", "nota_pct_mas",
+                "nota_menos", "nota_mas", "escala"]
+    if n.empty:
+        return pd.DataFrame(columns=columnas)
+    filas = []
+    for materia, g in n.sort_values("orden").groupby("asignatura", sort=False):
+        lo, hi = g.iloc[0], g.iloc[-1]
+        filas.append({"asignatura": materia, "libre_menos": lo["pct_libre"], "libre_mas": hi["pct_libre"],
+                      "brecha_pp": lo["pct_libre"] - hi["pct_libre"], "nota_pct_menos": lo["nota_pct"],
+                      "nota_pct_mas": hi["nota_pct"], "nota_menos": lo["nota_final"], "nota_mas": hi["nota_final"],
+                      "escala": ESQUEMA[materia]["total_max"]})
+    orden = {m: i for i, m in enumerate(_materias(asignatura))}
+    df = pd.DataFrame(filas, columns=columnas)
+    return df.sort_values("asignatura", key=lambda s: s.map(orden)).round(2).reset_index(drop=True)
+
+
+def activos_libres(d: Datos, fecha_corte=None, asignatura=None, umbral: int = UMBRAL_INACTIVIDAD_DIAS,
+                   variable: str = "minutos") -> pd.DataFrame:
+    """Por materia (D85): de los alumnos con `variable` igual o por encima de la
+    mediana de su materia (los "activos" del cuadrante, D37), cuántos igual
+    quedan Libres al corte. pct = libres / sobre_mediana × 100."""
+    q = cuadrante_riesgo(d, fecha_corte, asignatura, umbral, variable)
+    sobre = q[~(q[variable] < q["mediana_actividad"])]
+    g = (sobre.assign(libre=sobre["condicion"].eq("Libre"))
+              .groupby("asignatura").agg(sobre_mediana=("id_alumno", "size"), libres=("libre", "sum"))
+              .reindex(_materias(asignatura)).fillna(0).astype(int))
+    g["pct"] = (g["libres"] / g["sobre_mediana"].replace(0, np.nan) * 100).round(2)
+    return g.reset_index(names="asignatura")
+
+
 # ---------------------------------------------------------------------------
 # Matrícula y alertas
 # ---------------------------------------------------------------------------

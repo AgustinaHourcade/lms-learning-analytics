@@ -180,3 +180,60 @@ Formato: número, decisión, por qué, estado.
   cae de 71 % a 31 % con promedios de 92 a 96", "Promociona cae en las tres materias desde agosto"). Las definiciones
   van en el (?) de cada pieza, sin códigos D (lo controla `test_sin_codigos_de_decision_visibles`).
 - **Estado:** vigente.
+
+## D85 · Rediseño del dashboard Notas vs. participación
+- **Decisión:** la página se lee de arriba abajo así: subtítulo → **lectura principal** armada con
+  `nota_por_nivel_actividad` ("Del 20 % con menos minutos quedan libres 8 de cada 10 en ALG...; del 20 % con más,
+  menos de 1, 5 y 3", `textos.lectura_quintiles`; reemplaza al recuadro "Dicho sin estadística" de Por nivel) →
+  controles → **4 KPIs** → pestañas **Dispersión · Por nivel de actividad · Cuadrante de riesgo · Correlaciones**,
+  cada una con un título que es la conclusión, calculado con los datos.
+- **KPIs y métricas nuevas** (en `src/metricas.py`, con tests):
+  1. *Casos en riesgo* (`casos_en_riesgo`): casos alumno–materia debajo de la mediana y libres (D37), los alumnos
+     distintos detrás (fila `Todas`), cuántos no rindieron nada y la misma cuenta a la fecha de corte − 7 días (con
+     la mediana y la condición de esa fecha). Tarjeta roja con el botón "Prioridad de contacto →", que abre la
+     pestaña del cuadrante (`st.tabs(key="nvp_pestana")`).
+  2. *Brecha de libres* (`brecha_libres`): %Libre del quinto con menos actividad − %Libre del quinto con más, por
+     materia, en puntos porcentuales. Sigue el interruptor "solo quienes rindieron".
+  3. *Activos que igual quedan libres* (`activos_libres`): libres / alumnos con la variable igual o por encima de la
+     mediana de su materia.
+  4. *ρ de la variable elegida*: los dos valores (todos / solo quienes rindieron) y la comparación con la variable
+     de mayor ρ promedio.
+- **Correcciones de credibilidad:** Spearman va de −1 a 1 (el texto decía de 0 a 1); "regularidad vs. minutos"
+  compara promedio con promedio (días y semanas contra minutos de sesiones, ya no contra el promedio de minutos y
+  tiempo del reporte) y dice "acompaña algo más"; "220 alumnos" pasa a "220 casos · 125 alumnos distintos" (al
+  24/10/2025, 63 alumnos en una materia, 29 en dos y 33 en las tres) y la lista suma "Materias en riesgo"; el
+  título "Usar el avance para detectar temprano" se reemplazó (la ρ es al corte y no prueba anticipación: se enlaza
+  al Predictor de abandono).
+- **Redondeo único:** `textos.numero` redondea "de escuela" (`textos.redondear`, 144,5 → 145), como los tooltips y
+  las tablas del navegador. Antes la mediana de minutos de Álgebra (144,5) se veía 144 en el cuadrante y 145 en la
+  lista. `componentes_notas.num` usa esa función.
+- **Diseño:** cada color significa una sola cosa. Materias con la paleta de General (D78: ALG #1E4FA8, AED #7C3AED,
+  PYE #0891B2); el cuadrante usa rojo solo para "debajo de la mediana y libre" y neutros para el resto; la
+  dispersión, forma por condición (● Promociona, ▲ Regular, ⬣ Libre, opacidad 0,6), cuántos alumnos hay en (0, 0)
+  y tooltips con coma decimal y escala ("78,0 / 120 (65,0 / 100)"); Álgebra se muestra "94,8/120 (79,0/100)" bajo
+  los paneles, igual que Por nivel (sobre 100). En Por nivel, Libre va a la izquierda, se rotulan los segmentos
+  ≥ 8 % y los rangos no se pisan (`textos.rangos_quintiles`: "hasta 59 · 60–116 · 117–186..."; con empates se
+  repite el valor). Los cuadrantes se llaman "Debajo/Sobre la mediana, libre/no libre" (en `src/metricas.py`
+  siguen las etiquetas de D37: solo cambia el nombre en pantalla). Se quitaron las pastillas de fuerza del
+  promedio, la columna "Mediana de la materia" de la lista y las anotaciones encima de los puntos del gráfico de
+  cuadrantes.
+- **Textos:** "Cómo leer el número" (umbrales de Cohen) pasó al (?) de ρ; la nota "significativa no quiere decir
+  importante" a la primera línea del expansor de la tabla con p-valor; ninguna explicación de más de 2 líneas fuera
+  del (?) o de los expansores. El (?) del selector aclara que el *tiempo de conexión* de la consigna es "Minutos en
+  la plataforma (sesiones)" y en qué se diferencia del "Tiempo estimado de uso (reporte)". Al pie, enlaces a Grupos
+  de alumnos y Predictor de abandono. Sin códigos D en pantalla, tampoco en el (?) (`test_sin_codigos_de_decision_visibles`).
+- **Estado:** vigente.
+
+## D86 · El "Avance (%)" del reporte cuenta las evaluaciones realizadas
+- **Hallazgo:** el Excel no define la columna, pero en las tres materias el avance se reconstruye casi exacto
+  (R² entre 0,97 y 0,999) como la cantidad de ítems distintos que el alumno abrió (textos, archivos, temas) **más
+  las evaluaciones que realizó**, cada una con el mismo peso que un texto. Las evaluaciones explican en promedio el
+  5 % del avance en AED, el 10 % en PyE y el 20 % en Álgebra.
+- **Efecto:** la correlación del avance con la nota es en parte circular (rendir sube el avance y la nota). Al
+  24/10/2025, sin la parte de las evaluaciones, ρ baja de 0,76 a 0,72 en AED, de 0,77 a 0,70 en PyE y de 0,66 a 0,50
+  en Álgebra (con solo quienes rindieron: 0,73 → 0,68, 0,70 → 0,60 y 0,56 → 0,38).
+- **Decisión:** el avance se sigue mostrando (es un dato del LMS y la consigna pide cruzar participación con
+  notas), pero se avisa en el (?) del selector y de Correlaciones y en la fila de la tabla ("cuenta las
+  evaluaciones hechas"). La conclusión "el avance es lo que más acompaña a la nota" hay que leerla con ese límite;
+  entre las variables de trazabilidad, la que más acompaña es semanas con actividad.
+- **Estado:** vigente.
