@@ -55,6 +55,7 @@ Probar desde la raíz:
 """
 from __future__ import annotations
 
+import hashlib
 import html
 import time
 import warnings
@@ -120,7 +121,9 @@ VARIABLES = {
 }
 # D65: sentido obligado de algunas variables en el gradient boosting (+1 = más valor, más riesgo).
 MONOTONAS = {"dias_sin_actividad": 1, "sin_vs_habitual": 1, "dias_sin_actividad_global": 1, "eventos_7d": -1,
-             "eventos_14d": -1, "dias_activos_14d": -1, "eventos_14d_otras": -1, "materias_activas_14d": -1}
+             "eventos_14d": -1, "dias_activos_14d": -1, "eventos_14d_otras": -1, "materias_activas_14d": -1,
+             # D66: mejor nota, más rendidas o haber rendido la última nunca suben el riesgo
+             "nota_pct": -1, "margen_promocion": -1, "pct_rendidos": -1, "rindio_ultima": -1}
 CONTEOS = ["eventos_7d", "eventos_14d", "sesiones_14d", "minutos_14d", "evaluaciones_14d", "eventos_total",
            "dias_activos_total", "eventos_14d_otras"]
 
@@ -412,9 +415,14 @@ class ModeloAbandono:
 
 
 def firma(d: m.Datos) -> str:
-    """Cambia si cambian los datos con los que se entrena (o la versión de scikit-learn)."""
+    """Cambia si cambian los datos con los que se entrena, la versión de scikit-learn
+    o la receta del modelo (variables, modelos y sus parámetros, costos): así un cambio
+    en el código también obliga a reentrenar el modelo guardado."""
     i = d.interacciones
-    return f"{len(i)}|{i['fecha_hora'].max()}|{len(m.base(d))}|sklearn {sklearn.__version__}"
+    receta = repr((list(VARIABLES), modelos(), ABANDONO_COSTO_FN, ABANDONO_COSTO_FP, ABANDONO_HORIZONTE_DIAS,
+                   ABANDONO_PASO_DIAS))
+    return (f"{len(i)}|{i['fecha_hora'].max()}|{len(m.base(d))}|sklearn {sklearn.__version__}"
+            f"|receta {hashlib.md5(receta.encode()).hexdigest()[:10]}")
 
 
 def entrenar(d: m.Datos, verbose: bool = False) -> ModeloAbandono:
