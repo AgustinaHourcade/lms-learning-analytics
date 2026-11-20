@@ -274,8 +274,10 @@ def test_ficha_individual_buscador(app):
     primero = app.selectbox(key="fi_alumno").value          # muestra al primero por defecto
     assert primero.startswith("ALU_")
     assert not app.text_input                                # un solo buscador: el desplegable
-    assert any("Riesgo de abandono" in m.value for m in app.markdown)   # cabecera con el predictor (D58)
+    assert any("Riesgo de abandono" in m.value for m in app.markdown)   # columna del predictor (D58)
     assert any("Estado por materia" in m.value for m in app.markdown)
+    assert not app.tabs                                      # una sola página, sin pestañas (D87)
+    assert not any("&#" in m.value for m in app.markdown)
     app.selectbox(key="fi_alumno").set_value("ALU_1105").run()
     assert not app.exception, app.exception
     assert any("ALU_1105" in m.value for m in app.markdown)
@@ -284,8 +286,19 @@ def test_ficha_individual_buscador(app):
     assert app.selectbox(key="fi_alumno").value != "ALU_1105"
     app.button(key="fi_sig_riesgo").click().run()                      # siguiente en riesgo
     assert not app.exception, app.exception
+    libre = next(o for o in app.selectbox(key="fi_grupo").options if o.startswith("Libre"))
+    app.selectbox(key="fi_grupo").set_value(libre).run()               # filtro de grupo
+    assert not app.exception, app.exception
+    app.selectbox(key="fi_grupo").set_value("Todos los alumnos").run()
+    app.selectbox(key="fi_alumno").set_value("ALU_1293").run()
+    cuerpo = " ".join(m.value for m in app.markdown)
+    assert "44,2 de 45 pts posibles (98 %)" in cuerpo and "117,8/120" in cuerpo
+    assert "Aprobó 15 de 16 instrumentos" in cuerpo
+    app.date_input(key="fecha_corte").set_value("2025-09-01").run()
+    assert not app.exception, app.exception
     app.date_input(key="fecha_corte").set_value("2025-08-06").run()   # antes de cualquier evaluación
     assert not app.exception, app.exception
+    assert "Sin evaluaciones" in " ".join(m.value for m in app.markdown)
 
 
 def test_predictor_buscador_individual(app):

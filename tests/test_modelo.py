@@ -152,3 +152,15 @@ def test_sesion_se_corta_a_los_30_minutos():
                                       "2025-09-01 11:33"]),  # otro alumno: sesión nueva
     })
     assert sesionizar(ev).tolist() == [1, 1, 1, 2, 3, 4]
+
+
+def test_trazabilidad_sin_entidades_html(capas):
+    """D87: la limpieza decodifica las entidades HTML del log ('&#128640;' -> '🚀')."""
+    import pandas as pd
+    from src.limpieza import decodificar_html
+    r = decodificar_html(pd.Series(["&#128640;Evaluación Semanal Nº2", "&amp;#128073; x", None]))
+    assert r.iloc[:2].tolist() == ["🚀Evaluación Semanal Nº2", "👉 x"] and pd.isna(r.iloc[2])
+    traz = capas("silver", "trazabilidad")
+    for col in ["Sección", "Acción", "Descripción"]:
+        assert not traz[col].astype("string").str.contains("&#", na=False).any()
+    assert not capas("gold", "fact_interaccion")["descripcion"].astype("string").str.contains("&#", na=False).any()

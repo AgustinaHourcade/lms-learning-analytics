@@ -878,3 +878,44 @@ def test_entregas_coinciden_con_la_pagina(d):
     assert (c["dejaron"] <= c["empezaron"]).all()
     # AED Unidad 5 (21/10) sigue abierta al 24/10: el último cerrado es la Unidad 4
     assert c.loc[AED, "abiertos"] == 1 and "Unidad 4" in c.loc[AED, "ultimo"]
+
+
+# ---------------------------------------------------------------------------
+# Ficha individual de una sola página (D87)
+# ---------------------------------------------------------------------------
+def test_ficha_individual_alu_1293(d):
+    """El caso de aceptación del rediseño: ALU_1293 (Acosta, Diego) al 24/10."""
+    f = m.ficha_individual(d, "ALU_1293")
+    mat = f["materias"].set_index("asignatura")
+    assert list(mat.index) == [ALG, PYE, AED]                         # orden del ESQUEMA
+    assert mat.loc[ALG, "puntos"] == pytest.approx(44.17) and mat.loc[ALG, "puntos_posibles"] == 45
+    assert mat.loc[ALG, "nota_final"] == pytest.approx(117.79)        # proyección a 120
+    assert round(mat.loc[PYE, "nota_final"], 1) == 87.0
+    assert mat.loc[AED, "nota_final"] == 96 and mat.loc[AED, "margen"] == 6
+    inst = f["instrumentos"]
+    assert inst["cuenta_en_final"].sum() == 16 and inst["aprobado"].sum() == 15
+    assert not inst["nombre"].str.contains("&#").any()
+    assert not f["eventos"]["descripcion"].fillna("").str.contains("&#").any()
+
+
+@pytest.mark.parametrize("fecha", ["2025-08-06", "2025-09-01", FECHA_CORTE_DEFECTO])
+def test_ficha_individual_usa_un_solo_curso(d, fecha):
+    """El curso es siempre el de en_curso(): quienes rindieron algo (toda la base si nadie rindió)."""
+    t = m.tabla_alumnos(d, fecha)
+    curso = t[m.en_curso(t)]
+    alumno = m.buscar_alumnos(d, solo_base=True)["id_alumno"].iloc[0]
+    f = m.ficha_individual(d, alumno, fecha)
+    for fila in f["materias"].itertuples():
+        esperado = curso.loc[curso["asignatura"] == fila.asignatura, "nota_final"].mean()
+        assert fila.curso_nota_final == pytest.approx(esperado, abs=0.01, nan_ok=True)
+        assert fila.alumnos_curso == (curso["asignatura"] == fila.asignatura).sum()
+    assert f["calor"]["eventos"].sum() == len(f["eventos"])
+    assert f["eventos"]["fecha_hora"].max() < m.fecha_de_corte(fecha) + pd.Timedelta(days=1) or f["eventos"].empty
+    if fecha == "2025-08-06":   # antes de cualquier evaluación
+        assert (f["materias"]["condicion"] == SIN_EVALUACIONES).all() and f["instrumentos"].empty
+
+
+def test_ficha_individual_respeta_la_materia(d):
+    f = m.ficha_individual(d, "ALU_1293", asignatura=ALG)
+    assert f["materias"]["asignatura"].tolist() == [ALG]
+    assert set(f["eventos"]["asignatura"]) <= {ALG}

@@ -237,3 +237,34 @@ Formato: número, decisión, por qué, estado.
   evaluaciones hechas"). La conclusión "el avance es lo que más acompaña a la nota" hay que leerla con ese límite;
   entre las variables de trazabilidad, la que más acompaña es semanas con actividad.
 - **Estado:** vigente.
+
+## D87 · Ficha individual en una sola página y un solo "curso"
+- **Contexto:** la ficha tenía pestañas (Notas / Actividad / Trazabilidad), dos vistas de notas (Libreta y
+  Barras), tres tablas largas y un recuadro grande de riesgo de abandono. Además comparaba contra "el curso" de
+  tres maneras: la nota contra el promedio de toda la base (con los 0 de quienes no rindieron), los instrumentos
+  contra el promedio de quienes lo rindieron y la actividad semanal contra toda la base.
+- **Decisión:** una sola página que se lee de arriba hacia abajo: barra de control (filtro de grupo por condición
+  o grupo de K-Means, selector, ‹ ›, siguiente en riesgo, ficha en CSV), encabezado con alertas en rojo por materia,
+  tabla "Estado por materia" (matrícula, semáforo, nota al corte, margen al umbral de promoción, rendidos,
+  actividad 8 semanas, riesgo de abandono), notas en barras por materia, percentiles y evolución semanal, % de
+  clics por tipo y mapa de calor día × hora, y al pie los CSV de notas e interacciones. Se quitaron las tablas
+  "Detalle de notas", "Reporte de participación" y "Sus interacciones" (quedan sus CSV), la vista Libreta y el
+  recuadro de riesgo (el riesgo queda como columna; la advertencia del entrenamiento sigue en el Predictor).
+- **Curso:** uno solo, definido en `metricas.en_curso()`: en cada materia, los alumnos de la base que rindieron al
+  menos un instrumento a la fecha de corte (toda la base si todavía no rindió nadie). Por instrumento, quienes lo
+  rindieron (D22). Lo usan el promedio, los percentiles, la evolución semanal y el % por tipo
+  (`metricas.ficha_individual()`). `ficha_alumno()` queda como estaba para el Predictor de abandono.
+- **Álgebra:** se muestra lo acumulado y la proyección ("44,2 de 45 pts posibles (98 %) · proy. 117,8/120"); la
+  condición se sigue calculando con la proyección (D17).
+- **Datos:** la limpieza decodifica las entidades HTML de todos los textos de la trazabilidad (`&#128640;` → 🚀);
+  antes quedaban en las descripciones.
+- **Participación:** Encuestas está en 0 para toda la base y se quitó; Foros (7 alumnos con intervenciones) y
+  Correos (58) pasan al (i) de cada materia. "Tiempo de uso (min)" se quitó porque duplica Minutos.
+- **Títulos:** cada sección se titula con su conclusión, armada por reglas en `src/textos.py`
+  (`titulo_condiciones`, `titulo_notas`, `titulo_participacion` —brecha de 40 o más puntos de percentil entre la nota
+  y minutos o sesiones—, `titulo_trazabilidad` —tipo con mayor diferencia contra el curso, desde 3 p.p.—).
+- **Diseño:** verde, ámbar y rojo solo para la condición (y rojo para alertas y notas no aprobadas). Materias de la
+  ficha: ALG #3B82F6, PYE #4C1D95, AED #64748B (diferencia mínima ΔE 30 con deuteranopia y protanopia, contraste
+  ≥ 3:1). Mismo orden de materias en todas las secciones (el del ESQUEMA). La ficha responde a la materia de la barra
+  (antes solo acotaba el buscador).
+- **Estado:** vigente.

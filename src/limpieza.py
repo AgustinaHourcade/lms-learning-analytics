@@ -15,6 +15,7 @@ Ejecutar desde la raíz del proyecto:
 """
 from __future__ import annotations
 
+import html
 import time
 from pathlib import Path
 
@@ -59,9 +60,32 @@ def normalizar_ids(df: pd.DataFrame, columna: str, tabla: str) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Limpiadores (uno por tabla)
 # ---------------------------------------------------------------------------
+def decodificar_html(serie: pd.Series) -> pd.Series:
+    """'&#128640;Evaluación Semanal Nº2' -> '🚀Evaluación Semanal Nº2'. Es un arreglo de
+    codificación (el LMS exporta los emojis como entidades HTML), no un cambio de valor.
+    Se repite hasta que no cambie por si alguna entidad viene escapada dos veces
+    ('&amp;#128640;'). Los vacíos quedan vacíos."""
+    def limpio(texto):
+        if not isinstance(texto, str):
+            return texto
+        anterior = None
+        while anterior != texto:
+            anterior, texto = texto, html.unescape(texto)
+        return texto
+    return serie.map(limpio)
+
+
 def limpiar_trazabilidad(df: pd.DataFrame) -> pd.DataFrame:
     df = normalizar_ids(df, "Usuario", "trazabilidad")
     df["Fecha"] = fecha(df["Fecha"], "%Y-%m-%d %H:%M:%S")
+
+    textos = [c for c in df.columns if c not in {"Fecha", "Usuario", "archivo_origen"}]
+    con_entidades = df[textos].apply(lambda s: s.astype("string").str.contains("&#|&[a-zA-Z]+;", regex=True,
+                                                                                 na=False)).sum()
+    for col in textos:
+        df[col] = decodificar_html(df[col])
+    anotar("trazabilidad", "Entidades HTML decodificadas (ej. '&#128640;' -> '🚀'): "
+           + (", ".join(f"`{c}` {n:,}" for c, n in con_entidades.items() if n) or "ninguna") + " filas.")
 
     # Sin `archivo_origen`: si dos exportaciones se superponen, el mismo evento
     # aparece en las dos y tiene que contarse una sola vez.

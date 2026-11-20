@@ -137,3 +137,91 @@ def rangos_quintiles(hastas: list[float]) -> list[str]:
         bajo = enteros[i - 1] + 1
         etiquetas.append(numero(alto) if bajo >= alto else f"{numero(bajo)}–{numero(alto)}")
     return etiquetas
+
+
+# ---------------------------------------------------------------------------
+# Ficha individual (D87): títulos de cada sección armados con los datos
+# ---------------------------------------------------------------------------
+ORDEN_CONDICIONES = ["Libre", "Regular", "Promociona", "Sin evaluaciones"]
+BRECHA_PERCENTIL = 40      # puntos de percentil entre la nota y la actividad para destacarla
+DIFERENCIA_TIPO_PP = 3     # p.p. contra el curso a partir de los cuales un tipo de interacción se destaca
+
+
+def titulo_condiciones(condiciones: list[tuple[str, str]]) -> str:
+    """[(sigla, condición)] en el orden de la tabla -> 'Promociona las 3 materias',
+    'Libre en AED, regular en PYE', 'Libre en ALG y AED, promociona PYE'."""
+    if not condiciones:
+        return "Sin materias en la base"
+    distintas = {c for _, c in condiciones}
+    if len(distintas) == 1:
+        c = distintas.pop()
+        n = len(condiciones)
+        destino = f"las {n} materias" if n > 1 else condiciones[0][0]
+        if c == "Promociona":
+            return f"Promociona {destino}"
+        return f"{c} en {destino}"
+    partes = []
+    for c in ORDEN_CONDICIONES + sorted(distintas - set(ORDEN_CONDICIONES)):
+        siglas = [s for s, cc in condiciones if cc == c]
+        if not siglas:
+            continue
+        verbo = "promociona" if c == "Promociona" else f"{c.lower()} en"
+        partes.append(f"{verbo} {enumerar(siglas)}")
+    texto = ", ".join(partes)
+    return texto[0].upper() + texto[1:]
+
+
+def titulo_notas(aprobados: int, total: int, no_rindio: int,
+                 mas_baja: tuple[str, str, float] | None) -> str:
+    """'Aprobó 15 de 16 instrumentos; la más baja: Actividad Rápida 4 (PYE, 50 %)'.
+    `mas_baja` = (instrumento, sigla, % que cuenta) entre los que rindió."""
+    if total == 0:
+        return "Todavía no hay evaluaciones a la fecha de corte"
+    if mas_baja is None:
+        return f"No rindió ninguno de los {total} instrumentos"
+    texto = f"Aprobó {aprobados} de {total} instrumentos"
+    if no_rindio:
+        texto += f"; no rindió {no_rindio}"
+    nombre, sigla, valor = mas_baja
+    return texto + f"; la más baja: {nombre} ({sigla}, {numero(valor)} %)"
+
+
+def titulo_participacion(filas: list[tuple[str, float, float, float]],
+                         umbral: int = BRECHA_PERCENTIL) -> str:
+    """filas = [(materia, percentil nota, percentil minutos, percentil sesiones)].
+    Destaca la mayor brecha entre la nota y los minutos o las sesiones:
+    'En Álgebra: nota p99 con minutos p31'. Si ninguna llega a `umbral`, un título neutro."""
+    mejor = None
+    for materia, p_nota, p_min, p_ses in filas:
+        if _vacio(p_nota):
+            continue
+        for nombre, p in (("minutos", p_min), ("sesiones", p_ses)):
+            if _vacio(p):
+                continue
+            brecha = abs(p_nota - p)
+            if mejor is None or brecha > mejor[0]:
+                mejor = (brecha, materia, p_nota, nombre, p)
+    if mejor is None:
+        return "Todavía no hay notas para comparar con su actividad"
+    brecha, materia, p_nota, nombre, p = mejor
+    if brecha >= umbral:
+        return f"En {materia}: nota p{numero(p_nota)} con {nombre} p{numero(p)}"
+    unidad = "punto" if numero(brecha) == "1" else "puntos"
+    return f"Nota y actividad en percentiles parecidos (la mayor brecha es de {numero(brecha)} {unidad})"
+
+
+def titulo_trazabilidad(filas: list[tuple[str, str, float, float]],
+                        umbral: float = DIFERENCIA_TIPO_PP) -> str:
+    """filas = [(materia, tipo, % del alumno, % del curso)]. El tipo con mayor
+    diferencia contra el curso: 'En PYE, Evaluación: 17 % de sus clics vs. 11 % del curso'."""
+    validas = [f for f in filas if not _vacio(f[2]) and not _vacio(f[3])]
+    if not validas:
+        return "Sin interacciones hasta la fecha de corte"
+    materia, tipo, propio, curso = max(validas, key=lambda f: abs(f[2] - f[3]))
+    diferencia = propio - curso
+    if abs(diferencia) < umbral:
+        return (f"Reparte sus clics como el curso (ningún tipo se aleja más de "
+                f"{numero(abs(diferencia), 1)} p.p.)")
+    signo = "+" if diferencia > 0 else "−"
+    return (f"En {materia}, {tipo}: {numero(propio)} % de sus clics vs. {numero(curso)} % del curso "
+            f"({signo}{numero(abs(diferencia), 1)} p.p.)")

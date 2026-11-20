@@ -61,3 +61,37 @@ def test_nota_en_escala():
 def test_rangos_quintiles():
     assert rangos_quintiles([59.4, 116, 186, 300, 1200]) == ["hasta 59", "60–116", "117–186", "187–300", "301–1.200"]
     assert rangos_quintiles([0, 0, 12, 13, 40]) == ["0", "0", "1–12", "13", "14–40"]
+
+
+# --- Ficha individual (D87) ---------------------------------------------------
+from src.textos import titulo_condiciones, titulo_notas, titulo_participacion, titulo_trazabilidad  # noqa: E402
+
+
+@pytest.mark.parametrize("condiciones, esperado", [
+    ([("ALG", "Promociona"), ("PYE", "Promociona"), ("AED", "Promociona")], "Promociona las 3 materias"),
+    ([("PYE", "Regular"), ("AED", "Libre")], "Libre en AED, regular en PYE"),
+    ([("ALG", "Promociona"), ("PYE", "Libre"), ("AED", "Libre")], "Libre en PYE y AED, promociona ALG"),
+    ([("ALG", "Libre")], "Libre en ALG"),
+    ([("ALG", "Sin evaluaciones"), ("PYE", "Sin evaluaciones")], "Sin evaluaciones en las 2 materias"),
+])
+def test_titulo_condiciones(condiciones, esperado):
+    assert titulo_condiciones(condiciones) == esperado
+
+
+def test_titulo_notas():
+    assert (titulo_notas(15, 16, 0, ("Actividad Rápida 4", "PYE", 50.0))
+            == "Aprobó 15 de 16 instrumentos; la más baja: Actividad Rápida 4 (PYE, 50 %)")
+    assert titulo_notas(0, 5, 5, None) == "No rindió ninguno de los 5 instrumentos"
+    assert titulo_notas(0, 0, 0, None).startswith("Todavía no hay evaluaciones")
+
+
+def test_titulo_participacion():
+    assert (titulo_participacion([("Álgebra", 98, 37, 60), ("AED", 50, 45, 55)])
+            == "En Álgebra: nota p98 con minutos p37")
+    assert titulo_participacion([("Álgebra", 50, 45, 55)]).startswith("Nota y actividad en percentiles parecidos")
+
+
+def test_titulo_trazabilidad():
+    assert (titulo_trazabilidad([("PYE", "Evaluación", 17.0, 10.8), ("ALG", "Contenido", 32.0, 36.5)])
+            == "En PYE, Evaluación: 17 % de sus clics vs. 11 % del curso (+6,2 p.p.)")
+    assert titulo_trazabilidad([("ALG", "Contenido", 36.0, 36.5)]).startswith("Reparte sus clics como el curso")

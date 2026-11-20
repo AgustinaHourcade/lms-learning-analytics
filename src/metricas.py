@@ -1495,6 +1495,193 @@ def ficha_alumno(d: Datos, id_alumno: str, fecha_corte=None, umbral: int = UMBRA
 
 
 # ---------------------------------------------------------------------------
+# Ficha individual, rediseño de una sola página (D87)
+# ---------------------------------------------------------------------------
+# Tipos de interacción de la ficha: Agenda y Notas (las menos usadas) se juntan en Otros.
+TIPOS_FICHA = {"Contenido": "Contenido", "Evaluación": "Evaluación", "Navegación": "Navegación",
+               "Comunicación": "Comunicación", "Agenda": "Otros", "Notas": "Otros"}
+ORDEN_TIPOS_FICHA = ["Contenido", "Evaluación", "Navegación", "Comunicación", "Otros"]
+# Variables que la ficha ubica en percentiles dentro del curso.
+VARIABLES_FICHA = {"nota_final": "Nota", "sesiones": "Sesiones", "minutos": "Minutos",
+                   "dias_activos": "Días con actividad", "avance": "Avance"}
+SEMANAS_SPARKLINE = 8
+
+
+def en_curso(t: pd.DataFrame) -> pd.Series:
+    """EL "curso" de la Ficha individual, definido una sola vez (D87): en cada materia,
+    los alumnos de la base que rindieron al menos un instrumento a la fecha de corte.
+    Si en una materia todavía no rindió nadie (no hubo evaluaciones), es toda su base.
+    `t` es tabla_alumnos (o algo con asignatura y rendidos); devuelve la máscara.
+    Por instrumento, "quienes rindieron" son los que rindieron ESE instrumento (D22)."""
+    rindio = t["rendidos"].fillna(0).gt(0)
+    alguno = rindio.groupby(t["asignatura"]).transform("any")
+    return rindio | ~alguno
+
+
+def _nombre_instrumento(nombre: str) -> str:
+    """'👉  Actividad Rápida 1' -> 'Actividad Rápida 1' (saca emojis y símbolos del principio)."""
+    texto = str(nombre)
+    while texto and not (texto[0].isalnum() or texto[0] in "°"):
+        texto = texto[1:]
+    return texto.strip()
+
+
+def _semanas_entre(inicio: pd.Timestamp, corte: pd.Timestamp) -> int:
+    """Semanas (de lunes a domingo) desde la de `inicio` hasta la del corte, inclusive."""
+    if pd.isna(inicio) or inicio > _fin_del_dia(corte):
+        return 0
+    return int((_lunes(corte) - _lunes(inicio)).days // 7) + 1
+
+
+def ficha_individual(d: Datos, id_alumno: str, fecha_corte=None, asignatura=None,
+                     umbral: int = UMBRAL_INACTIVIDAD_DIAS) -> dict:
+    """Todo lo de un alumno para la Ficha individual de una sola página (D87). Las
+    materias son las de su base dentro de `asignatura` (None = todas), en el orden
+    del ESQUEMA. Las comparaciones usan siempre el curso de en_curso().
+      materias      una fila por materia: tabla_alumnos + cortes de la materia,
+                    margen (nota - corte de promoción), falta_promocion (si es
+                    Regular), falta_regular (si es Libre), semanas_cursada, y para
+                    cada variable de VARIABLES_FICHA: curso_<v> (promedio del curso)
+                    y percentil_<v> (% del curso con un valor igual o menor)
+      instrumentos  sus instrumentos a la fecha de corte que cuentan para la nota,
+                    más los recuperatorios que rindió: nota original (nota_pct),
+                    la que cuenta (nota_pct_corte), aprobado (>= APROBADO_PCT) y el
+                    promedio de quienes lo rindieron (promedio_curso_pct)
+      semanal       por materia y semana: sus interacciones, minutos y sesiones y
+                    el promedio por alumno del curso (curso_eventos, ...)
+      categorias    % de sus interacciones por tipo (TIPOS_FICHA) contra el curso
+      calor         sus interacciones por día de la semana × hora (7 × 24)
+      alertas       sus alertas (D37) en esas materias
+      evaluaciones  fechas de las evaluaciones ya tomadas
+      eventos       su trazabilidad hasta la fecha de corte (para el CSV)
+      resumen       dias_sin_entrar (None si nunca entró), semanas_activas y
+                    semanas_cursada (todas sus materias juntas)"""
+    corte = fecha_de_corte(fecha_corte)
+    datos = d.alumnos[d.alumnos["id_alumno"] == id_alumno]
+    if datos.empty:
+        raise KeyError(f"No existe el alumno {id_alumno}")
+    t = tabla_alumnos(d, corte, None, umbral)
+    t = t.assign(_curso=en_curso(t))
+    curso = t[t["_curso"]]
+    orden = {m: i for i, m in enumerate(ESQUEMA)}
+    materias = t[(t["id_alumno"] == id_alumno) & t["asignatura"].isin(_materias(asignatura))].copy()
+    materias = materias.sort_values("asignatura", key=lambda s: s.map(orden)).reset_index(drop=True)
+    suyas = materias["asignatura"].tolist()
+
+    # Comparación con el curso: promedio y percentil (parte del curso con un valor <= el suyo).
+    for col in VARIABLES_FICHA:
+        materias[f"curso_{col}"] = materias["asignatura"].map(curso.groupby("asignatura")[col].mean()).round(2)
+        materias[f"percentil_{col}"] = [
+            np.nan if pd.isna(v) else round(float((curso.loc[curso["asignatura"] == m, col] <= v).mean() * 100))
+            for m, v in zip(materias["asignatura"], materias[col])]
+    materias["alumnos_curso"] = materias["asignatura"].map(curso.groupby("asignatura").size()).astype("Int64")
+    materias["corte_regular"] = materias["asignatura"].map(lambda a: ESQUEMA[a]["cortes"]["Regular"])
+    materias["corte_promocion"] = materias["asignatura"].map(lambda a: ESQUEMA[a]["cortes"]["Promociona"])
+    materias["margen"] = (materias["nota_final"] - materias["corte_promocion"]).round(2)
+    materias["falta_promocion"] = (-materias["margen"]).where(materias["condicion"].eq("Regular"))
+    materias["falta_regular"] = (materias["corte_regular"] - materias["nota_final"]).round(2) \
+        .where(materias["condicion"].eq("Libre"))
+    inicio_materia = d.interacciones[d.interacciones["en_base"]].groupby("asignatura")["fecha_hora"].min()
+    materias["semanas_cursada"] = materias["asignatura"].map(lambda m: _semanas_entre(inicio_materia.get(m), corte))
+
+    # Instrumentos: los que cuentan para la nota y los recuperatorios que rindió.
+    inst = notas_instrumento(d, corte, suyas or None)
+    inst = inst[(inst["id_alumno"] == id_alumno) & (inst["cuenta_en_final"] | inst["rindio"])]
+    columnas_inst = ["asignatura", "id_instrumento", "instrumento", "nombre", "orden", "fecha_instrumento",
+                     "es_recuperatorio", "cuenta_en_final", "rindio", "recuperatorio_aplicado", "nota_obtenida",
+                     "puntaje_maximo", "nota_pct", "nota_pct_corte", "aprobado", "rindieron", "promedio_curso_pct"]
+    if suyas and not inst.empty:
+        prom = promedio_por_instrumento(d, corte, suyas)[["id_instrumento", "rindieron", "promedio_pct"]]
+        inst = (inst.merge(prom.rename(columns={"promedio_pct": "promedio_curso_pct"}), on="id_instrumento",
+                           how="left")
+                    .merge(d.instrumentos[["id_instrumento", "orden"]], on="id_instrumento", how="left"))
+        inst["nombre"] = inst["instrumento"].map(_nombre_instrumento)
+        inst["nota_pct"] = (inst["nota_obtenida"] / inst["puntaje_maximo"] * 100).round(2)
+        inst["aprobado"] = inst["nota_pct_corte"].round(2).ge(APROBADO_PCT) & inst["cuenta_en_final"]
+        inst = inst.assign(_m=inst["asignatura"].map(orden)).sort_values(["_m", "fecha_instrumento", "orden"])
+        inst = inst[columnas_inst].reset_index(drop=True)
+    else:
+        # Con tipos: si las columnas de marcas quedan como object, inst[inst["rindio"]] las
+        # toma como nombres de columna y no como filtro.
+        inst = pd.DataFrame(columns=columnas_inst).astype(
+            {c: bool for c in ["es_recuperatorio", "cuenta_en_final", "rindio", "recuperatorio_aplicado", "aprobado"]})
+
+    # Actividad semanal: el alumno contra el promedio por alumno del curso (con los que no entraron).
+    ev_todos, se_todos = _eventos(d, corte, suyas or None), _sesiones(d, corte, suyas or None)
+    claves_curso = pd.MultiIndex.from_frame(curso[["asignatura", "id_alumno"]])
+    ev_curso = ev_todos[pd.MultiIndex.from_frame(ev_todos[["asignatura", "id_alumno"]]).isin(claves_curso)]
+    se_curso = se_todos[pd.MultiIndex.from_frame(se_todos[["asignatura", "id_alumno"]]).isin(claves_curso)]
+    ev, se = ev_todos[ev_todos["id_alumno"] == id_alumno], se_todos[se_todos["id_alumno"] == id_alumno]
+
+    def _por_semana(e: pd.DataFrame, s: pd.DataFrame) -> pd.DataFrame:
+        a = e.assign(periodo=_lunes_serie(e["fecha_hora"])).groupby(["asignatura", "periodo"]).size().rename("eventos")
+        b = (s.assign(periodo=_lunes_serie(s["inicio"])).groupby(["asignatura", "periodo"])
+              .agg(sesiones=("id_sesion", "size"), minutos=("duracion_min", "sum")))
+        return pd.concat([a, b], axis=1)
+
+    inicio = d.interacciones["fecha"].min()
+    periodos = pd.date_range(_lunes(inicio), _lunes(corte), freq="7D") if pd.notna(inicio) else []
+    grilla = pd.MultiIndex.from_product([suyas, periodos], names=["asignatura", "periodo"])
+    semanal = _por_semana(ev, se).reindex(grilla, fill_value=0).fillna(0)
+    tam = curso.groupby("asignatura").size()
+    del_curso = _por_semana(ev_curso, se_curso).reindex(grilla, fill_value=0).fillna(0)
+    divisor = del_curso.index.get_level_values("asignatura").map(tam).to_numpy(dtype=float)
+    for col in ["eventos", "sesiones", "minutos"]:
+        semanal[f"curso_{col}"] = (del_curso[col].to_numpy() / divisor).round(1)
+    semanal = semanal.reset_index().astype({"eventos": int, "sesiones": int})
+    semanal["minutos"] = semanal["minutos"].round(1)
+
+    # Interacciones por tipo: su % contra el % del curso (todas las categorías, también las que no usa).
+    def _por_tipo(e: pd.DataFrame, nombre: str) -> pd.DataFrame:
+        g = e.assign(tipo=e["categoria"].map(TIPOS_FICHA).fillna("Otros")).groupby(["asignatura", "tipo"]).size()
+        g = g.reindex(pd.MultiIndex.from_product([sorted(e["asignatura"].unique()), ORDEN_TIPOS_FICHA],
+                                                 names=["asignatura", "tipo"]), fill_value=0).rename(nombre)
+        g = g.reset_index()
+        g[f"pct_{nombre}"] = (g[nombre] / g.groupby("asignatura")[nombre].transform("sum") * 100).round(1)
+        return g
+
+    if ev.empty:
+        categorias = pd.DataFrame(columns=["asignatura", "tipo", "eventos", "pct_eventos", "pct_curso"])
+    else:
+        categorias = _por_tipo(ev, "eventos").merge(_por_tipo(ev_curso, "curso")[["asignatura", "tipo", "pct_curso"]],
+                                                    how="left")
+        categorias = categorias.assign(_m=categorias["asignatura"].map(orden),
+                                       _t=categorias["tipo"].map(ORDEN_TIPOS_FICHA.index)) \
+                               .sort_values(["_m", "_t"]).drop(columns=["_m", "_t"]).reset_index(drop=True)
+
+    # Mapa de calor: día de la semana × hora, con las fechas del log hasta el corte.
+    calor = ev.groupby(["dia_semana", "hora"]).size().reindex(
+        pd.MultiIndex.from_product([range(7), range(24)], names=["dia_semana", "hora"]), fill_value=0)
+    calor = calor.rename("eventos").reset_index()
+    calor["nombre_dia"] = calor["dia_semana"].map(dict(enumerate(DIAS)))
+
+    al = alertas(d, corte, suyas, umbral) if suyas else pd.DataFrame(columns=["asignatura", "id_alumno", "tipo"])
+    al = al[al["id_alumno"] == id_alumno]
+    al = al.assign(_m=al["asignatura"].map(orden)).sort_values(["_m", "tipo"]).drop(columns="_m")
+
+    con_eventos = materias[materias["eventos"] > 0]
+    dias = None if con_eventos.empty else int(con_eventos["dias_sin_actividad"].min())
+    semanas_activas = int(_lunes_serie(ev["fecha_hora"]).nunique()) if not ev.empty else 0
+    inicio_suyas = inicio_materia.reindex(suyas).min() if suyas else pd.NaT
+    eventos = (ev.sort_values("fecha_hora", ascending=False)
+                 [["fecha_hora", "asignatura", "categoria", "seccion", "accion", "descripcion"]]
+                 .reset_index(drop=True))
+    return {
+        "datos": datos.iloc[0],
+        "materias": materias.drop(columns="_curso"),
+        "instrumentos": inst,
+        "semanal": semanal,
+        "categorias": categorias,
+        "calor": calor,
+        "alertas": al.reset_index(drop=True),
+        "evaluaciones": fechas_evaluaciones(d, corte, suyas or None).iloc[: None if suyas else 0],
+        "eventos": eventos,
+        "resumen": {"dias_sin_entrar": dias, "semanas_activas": semanas_activas,
+                    "semanas_cursada": _semanas_entre(inicio_suyas, corte)},
+    }
+
+
+# ---------------------------------------------------------------------------
 def main() -> None:
     pd.set_option("display.width", 200, "display.max_columns", 30)
     d = cargar()
