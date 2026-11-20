@@ -18,7 +18,7 @@ import pytest
 
 from src import metricas as m
 from src import ml_abandono as ab
-from src.config import ABANDONO_COSTO_FN, ABANDONO_COSTO_FP, ABANDONO_HORIZONTE_DIAS
+from src.config import ABANDONO_COSTO_FN, ABANDONO_COSTO_FP, ABANDONO_HORIZONTE_DIAS, ABANDONO_SEGUIMIENTO_DIAS
 
 FECHAS = ["2025-08-10", "2025-09-15", "2025-10-24"]
 
@@ -109,34 +109,55 @@ def test_variables_nuevas_tienen_sentido(d):
     assert (v["dias_desde_evaluacion"] >= 0).all()
 
 
-def test_objetivo_es_no_entrar_en_los_14_dias_siguientes(d):
+def test_objetivo_es_abandonar_la_materia(d):
+    """D67: abandona = no vuelve a entrar después del corte ni rinde una evaluación posterior a la trazabilidad."""
     corte = pd.Timestamp("2025-09-10")
     ds = ab.dataset(d, [corte])
-    assert ds["dias_sin_actividad"].lt(ABANDONO_HORIZONTE_DIAS).all()   # solo los que vienen entrando
+    assert ds["eventos_total"].gt(0).all()                                   # todos los que entraron alguna vez
+    assert ds["dias_sin_actividad"].ge(ABANDONO_HORIZONTE_DIAS).any()        # incluidos los alejados
     ev = d.interacciones[d.interacciones["en_base"]]
-    despues = ev[(ev["fecha"] > corte) & (ev["fecha"] <= corte + pd.Timedelta(days=ABANDONO_HORIZONTE_DIAS))]
-    entran = set(map(tuple, despues[ab.CLAVES].drop_duplicates().to_numpy()))
-    esperado = [tuple(r) not in entran for r in ds[ab.CLAVES].to_numpy()]
+    despues = ev[ev["fecha"] > corte]
+    siguen = set(map(tuple, despues[ab.CLAVES].drop_duplicates().to_numpy()))
+    siguen |= set(map(tuple, ab._notas_posteriores(d).to_numpy()))
+    esperado = [tuple(r) not in siguen for r in ds[ab.CLAVES].to_numpy()]
     assert ds["abandona"].tolist() == esperado
     assert 0 < ds["abandona"].mean() < 0.5
+    # los alejados abandonan mucho más que los que vienen entrando, pero no todos (muchos vuelven)
+    cur = ab._cursando(ds)
+    assert ds.loc[cur, "abandona"].mean() < ds.loc[~cur, "abandona"].mean() < 0.9
+
+
+def test_notas_posteriores_cuentan_como_seguir(d):
+    """Quien rinde una evaluación que no figura en la trazabilidad (posterior al último dato) no abandonó.
+    Hoy no hay ninguna: se simula corriendo la primera realización de un instrumento a después del final."""
+    ins = d.instrumentos.copy()
+    ins.loc[ins["id_instrumento"].eq("PYE-01"), "fecha_primera_realizacion"] = pd.NaT
+    otro = dataclasses.replace(d, instrumentos=ins)
+    tarde = ab._notas_posteriores(otro)
+    c = d.calificaciones
+    rindieron = c[c["id_instrumento"].eq("PYE-01") & c["rindio"]]
+    assert len(tarde) == len(rindieron) > 0
+    vuelven = ab._vuelven(otro, ab.fin_datos(d))   # después del último dato solo quedan esas notas
+    assert len(vuelven) == len(tarde)
 
 
 def test_las_fotos_conocen_su_desenlace(d):
     cortes = ab.cortes_entrenamiento(d)
     assert len(cortes) > 5
-    assert cortes.max() + pd.Timedelta(days=ABANDONO_HORIZONTE_DIAS) <= ab.fin_datos(d)
+    assert cortes.max() + pd.Timedelta(days=ABANDONO_SEGUIMIENTO_DIAS) <= ab.fin_datos(d)
+    assert all(ab.desenlace_conocido(d, c) for c in cortes)
     assert len(set(cortes.day_of_week)) > 1   # caen en distintos días de la semana
 
 
 def test_modelo_y_comparacion(modelo):
     c = modelo.comparacion
     assert set(c["modelo"]) == set(ab.NOMBRES_MODELOS.values())
-    assert set(c["conjunto"]) == {"validación cruzada", "prueba"}
+    assert set(c["conjunto"]) == {"validación cruzada", ab.VALIDACION_TEMPORAL, "prueba"}
     assert c.loc[c["elegido"], "modelo"].nunique() == 1 and modelo.nombre in c["modelo"].tolist()
     assert c["auc_roc"].between(0.5, 1).all()
     assert 0 < modelo.umbral < 1
-    # el elegido es el de menor costo en validación cruzada (sin contar la regla)
-    cv = c[c["conjunto"].eq("validación cruzada") & c["modelo"].ne(ab.REGLA)]
+    # el elegido es el de menor costo en la validación temporal (sin contar la regla, D67)
+    cv = c[c["conjunto"].eq(ab.VALIDACION_TEMPORAL) & c["modelo"].ne(ab.REGLA)]
     assert cv.loc[cv["elegido"], "costo"].item() == cv["costo"].min()
     # los modelos ordenan mejor que la regla en los alumnos de prueba
     p = c[c["conjunto"].eq("prueba")].set_index("modelo")
@@ -159,7 +180,7 @@ def test_joblib_ida_y_vuelta(d, modelo, carpeta_pipeline):
     leido = ab.cargar_modelo(d, ruta)
     assert leido.firma == ab.firma(d) and leido.umbral == modelo.umbral
     v = ab.variables(d, "2025-09-15")
-    v = v[ab._cursando(v)]
+    v = v[ab._con_actividad(v)]
     np.testing.assert_allclose(leido.probabilidad(v), modelo.probabilidad(v))
     # si los datos cambian, la firma no coincide y se reentrena
     menos = _hasta(d, "2025-10-20")
@@ -170,22 +191,25 @@ def test_joblib_ida_y_vuelta(d, modelo, carpeta_pipeline):
 def test_riesgo_cubre_la_base(d, modelo, fecha):
     r = ab.riesgo_abandono(d, fecha, modelo=modelo)
     assert len(r) == len(m.base(d)) and not r.duplicated(ab.CLAVES).any()
-    cur = r["estado_abandono"].eq(ab.CURSANDO)
-    assert r.loc[cur, "probabilidad"].between(0, 100).all()
-    assert r.loc[~cur, "probabilidad"].isna().all()
+    entro = r["estado_abandono"].ne(ab.SIN_ACTIVIDAD)
+    assert r.loc[entro, "probabilidad"].between(0, 100).all()
+    assert r.loc[~entro, "probabilidad"].isna().all()
     assert set(r["nivel_riesgo"]) <= set(ab.NIVELES)
     alto = r["nivel_riesgo"].eq(ab.ALTO)
     assert (r.loc[alto, "probabilidad"] >= 100 * modelo.umbral).all()
-    assert r.loc[r["estado_abandono"].eq(ab.YA_ABANDONO), "dias_sin_actividad"].ge(ABANDONO_HORIZONTE_DIAS).all()
+    assert r.loc[r["estado_abandono"].eq(ab.ALEJADO), "dias_sin_actividad"].ge(ABANDONO_HORIZONTE_DIAS).all()
+    assert r.loc[r["estado_abandono"].eq(ab.CURSANDO), "dias_sin_actividad"].lt(ABANDONO_HORIZONTE_DIAS).all()
     s = ab.resumen_riesgo(d, fecha, modelo=modelo)
-    niveles = ["riesgo_alto", "riesgo_medio", "riesgo_bajo", "ya_abandonaron", "sin_actividad"]
+    niveles = ["riesgo_alto", "riesgo_medio", "riesgo_bajo", "sin_actividad"]
     assert (s[niveles].sum(axis=1) == s["base"]).all()
+    assert (s["cursando"] + s["alejados"] + s["sin_actividad"] == s["base"]).all()
 
 
 def test_desenlace_solo_si_ya_se_sabe(d, modelo):
     pasado = ab.riesgo_abandono(d, "2025-09-15", modelo=modelo)
-    cur = pasado["estado_abandono"].eq(ab.CURSANDO)
-    assert pasado.loc[cur, "abandono_real"].notna().all()
+    entro = pasado["estado_abandono"].ne(ab.SIN_ACTIVIDAD)
+    assert pasado.loc[entro, "abandono_real"].notna().all()
+    assert ab.riesgo_abandono(d, "2025-10-10", modelo=modelo)["abandono_real"].isna().all()   # < 28 días después
     assert ab.riesgo_abandono(d, "2025-10-24", modelo=modelo)["abandono_real"].isna().all()
 
 

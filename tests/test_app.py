@@ -231,7 +231,7 @@ def test_bloque_de_riesgo_para_la_ficha(carpeta_pipeline, monkeypatch):
 
 def test_predictor_con_corte_pasado_y_otro_umbral(app):
     """Con una fecha de corte del pasado aparece el botón para volver; mover el umbral no rompe la página."""
-    app.date_input(key="fecha_corte").set_value("2025-10-10").run()
+    app.date_input(key="fecha_corte").set_value("2025-09-20").run()
     app.switch_page("paginas/ml_abandono.py").run()
     assert not app.exception, app.exception
     assert app.button(key="ab_volver") is not None

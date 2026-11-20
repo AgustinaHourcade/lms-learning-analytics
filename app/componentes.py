@@ -113,12 +113,12 @@ TONOS = {
 TONOS_MATERIA = {"ALG": dict(fondo="#EAF0F8", texto="#164279"), "AED": dict(fondo="#FBEFE6", texto="#8A4415"),
                  "PYE": dict(fondo="#E6F2EA", texto="#116040")}
 
-# Riesgo de abandono (D58): nivel del predictor o estado si no hace falta predecir.
+# Riesgo de abandono de la materia (D58, D67): nivel del predictor; sin actividad si nunca entró.
 TONO_RIESGO = {ml_abandono.ALTO: "alto", ml_abandono.MEDIO: "medio", ml_abandono.BAJO: "bajo",
-               ml_abandono.YA_ABANDONO: "abandono", ml_abandono.SIN_ACTIVIDAD: "neutro"}
+               ml_abandono.SIN_ACTIVIDAD: "neutro"}
 COLORES_RIESGO = {nivel: TONOS[tono]["fuerte"] for nivel, tono in TONO_RIESGO.items()}
 ICONOS_RIESGO = {ml_abandono.ALTO: "🔴", ml_abandono.MEDIO: "🟡", ml_abandono.BAJO: "🟢",
-                 ml_abandono.YA_ABANDONO: "⚫", ml_abandono.SIN_ACTIVIDAD: "⚪"}
+                 ml_abandono.SIN_ACTIVIDAD: "⚪"}
 
 # Secuencial (mapas de calor): un solo tono, de claro a oscuro.
 SECUENCIAL = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
@@ -626,7 +626,7 @@ _FORMAS_SVG["acento"] = _FORMAS_SVG["neutro"]
 TONO_CONDICION = {"Promociona": "bien", "Regular": "atencion", "Libre": "critico", SIN_EVALUACIONES: "neutro"}
 TONO_ACTIVIDAD = {ACTIVO: "bien", INACTIVO: "atencion", SIN_ACTIVIDAD: "neutro"}
 TONO_RIESGO_ESTADO = {ml_abandono.ALTO: "critico", ml_abandono.MEDIO: "atencion", ml_abandono.BAJO: "bien",
-               ml_abandono.YA_ABANDONO: "oscuro", ml_abandono.SIN_ACTIVIDAD: "neutro"}
+                      ml_abandono.SIN_ACTIVIDAD: "neutro"}
 
 
 def esc(texto) -> str:
@@ -880,7 +880,7 @@ def tabla_html(encabezados: list[str], filas: list[list[str]], clases: list[str]
 # Predictor de abandono (D58): bloques para la Ficha individual y Matrícula y alertas
 # ---------------------------------------------------------------------------
 def texto_riesgo(fila) -> str:
-    """'🔴 Alto · 42 %' o '⚫ Ya abandonó' (ícono + texto, nunca solo color)."""
+    """'🔴 Alto · 42 %' o '⚪ Sin actividad' (ícono + texto, nunca solo color)."""
     nivel = fila["nivel_riesgo"]
     prob = f" · {pct(fila['probabilidad'], 0)}" if pd.notna(fila["probabilidad"]) else ""
     return f"{ICONOS_RIESGO.get(nivel, '')} {nivel}{prob}"
@@ -901,16 +901,15 @@ def riesgo_abandono_alumno(id_alumno: str) -> None:
         with col.container(border=True):
             st.markdown(f"**{SIGLAS.get(fila['asignatura'], fila['asignatura'])}** · riesgo de abandono")
             st.markdown(f"### {texto_riesgo(fila)}")
-            if fila["estado_abandono"] == ml_abandono.CURSANDO:
-                st.caption(f"Probabilidad de no entrar en los próximos {ml_abandono.ABANDONO_HORIZONTE_DIAS} días "
-                           f"(riesgo alto desde {pct(umbral, 0)}).")
+            if fila["estado_abandono"] != ml_abandono.SIN_ACTIVIDAD:
+                alejado = (f" Hace {num(fila['dias_sin_actividad'])} días que no entra."
+                           if fila["estado_abandono"] == ml_abandono.ALEJADO else "")
+                st.caption("Probabilidad de abandonar la materia: no volver a entrar ni rendir nada más "
+                           f"(riesgo alto desde {pct(umbral, 0)}).{alejado}")
                 if fila["motivos"]:
                     st.markdown(f"Señales: {fila['motivos']}.")
                 if fila.get("advertencia"):
                     st.caption(fila["advertencia"])
-            elif fila["estado_abandono"] == ml_abandono.YA_ABANDONO:
-                st.caption(f"Hace {num(fila['dias_sin_actividad'])} días que no entra: ya cumple la definición "
-                           "de abandono. Conviene contactarlo.")
             else:
                 st.caption("Nunca entró al aula hasta la fecha de corte.")
     ev = metrica("evolucion_riesgo", id_alumno=id_alumno)
@@ -922,7 +921,7 @@ def riesgo_abandono_alumno(id_alumno: str) -> None:
         fig.add_hline(y=umbral, line_dash="dash", line_color=CRITICO, annotation_text="Riesgo alto")
         fig.update_layout(height=280, yaxis_range=[0, 100])
         st.plotly_chart(fig, width="stretch")
-        st.caption("Cada punto usa solo lo que se sabía ese día. Sin punto = ese día no venía entrando.")
+        st.caption("Cada punto usa solo lo que se sabía ese día. Sin punto = todavía no había entrado.")
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Machine learning: predictor de abandono (Etapa 7, D58).
+"""Machine learning: predictor de abandono de la materia (Etapa 7, D58; objetivo D67).
 
 Todo el cálculo está en src/ml_abandono.py; esta página solo lo muestra. El
 modelo se entrena una vez (con todas las materias) y se guarda con joblib junto
@@ -17,12 +17,13 @@ import componentes as comp
 from src import ml_abandono as ab
 
 H = ab.ABANDONO_HORIZONTE_DIAS
+SEG = ab.ABANDONO_SEGUIMIENTO_DIAS
 T = comp.TONOS
 f = comp.cabecera(
     "Predictor de abandono",
-    f"De los alumnos que <strong>todavía vienen entrando</strong> al aula (alguna interacción en los últimos "
-    f"{H} días), ¿quiénes <strong>no van a entrar en los próximos {H} días</strong>? Sirve para contactar a "
-    "tiempo a quien está por dejar, antes de que lo diga la regla “hace una semana que no entra”.")
+    "De los alumnos que <strong>ya entraron al aula</strong>, ¿quiénes van a <strong>abandonar la materia</strong>, "
+    "es decir, no van a volver a entrar ni a rendir nada más? Sirve para contactar a tiempo a quien está por "
+    f"dejar. Incluye a los que llevan {H} días o más sin entrar: casi la mitad de ellos vuelve.")
 
 info = comp.metrica("info_modelo")
 riesgo = comp.metrica("riesgo_abandono")
@@ -36,7 +37,7 @@ if st.session_state.get("ab_umbral_alto") not in OPCIONES_UMBRAL:
     st.session_state["ab_umbral_alto"] = u_modelo
 u = st.session_state["ab_umbral_alto"]
 
-cursa = riesgo["estado_abandono"].eq(ab.CURSANDO)
+cursa = riesgo["estado_abandono"].ne(ab.SIN_ACTIVIDAD)   # entraron alguna vez: a ellos se les predice
 if u != u_modelo:   # mismos cortes que src (alto >= u, medio >= u/2), con el umbral elegido acá
     p = riesgo["probabilidad"]
     riesgo["nivel_riesgo"] = np.select([~cursa, p >= u, p >= u / 2], [riesgo["estado_abandono"], ab.ALTO, ab.MEDIO],
@@ -44,6 +45,11 @@ if u != u_modelo:   # mismos cortes que src (alto >= u, medio >= u/2), con el um
 cuenta = riesgo["nivel_riesgo"].value_counts()
 n = {nivel: int(cuenta.get(nivel, 0)) for nivel in ab.NIVELES}
 cursando = int(cursa.sum())
+# Los alejados (14+ días sin entrar) van solo en su tarjeta: los niveles de las tarjetas y las barras
+# cuentan a los que siguen cursando.
+alejados = riesgo["estado_abandono"].eq(ab.ALEJADO)
+siguen = riesgo["estado_abandono"].eq(ab.CURSANDO)
+n_siguen = {nivel: int((siguen & riesgo["nivel_riesgo"].eq(nivel)).sum()) for nivel in ab.NIVELES}
 
 
 def _fmt_u(x: float) -> str:
@@ -72,15 +78,15 @@ conocido = riesgo[riesgo["abandono_real"].notna()]
 with der:
     if conocido.empty:
         hasta = pd.Timestamp(info["datos_hasta"])
-        prueba = min(hasta - pd.Timedelta(days=H), pd.Timestamp(f.fecha_corte) - pd.Timedelta(days=H))
+        prueba = min(hasta - pd.Timedelta(days=SEG), pd.Timestamp(f.fecha_corte) - pd.Timedelta(days=SEG))
         with comp.tarjeta("acierto", "ambar"):
             st.html(f'<div class="tfi"><h3 class="tfi-h3" style="color:#6B4700">'
                     f'<span style="color:{T["medio"]["fuerte"]};display:flex">{comp.icono("medio", 15)}</span>'
                     f'Todavía no sabemos si acierta</h3>'
                     f'<p class="tfi-p" style="color:{T["medio"]["texto"]};margin-top:8px">Con el corte en '
-                    f'{comp.fmt_fecha(f.fecha_corte)} no hay {H} días posteriores para comparar: los datos llegan hasta '
-                    f'el {comp.fmt_fecha(hasta)}. Para ver cuánto hubiera acertado, mové la fecha de corte dos semanas '
-                    "hacia atrás.</p></div>")
+                    f'{comp.fmt_fecha(f.fecha_corte)} no hay {SEG} días posteriores para saber quién volvió: los datos '
+                    f'llegan hasta el {comp.fmt_fecha(hasta)}. Para ver cuánto hubiera acertado, mové la fecha de '
+                    f"corte al {prueba:%d/%m} o antes.</p></div>")
             st.button(f"Probar con corte {prueba:%d/%m}", on_click=_ir_a, args=(prueba,), key="ab_probar")
     else:
         real = conocido["abandono_real"].astype(bool)
@@ -92,11 +98,12 @@ with der:
             st.html(f'<div class="tfi"><h3 class="tfi-h3" style="color:{T["bajo"]["texto"]}">'
                     f'<span style="display:flex">{comp.icono("bajo", 15)}</span>Esta fecha ya pasó: se puede ver qué '
                     f'hubiera acertado</h3><p class="tfi-p" style="color:{T["bajo"]["texto"]};margin-top:8px">'
-                    f'De los {comp.num(cursando)} que venían entrando, <strong>{comp.num(real.sum())} no volvieron a '
-                    f'entrar</strong> en los {H} días siguientes. El modelo marcó a {comp.num(alto.sum())} en riesgo '
-                    f'alto y detectó a <strong>{comp.num(det_mod)} ({comp.pct(100 * det_mod / tot, 0)})</strong>. '
-                    f'La regla “más de {f.umbral} días sin entrar” marcó a {comp.num(regla.sum())} y detectó a '
-                    f'{comp.num(det_regla)} ({comp.pct(100 * det_regla / tot, 0)}).</p>'
+                    f'De los {comp.num(cursando)} que habían entrado, <strong>{comp.num(real.sum())} abandonaron</strong>: '
+                    f'no volvieron a entrar ni rindieron nada más hasta el {comp.fmt_fecha(info["datos_hasta"])}. El '
+                    f'modelo marcó a {comp.num(alto.sum())} en riesgo alto y detectó a <strong>{comp.num(det_mod)} '
+                    f'({comp.pct(100 * det_mod / tot, 0)})</strong>. La regla “más de {f.umbral} días sin entrar” '
+                    f'marcó a {comp.num(regla.sum())} y detectó a {comp.num(det_regla)} '
+                    f'({comp.pct(100 * det_regla / tot, 0)}).</p>'
                     f'<p class="tfi-p" style="color:{T["bajo"]["texto"]};margin-top:6px;font-size:11.5px">Ojo: el '
                     "modelo se entrenó con fotos de estas mismas semanas, así que acá acierta algo más que con "
                     "alumnos nuevos. La medida honesta es la de los alumnos de prueba (al final).</p></div>")
@@ -109,53 +116,58 @@ if riesgo.attrs.get("aviso"):
             f'align-items:center">{comp.icono("medio", 13)}{comp.esc(riesgo.attrs["aviso"])}</p></div>')
 
 # --- Indicadores ---------------------------------------------------------------------------
-def _de_cursando(x: int) -> str:
-    return comp.pct(100 * x / cursando, 0) if cursando else "–"
+def _de_siguen(x: int) -> str:
+    return comp.pct(100 * x / siguen.sum(), 0) if siguen.any() else "–"
 
 
 comp.kpis([
-    comp.kpi("Vienen entrando", comp.num(cursando), "el modelo opina sobre estos"),
-    comp.kpi("Riesgo alto", comp.num(n[ab.ALTO]), f"{_de_cursando(n[ab.ALTO])} de los que entran · desde "
-             f"{_fmt_u(u)}", "alto"),
-    comp.kpi("Riesgo medio", comp.num(n[ab.MEDIO]), f"{_de_cursando(n[ab.MEDIO])} · seguirlos de cerca", "medio"),
-    comp.kpi("Ya abandonaron", comp.num(n[ab.YA_ABANDONO]),
-             f"{H} días o más sin entrar · + {comp.num(n[ab.SIN_ACTIVIDAD])} que nunca entraron", "abandono"),
+    comp.kpi("Entraron alguna vez", comp.num(cursando),
+             f"el modelo opina sobre estos · + {comp.num(n[ab.SIN_ACTIVIDAD])} que nunca entraron"),
+    comp.kpi("Riesgo alto", comp.num(n_siguen[ab.ALTO]), f"{_de_siguen(n_siguen[ab.ALTO])} de los que siguen "
+             f"cursando · desde {_fmt_u(u)}", "alto"),
+    comp.kpi("Riesgo medio", comp.num(n_siguen[ab.MEDIO]), f"{_de_siguen(n_siguen[ab.MEDIO])} de los que siguen "
+             "cursando · seguirlos de cerca", "medio"),
+    comp.kpi("Alejados", comp.num(alejados.sum()),
+             f"{H} días o más sin entrar · {comp.num((alejados & riesgo['nivel_riesgo'].eq(ab.ALTO)).sum())} "
+             "en riesgo alto", "abandono"),
 ])
 
 # --- Por materia + umbral ------------------------------------------------------------------
 izq, der = st.columns([1.1, 1], gap="small")
 with izq:
-    por = riesgo.groupby(["asignatura", "nivel_riesgo"]).size().unstack(fill_value=0).reindex(columns=ab.NIVELES,
-                                                                                             fill_value=0)
-    por = por.assign(total=por.sum(axis=1)).sort_values(ab.ALTO, ascending=False)
-    peor_alto = por[ab.ALTO].idxmax() if len(por) > 1 else None
-    tasa_ya = por[ab.YA_ABANDONO] / por["total"]
-    peor_ya = tasa_ya.idxmax() if len(por) > 1 else None
+    ALEJADOS = "Alejados"
+    grupo = riesgo["nivel_riesgo"].where(~alejados, ALEJADOS)
+    columnas = [ab.ALTO, ab.MEDIO, ab.BAJO, ALEJADOS, ab.SIN_ACTIVIDAD]
+    por = riesgo.groupby(["asignatura", grupo]).size().unstack(fill_value=0).reindex(columns=columnas, fill_value=0)
+    por = por.assign(total=por.sum(axis=1), siguen=por[[ab.ALTO, ab.MEDIO, ab.BAJO]].sum(axis=1))
+    tasa_alto = por[ab.ALTO] / por["siguen"].replace(0, np.nan)
+    por = por.assign(_t=tasa_alto.fillna(0)).sort_values("_t", ascending=False)
+    peor_alto = tasa_alto.idxmax() if len(por) > 1 and tasa_alto.notna().any() else None
+    colores = {**comp.COLORES_RIESGO, ALEJADOS: T["abandono"]["fuerte"]}
     bloques = []
     for asig, fila in por.iterrows():
-        nota, tono = f"{comp.num(fila[ab.ALTO])} en riesgo alto · {comp.num(fila[ab.YA_ABANDONO])} ya abandonaron", None
-        if asig == peor_ya:
-            nota, tono = (f"{comp.num(fila[ab.YA_ABANDONO])} ya abandonaron ({comp.pct(100 * tasa_ya[asig], 0)}): "
-                          f"la que más alumnos perdió · {comp.num(fila[ab.ALTO])} en riesgo alto"), "alto"
-        elif asig == peor_alto:
-            nota += ": la que más riesgo alto tiene"
-        segmentos = [(nivel, int(fila[nivel]), comp.COLORES_RIESGO[nivel]) for nivel in ab.NIVELES]
+        tasa = comp.pct(100 * tasa_alto[asig], 0) if pd.notna(tasa_alto[asig]) else "–"
+        nota, tono = (f"{comp.num(fila[ab.ALTO])} en riesgo alto ({tasa} de los que siguen) · "
+                      f"{comp.num(fila[ALEJADOS])} alejados"), None
+        if asig == peor_alto:
+            nota, tono = nota + ": la que más riesgo alto tiene", "alto"
+        segmentos = [(c, int(fila[c]), colores[c]) for c in columnas]
         bloques.append(comp.barra_apilada(asig, fila["total"], segmentos, nota, tono))
     st.html('<div class="tfi tfi-card" style="height:100%">'
-            + comp.titulo_tarjeta("Riesgo por materia", "Sobre la base completa de cada materia, incluidos los que "
-                                  "ya dejaron.")
+            + comp.titulo_tarjeta("Riesgo por materia", f"Sobre la base completa de cada materia. Los niveles son de "
+                                  f"los que siguen cursando; los alejados ({H} días o más sin entrar) van aparte.")
             + "".join(bloques)
-            + comp.leyenda([("Alto", "alto"), ("Medio", "medio"), ("Bajo", "bajo"), ("Ya abandonó", "abandono"),
+            + comp.leyenda([("Alto", "alto"), ("Medio", "medio"), ("Bajo", "bajo"), ("Alejados", "abandono"),
                             ("Nunca entró", "neutro")])
             + "</div>")
 
 with der, comp.tarjeta("umbral"):
     st.html('<div class="tfi">' + comp.titulo_tarjeta(
-        "Dónde poner el corte", "Cómo se reparten las probabilidades de los que vienen entrando. La línea marca el "
+        "Dónde poner el corte", "Cómo se reparten las probabilidades de los que entraron alguna vez. La línea marca el "
         "umbral de “riesgo alto”: moverla cambia a cuánta gente hay que contactar.") + "</div>")
     prob = riesgo.loc[cursa, "probabilidad"].dropna()
     if prob.empty:
-        st.caption("Nadie viene entrando a esta fecha de corte.")
+        st.caption("Nadie entró todavía a esta fecha de corte.")
     else:
         ancho = 2.5
         tope = max(np.ceil(max(prob.max(), u) / ancho) * ancho, 20)
@@ -204,9 +216,7 @@ CORTOS = [(r"^su actividad bajó de (\d+) a (\d+) interacciones$", r"actividad b
 def _motivos(fila) -> list[str]:
     """Chips de 'por qué': las señales de src, cortas, con el texto completo en el tooltip."""
     chips = []
-    if fila["estado_abandono"] == ab.YA_ABANDONO:
-        chips.append(comp.chip(f"{fila['dias_sin_actividad']:.0f} días sin entrar", "abandono", True))
-    elif fila["estado_abandono"] == ab.SIN_ACTIVIDAD:
+    if fila["estado_abandono"] == ab.SIN_ACTIVIDAD:   # los días sin entrar ya vienen en las señales
         chips.append(comp.chip("nunca entró al aula", "neutro", True))
     for m in filter(None, str(fila["motivos"]).split("; ")):
         corto = m.split(" (")[0]
@@ -232,8 +242,9 @@ def _riesgo(fila) -> str:
 with comp.tarjeta("contactar"):
     st.html('<div class="tfi">' + comp.titulo_tarjeta(
         "A quién contactar", "Ordenados por nivel y probabilidad. Las señales dicen por qué el modelo lo marcó; "
-        "la probabilidad sale del modelo, que las pesa todas juntas.") + "</div>")
-    st.session_state.setdefault("ab_niveles", [ab.ALTO, ab.YA_ABANDONO])
+        "la probabilidad sale del modelo, que las pesa todas juntas. La lista incluye a los alejados con ese "
+        "nivel: también conviene contactarlos.") + "</div>")
+    st.session_state.setdefault("ab_niveles", [ab.ALTO])
     niveles = st.pills("Niveles", ab.NIVELES, selection_mode="multi", key="ab_niveles",
                        format_func=lambda x: f"{x} ({comp.num(n[x])})", label_visibility="collapsed")
     lista = riesgo[riesgo["nivel_riesgo"].isin(niveles or [])].copy()
@@ -283,8 +294,8 @@ with comp.tarjeta("contactar"):
 # alumnos de la base de la materia de la barra, ordenados por apellido; muestra al primero.
 with comp.tarjeta("alumno"):
     st.html('<div class="tfi">' + comp.titulo_tarjeta(
-        "Buscar un alumno", "Su riesgo en cada materia, cómo evolucionó y sus indicadores contra la mediana "
-        "del curso.") + "</div>")
+        "Buscar un alumno", "Su riesgo en cada materia, cómo evolucionó, sus notas y sus indicadores contra la "
+        "mediana del curso.") + "</div>")
     alumnos = comp.metrica("buscar_alumnos", texto="", solo_base=True)
     if alumnos.empty:
         st.info(f"No hay alumnos en la base de {f.materia.lower()}.", icon=":material/person_off:")
@@ -306,10 +317,41 @@ with comp.tarjeta("alumno"):
         # Tarjeta por materia (nivel, probabilidad, señales) y evolución semana a semana.
         comp.riesgo_abandono_alumno(id_alumno)
 
+        # Sus notas a la fecha de corte: nota y condición por materia y cada instrumento contra el curso.
+        ficha = comp.metrica("ficha_alumno", id_alumno=id_alumno)
+        st.markdown("**Sus notas a la fecha de corte**")
+        tono_cond = {"Libre": "alto", "Regular": "medio", "Promociona": "bajo"}
+        filas_nota = []
+        for _, mt in ficha["materias"].iterrows():
+            filas_nota.append([
+                comp.insignia_materia(mt["asignatura"]),
+                f'<strong style="font-weight:600">{comp.num(mt["nota_final"], 1)}</strong>'
+                f'<span class="sec"> / {comp.num(mt["escala"])}</span>',
+                comp.chip(mt["condicion"], tono_cond.get(mt["condicion"], "neutro"), chico=True),
+                f'{comp.num(mt["rendidos"])} de {comp.num(mt["instrumentos"])}',
+                comp.num(mt["promedio_nota_final"], 1),
+            ])
+        st.html(comp.tabla_html(["Materia", "Nota a la fecha", "Condición", "Rendidos", "Promedio del curso"],
+                                filas_nota, ["", "num", "", "num", "num"]))
+        inst = ficha["instrumentos"].sort_values(["asignatura", "orden"])
+        notas = pd.DataFrame({
+            "Materia": inst["asignatura"].map(comp.SIGLAS), "Instrumento": inst["instrumento"],
+            "Fecha": inst["fecha_instrumento"], "Rindió": inst["rindio"].map({True: "Sí", False: "No"}),
+            "Nota (%)": inst["nota_pct_corte"],
+            "Promedio curso (%)": inst["promedio_curso_pct"],
+        })
+        st.dataframe(notas, hide_index=True, width="stretch",
+                     column_config={"Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"),
+                                    "Nota (%)": st.column_config.NumberColumn(format="%.1f"),
+                                    "Promedio curso (%)": st.column_config.NumberColumn(help="Promedio de quienes lo rindieron", 
+                                        format="%.1f")})
+        st.caption("Lo no rendido cuenta 0 para la nota y la condición. Con recuperatorio, vale la nota del "
+                   "recuperatorio. La nota final de Álgebra se proyecta sobre 120.")
+
         # Sus indicadores contra la mediana de quienes vienen entrando en la misma materia.
         todos = comp.metrica("riesgo_abandono", asignatura=None)
         suyo = todos[todos["id_alumno"].eq(id_alumno)]
-        curso = todos[todos["estado_abandono"].eq(ab.CURSANDO)].groupby("asignatura")
+        curso = todos[todos["estado_abandono"].ne(ab.SIN_ACTIVIDAD)].groupby("asignatura")
         indicadores = ["dias_sin_actividad", "pausa_habitual", "dias_desde_evaluacion", "nota_pct", "pct_rendidos",
                        "eventos_14d_otras", "eventos_7d", "eventos_14d", "eventos_14d_previos", "dias_activos_14d",
                        "sesiones_14d", "minutos_14d", "evaluaciones_14d", "pct_semanas_activas", "eventos_total"]
@@ -324,18 +366,21 @@ with comp.tarjeta("alumno"):
         st.markdown("**Sus indicadores a la fecha de corte**")
         st.dataframe(resumen, hide_index=True, width="stretch",
                      column_config={c: st.column_config.NumberColumn(format="%.0f") for c in resumen.columns[1:]})
-        st.caption("Mediana del curso = la de los alumnos de esa materia que vienen entrando (a quienes se les "
+        st.caption("Mediana del curso = la de los alumnos de esa materia que entraron alguna vez (a quienes se les "
                    f"predice). Son las mismas variables que usa el modelo, calculadas solo con la actividad hasta "
-                   f"el {comp.fmt_fecha(f.fecha_corte)}. Para notas y participación, ver la Ficha individual.")
+                   f"el {comp.fmt_fecha(f.fecha_corte)}. Para la participación y la trazabilidad, ver la Ficha individual.")
         comp.boton_csv(resumen, f"riesgo_{id_alumno}")
 
 # --- Cómo funciona -----------------------------------------------------------------------
 with st.expander("Cómo se armó el modelo y qué tan bueno es", icon=":material/science:"):
     st.markdown(
         f"1. **Fotos de la cursada.** Cada {ab.ABANDONO_PASO_DIAS} días, del {comp.fmt_fecha(info['primera_foto'])} al "
-        f"{comp.fmt_fecha(info['ultima_foto'])} ({info['fotos']} fotos), se miró a cada alumno que venía entrando y "
-        f"se anotó si entró o no en los {H} días siguientes. Son {comp.num(info['filas'])} casos de "
-        f"{comp.num(info['alumnos'])} alumnos; abandona el **{comp.pct(info['tasa_abandono'])}**.\n"
+        f"{comp.fmt_fecha(info['ultima_foto'])} ({info['fotos']} fotos), se miró a cada alumno que ya había entrado "
+        "y se anotó si **abandonó la materia**: si no volvió a entrar ni rindió nada más hasta el final de los "
+        f"datos ({comp.fmt_fecha(info['datos_hasta'])}). La última foto es {SEG} días antes, para tener al menos 4 "
+        f"semanas de seguimiento: aun después de 4 semanas sin entrar, casi la mitad vuelve. Son "
+        f"{comp.num(info['filas'])} casos de {comp.num(info['alumnos'])} alumnos; abandona el "
+        f"**{comp.pct(info['tasa_abandono'])}**.\n"
         f"2. **Variables ({len(ab.VARIABLES)}):** todo con lo que se sabía el día de la foto. Actividad reciente, "
         "su pausa habitual entre días activos, lo que hace en sus otras materias, los días desde la última "
         "evaluación de la materia y su nota a la fecha. Cada nota cuenta desde el día en que ese alumno rindió "
@@ -343,25 +388,30 @@ with st.expander("Cómo se armó el modelo y qué tan bueno es", icon=":material
         "participación no se usa porque es una foto al 24/10.\n"
         "3. **Validación separando por alumno:** el 25 % de los alumnos "
         f"({comp.num(info['alumnos_prueba'])}) quedó afuera del entrenamiento en todas sus fotos y materias, y se "
-        "usó solo para medir. Así el modelo no \"reconoce\" a un alumno que ya vio.\n"
+        "usó solo para medir. Así el modelo no \"reconoce\" a un alumno que ya vio. Además, una **validación "
+        "temporal**: se entrena con las fotos tempranas de unos alumnos y se predicen las tardías de otros, que es "
+        "lo que pasa en la app (se predice en fechas posteriores a las que el modelo vio).\n"
         f"4. **Umbral por costo** (como en la clase 10): no detectar a quien abandona cuesta {info['costo_fn']} y "
         f"contactar a alguien que iba a seguir cuesta {info['costo_fp']}. El umbral que minimiza el costo es "
         f"**{comp.pct(u_modelo)}**: bajo, porque perder un alumno es mucho más caro que un mensaje de más.\n"
-        f"5. **Modelo elegido: {info['nombre']}**, el de menor costo en la validación cruzada.")
+        f"5. **Modelo elegido: {info['nombre']}**, el de menor costo en la validación temporal.")
     comparacion = comp.metrica("comparacion_modelos")
     prueba = comparacion[comparacion["conjunto"].eq("prueba")]
     costo_cv = comparacion[comparacion["conjunto"].eq("validación cruzada")].set_index("modelo")["costo_por_100"]
+    costo_t = comparacion[comparacion["conjunto"].eq(ab.VALIDACION_TEMPORAL)].set_index("modelo")["costo_por_100"]
     st.markdown("**Comparación en los alumnos de prueba**")
     st.dataframe(pd.DataFrame({
         "Modelo": prueba["modelo"] + prueba["elegido"].map({True: " ✓", False: ""}),
+        "Costo cada 100 (validación temporal)": prueba["modelo"].map(costo_t),
         "Costo cada 100 (validación cruzada)": prueba["modelo"].map(costo_cv),
         "AUC ROC": prueba["auc_roc"], "AUC PR": prueba["auc_pr"],
         "Precisión (%)": prueba["precision"], "Recall (%)": prueba["recall"],
         "Marcados (%)": prueba["pct_marcados"], "Costo cada 100 (prueba)": prueba["costo_por_100"],
     }), hide_index=True, width="stretch")
-    st.caption("El modelo se elige por el costo en validación cruzada (✓), que usa a todos los alumnos de "
-               "entrenamiento repartidos en 5 grupos. La prueba es una sola partición de un cuarto de los alumnos: "
-               "sirve para informar, y con tan pocos alumnos puede ordenar los modelos distinto.")
+    st.caption("El modelo se elige por el costo en la validación temporal (✓): un modelo que extrapola mal a "
+               "fechas que no vio (como la regresión logística) puede ganar en la validación cruzada común y "
+               "equivocarse mucho en la app. La prueba es una sola partición de un cuarto de los alumnos: sirve "
+               "para informar, y con tan pocos alumnos puede ordenar los modelos distinto.")
     st.caption("AUC ROC: qué tan bien ordena (0,5 = azar, 1 = perfecto). AUC PR: lo mismo, mirando solo a los que "
                f"abandonan (azar = {comp.num(info['tasa_abandono'] / 100, 2)}). Precisión: de los marcados, cuántos "
                "abandonaron. Recall: de los que abandonaron, a cuántos marcó. La regla simple marca a quien lleva más "
@@ -395,9 +445,11 @@ with st.expander("Cómo se armó el modelo y qué tan bueno es", icon=":material
     st.plotly_chart(fig, width="stretch", theme=None)
     st.markdown(
         "**Limitaciones.** Una sola cursada y unos 210 alumnos por materia (226 personas distintas): el modelo "
-        "aprende cómo se comportó esta cohorte y habría que revalidarlo con la próxima. \"Abandono\" acá es dejar "
-        f"de entrar {H} días, no la baja formal: algunos vuelven, por ejemplo después de un parcial. Los modelos "
-        "mejoran a la regla simple, pero la mayoría de los marcados igual no abandona. Por eso sirve para "
-        "**priorizar a quién contactar**, no para decidir nada sobre un alumno. Además, el modelo solo aprende de "
-        f"fotos con {H} días posteriores conocidos: la pausa que sigue a una evaluación muy reciente todavía no la "
-        "vio, y en esos casos puede exagerar el riesgo (la página lo avisa).")
+        "aprende cómo se comportó esta cohorte y habría que revalidarlo con la próxima. \"Abandonar\" es no "
+        "volver a entrar ni rendir nada más **dentro de los datos que hay**: alguien que vuelve después del último "
+        "dato cuenta como abandono (salvo que tenga una nota posterior, como la Evaluación Semanal Nº3 de PyE). "
+        f"Las fotos tienen entre {SEG} y más de 60 días de seguimiento, y al predecir hoy el resto de la cursada es "
+        "más largo, así que el riesgo puede estar algo exagerado. El modelo mejora a la regla simple por poco: "
+        "su ventaja es separar mejor entre los que no entran hace poco. Sirve para **priorizar a quién "
+        "contactar**, no para decidir nada sobre un alumno. Además, la pausa que sigue a una evaluación muy "
+        "reciente el modelo no la vio, y en esos casos puede exagerar el riesgo (la página lo avisa).")

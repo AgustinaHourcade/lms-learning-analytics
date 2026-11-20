@@ -39,10 +39,16 @@ def test_nombres_segun_centroide():
     assert c["descripcion_grupo"].notna().all()
 
 
-def test_nombres_repetidos_se_numeran():
-    c = g._nombrar(_centros([(0.9, 0.9), (0.3, 0.2), (-1.5, -1.0)]))
-    assert sorted(c["nombre_grupo"]) == ["Comprometidos (1)", "Comprometidos (2)", "Desconectados"]
-    assert c.loc[c["grupo"].eq(1), "nombre_grupo"].item() == "Comprometidos (1)"
+def test_grupos_del_mismo_tipo_llevan_nombres_distintos():
+    c = g._nombrar(_centros([(0.9, 0.9), (0.3, 0.2), (-1.5, -1.0), (-2.5, -1.5)]))
+    assert c.sort_values("grupo")["nombre_grupo"].tolist() == [
+        "Muy comprometidos", "Comprometidos", "Desconectados", "Ausentes"]
+    assert c.sort_values("grupo")["tipo_grupo"].tolist() == [
+        "Comprometidos", "Comprometidos", "Desconectados", "Desconectados"]
+    assert c["descripcion_grupo"].notna().all() and c["nombre_grupo"].is_unique
+    # tres del mismo tipo: se numeran
+    c = g._nombrar(_centros([(0.9, 0.9), (0.5, 0.5), (0.2, 0.2)]))
+    assert sorted(c["nombre_grupo"]) == ["Comprometidos (1)", "Comprometidos (2)", "Comprometidos (3)"]
 
 
 def test_matriz_estandariza_dentro_de_cada_materia():
@@ -156,3 +162,12 @@ def test_mapa_pca(d):
     assert c.loc[1, "eje1"] == c["eje1"].max()
     assert c["alumnos"].sum() == len(r["alumnos"])
     assert g.mapa_grupos(d, "2025-07-01")["alumnos"].empty
+
+
+def test_indices_de_k_y_estabilidad(d):
+    r = g.evaluar_k(d)
+    assert (r["davies_bouldin"] > 0).all() and (r["calinski_harabasz"] > 0).all()
+    e = g.estabilidad(d, repeticiones=5)
+    assert len(e) == 5 and e["ari"].between(-1, 1).all()
+    assert e["k"].eq(r.loc[r["elegido"], "k"].item()).all()
+    assert g.estabilidad(d, "2025-07-01").empty

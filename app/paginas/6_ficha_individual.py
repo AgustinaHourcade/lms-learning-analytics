@@ -42,10 +42,10 @@ ab = comp.ml_abandono   # constantes del predictor (estados, niveles y horizonte
 GRIS = "#D9D6CF"
 
 # Orden de gravedad del riesgo (para ordenar la tabla y elegir el "peor" de cada alumno).
-PRIORIDAD_RIESGO = {ab.YA_ABANDONO: 4, ab.ALTO: 3, ab.MEDIO: 2, ab.BAJO: 1, ab.SIN_ACTIVIDAD: 0}
-TEXTO_RIESGO = {ab.YA_ABANDONO: "ya abandonó una materia", ab.ALTO: "riesgo alto", ab.MEDIO: "riesgo medio",
-                ab.BAJO: "riesgo bajo", ab.SIN_ACTIVIDAD: "sin actividad"}
-EN_RIESGO = {ab.ALTO, ab.YA_ABANDONO}
+PRIORIDAD_RIESGO = {ab.ALTO: 3, ab.MEDIO: 2, ab.BAJO: 1, ab.SIN_ACTIVIDAD: 0}
+TEXTO_RIESGO = {ab.ALTO: "riesgo alto", ab.MEDIO: "riesgo medio", ab.BAJO: "riesgo bajo",
+                ab.SIN_ACTIVIDAD: "sin actividad"}
+EN_RIESGO = {ab.ALTO}
 
 # Alertas (D37): cómo se agrupan, qué tan graves son y qué conviene hacer.
 ORDEN_ALERTAS = ["sin_actividad", "sin_notas", "libre", "inactivo", "no_inscripto"]
@@ -271,39 +271,39 @@ chips.append(comp.chip_estado(f"{materias['rendidos'].sum()} de {materias['instr
 for m in materias.loc[~materias["inscripto"], "asignatura"]:
     chips.append(comp.chip_estado(f"No inscripto en {esc(comp.SIGLAS[m])}", "atencion", con_icono=True))
 
-# Riesgo: el más alto entre las materias que viene cursando; si no cursa ninguna, su estado.
-cursando = riesgo[riesgo["estado_abandono"] == ab.CURSANDO]
+# Riesgo: el más alto entre las materias a las que entró alguna vez; si no entró a ninguna, su estado.
+cursando = riesgo[riesgo["estado_abandono"] != ab.SIN_ACTIVIDAD]
 otros = []
 if not cursando.empty:
     m_r = cursando["probabilidad"].idxmax()
     r = cursando.loc[m_r]
     tono = comp.TONO_RIESGO_ESTADO[r["nivel_riesgo"]]
     curso = riesgo_todos.loc[(riesgo_todos["asignatura"] == m_r)
-                             & (riesgo_todos["estado_abandono"] == ab.CURSANDO), "probabilidad"].mean()
+                             & (riesgo_todos["estado_abandono"] != ab.SIN_ACTIVIDAD), "probabilidad"].mean()
     valor = (f'<b class="tfi-num">{esc(r["nivel_riesgo"])}</b><b class="tfi-num">{comp.pct(r["probabilidad"], 0)}</b>'
              f'<span class="tfi-num" style="font-size:12px;font-weight:500">'
              f'{signo(r["probabilidad"] - curso, 0)} pts vs. curso</span>')
     kicker_der = f"curso {comp.pct(curso, 0)}"
     titulo_r = f"Riesgo de abandono · {esc(comp.SIGLAS[m_r])}"
     barra_r = comp.barra(r["probabilidad"], comp.TONOS_ESTADO[tono][2], alto=9, marca=curso)
-    explica = (f"Probabilidad de que no entre en los próximos {ab.ABANDONO_HORIZONTE_DIAS} días. "
+    explica = ("Probabilidad de que abandone la materia: que no vuelva a entrar ni rinda nada más. "
+               + (f"Hace {comp.num(r['dias_sin_actividad'])} días que no entra. "
+                  if r["estado_abandono"] == ab.ALEJADO else "")
                + (f"Pesan más: {esc(r['motivos'])}." if r["motivos"] else "")
                + (f" <i>{esc(r['advertencia'])}</i>" if r.get("advertencia") else ""))
     otros = [m for m in riesgo.index if m != m_r]
     nivel_txt = f"Nivel {r['nivel_riesgo']}"
 else:
-    estado = riesgo["estado_abandono"].iloc[0] if not riesgo.empty else ab.SIN_ACTIVIDAD
-    nivel = ab.YA_ABANDONO if (riesgo["estado_abandono"] == ab.YA_ABANDONO).any() else estado
+    nivel = ab.SIN_ACTIVIDAD
     tono = comp.TONO_RIESGO_ESTADO.get(nivel, "neutro")
     valor, kicker_der, barra_r = f"<b>{esc(nivel)}</b>", "", ""
     titulo_r, nivel_txt = "Riesgo de abandono", nivel
-    explica = ("No entra a ninguna de sus materias hace 14 días o más: ya cumple la definición de abandono. "
-               "Conviene contactarlo." if nivel == ab.YA_ABANDONO else "Nunca entró al aula hasta la fecha de corte.")
+    explica = "Nunca entró al aula hasta la fecha de corte."
 for m in otros:
     o = riesgo.loc[m]
-    if o["estado_abandono"] == ab.YA_ABANDONO:
-        explica += f" En {esc(comp.SIGLAS[m])} ya abandonó ({comp.num(o['dias_sin_actividad'])} días sin entrar)."
-    elif o["estado_abandono"] == ab.SIN_ACTIVIDAD:
+    if o["estado_abandono"] != ab.SIN_ACTIVIDAD:
+        explica += f" En {esc(comp.SIGLAS[m])}: riesgo {o['nivel_riesgo'].lower()} ({comp.pct(o['probabilidad'], 0)})."
+    else:
         explica += f" En {esc(comp.SIGLAS[m])} nunca entró."
 fondo, color, solido = comp.TONOS_ESTADO[tono]
 comp.html(f"""

@@ -2,17 +2,22 @@
 ETAPA 7 - ML: predictor de abandono (D58). Va en la Ficha individual y en
 Matrícula y alertas.
 
-Pregunta: de los alumnos que vienen entrando al aula, ¿quiénes van a dejar de
-entrar en las próximas 2 semanas?
+Pregunta: de los alumnos que ya entraron al aula, ¿quiénes van a abandonar la
+materia, es decir, no van a volver a entrar ni a rendir nada más?
 
-  * Objetivo: a una fecha de corte c, un alumno de la base que tuvo actividad
-    en los últimos 14 días (ABANDONO_HORIZONTE_DIAS) "abandona" si NO tiene
-    ninguna interacción en los 14 días siguientes (c, c + 14]. Quien ya lleva
-    14 días o más sin entrar ya cumple la definición ("Ya abandonó") y quien
-    nunca entró queda "Sin actividad" (D35): no hace falta predecir nada.
+  * Objetivo (D67): a una fecha de corte c, un alumno de la base que entró
+    alguna vez "abandona" si NO tiene ninguna interacción en la materia después
+    de c ni rinde una evaluación posterior a la trazabilidad (por ej. una nota
+    exportada después del último dato). Se predice también para los que llevan
+    14 días o más sin entrar ("Alejado"): casi la mitad vuelve. Quien nunca
+    entró queda "Sin actividad" (D35).
+    Antes (D58-D66) el objetivo era "no entra en los próximos 14 días", pero
+    más de la mitad de los que dejaban 2 semanas volvían: medía pausas.
   * Datos de entrenamiento: "fotos" de la cursada cada 3 días
-    (ABANDONO_PASO_DIAS), desde el día 14 hasta 14 días antes del último dato,
-    para saber qué pasó después. Un mismo alumno aparece en varias fotos.
+    (ABANDONO_PASO_DIAS), desde el día 14 hasta ABANDONO_SEGUIMIENTO_DIAS (28)
+    días antes del último dato, para tener al menos 4 semanas de seguimiento.
+    El seguimiento va de 28 días (última foto) a más de 60 (primera). Un mismo
+    alumno aparece en varias fotos.
   * Variables (VARIABLES), todas con lo que se sabía el día de la foto, sin nada
     del futuro: días sin entrar, interacciones y sesiones de las últimas 1 y 2
     semanas, tendencia, % de semanas con actividad, etc. Desde D64 también:
@@ -78,8 +83,8 @@ from sklearn.preprocessing import FunctionTransformer, StandardScaler
 
 from src import metricas as m
 from src.config import (ABANDONO_ARCHIVO, ABANDONO_COSTO_FN, ABANDONO_COSTO_FP, ABANDONO_HORIZONTE_DIAS,
-                        ABANDONO_PASO_DIAS, ABANDONO_REGLA_DIAS, ABANDONO_SEMILLA, ESQUEMA, GOLD,
-                        UMBRAL_INACTIVIDAD_DIAS)
+                        ABANDONO_PASO_DIAS, ABANDONO_REGLA_DIAS, ABANDONO_SEGUIMIENTO_DIAS, ABANDONO_SEMILLA,
+                        ESQUEMA, GOLD, UMBRAL_INACTIVIDAD_DIAS)
 from src.modelo import clave_instrumento
 
 CLAVES = ["asignatura", "id_alumno"]
@@ -128,9 +133,11 @@ CONTEOS = ["eventos_7d", "eventos_14d", "sesiones_14d", "minutos_14d", "evaluaci
            "dias_activos_total", "eventos_14d_otras"]
 
 # Estados de cada alumno a la fecha de corte y niveles de riesgo.
-CURSANDO, YA_ABANDONO, SIN_ACTIVIDAD = "Cursando", "Ya abandonó", m.SIN_ACTIVIDAD
+# Cursando = entró en los últimos 14 días; Alejado = entró alguna vez, pero hace 14 días o más
+# que no (no es "abandonó": casi la mitad vuelve, D67). A los dos se les predice el riesgo.
+CURSANDO, ALEJADO, SIN_ACTIVIDAD = "Cursando", "Alejado", m.SIN_ACTIVIDAD
 ALTO, MEDIO, BAJO = "Alto", "Medio", "Bajo"
-NIVELES = [ALTO, MEDIO, BAJO, YA_ABANDONO, SIN_ACTIVIDAD]
+NIVELES = [ALTO, MEDIO, BAJO, SIN_ACTIVIDAD]
 REGLA = "Regla simple"
 NOMBRES_MODELOS = {"logistica": "Regresión logística", "random_forest": "Random Forest",
                    "gradient_boosting": "Gradient boosting", "regla": REGLA}
@@ -286,12 +293,37 @@ def _cursando(v: pd.DataFrame) -> pd.Series:
     return v["dias_sin_actividad"].lt(ABANDONO_HORIZONTE_DIAS).fillna(False).astype(bool)
 
 
-def _entran_despues(d: m.Datos, corte: pd.Timestamp) -> pd.Index:
-    """(asignatura, id_alumno) con alguna interacción en (corte, corte + 14 días]."""
+def _con_actividad(v: pd.DataFrame) -> pd.Series:
+    """Los que entraron alguna vez hasta la fecha de corte (a ellos se les predice)."""
+    return v["eventos_total"].gt(0)
+
+
+def _estado(v: pd.DataFrame) -> np.ndarray:
+    return np.select([_cursando(v), ~_con_actividad(v)], [CURSANDO, SIN_ACTIVIDAD], default=ALEJADO)
+
+
+def _notas_posteriores(d: m.Datos) -> pd.DataFrame:
+    """(asignatura, id_alumno) que rindieron una evaluación que no figura en la trazabilidad
+    (su primera realización es posterior al último dato o no existe): siguieron cursando."""
+    ins = d.instrumentos
+    fin = fin_datos(d) + pd.Timedelta(days=1)
+    fuera = ins.loc[ins["fecha_primera_realizacion"].isna() | (ins["fecha_primera_realizacion"] >= fin),
+                    "id_instrumento"]
+    c = d.calificaciones
+    return c.loc[c["id_instrumento"].isin(fuera) & c["rindio"], CLAVES].drop_duplicates()
+
+
+def _vuelven(d: m.Datos, corte: pd.Timestamp) -> pd.Index:
+    """(asignatura, id_alumno) que siguen después del corte: alguna interacción en la materia
+    después de ese día o una nota de una evaluación posterior a la trazabilidad (D67)."""
     i = d.interacciones
-    hasta = corte + pd.Timedelta(days=ABANDONO_HORIZONTE_DIAS + 1)
-    i = i[i["en_base"] & (i["fecha_hora"] >= corte + pd.Timedelta(days=1)) & (i["fecha_hora"] < hasta)]
-    return pd.MultiIndex.from_frame(i[CLAVES].drop_duplicates())
+    i = i.loc[i["en_base"] & (i["fecha_hora"] >= corte + pd.Timedelta(days=1)), CLAVES].drop_duplicates()
+    return pd.MultiIndex.from_frame(pd.concat([i, _notas_posteriores(d)]).drop_duplicates())
+
+
+def desenlace_conocido(d: m.Datos, corte: pd.Timestamp) -> bool:
+    """Hay al menos ABANDONO_SEGUIMIENTO_DIAS días de datos después del corte."""
+    return corte + pd.Timedelta(days=ABANDONO_SEGUIMIENTO_DIAS) <= fin_datos(d)
 
 
 def fin_datos(d: m.Datos) -> pd.Timestamp:
@@ -301,23 +333,25 @@ def fin_datos(d: m.Datos) -> pd.Timestamp:
 
 def cortes_entrenamiento(d: m.Datos) -> pd.DatetimeIndex:
     """Fechas de las fotos: cada ABANDONO_PASO_DIAS días desde el día 14 de la
-    cursada hasta 14 días antes del último dato (para conocer el desenlace)."""
+    cursada hasta ABANDONO_SEGUIMIENTO_DIAS días antes del último dato (para
+    conocer el desenlace con al menos 4 semanas de seguimiento)."""
     fechas = d.interacciones.loc[d.interacciones["en_base"], "fecha"]
     if fechas.empty:
         return pd.DatetimeIndex([])
     primero = fechas.min().normalize() + pd.Timedelta(days=ABANDONO_HORIZONTE_DIAS)
-    ultimo = fin_datos(d) - pd.Timedelta(days=ABANDONO_HORIZONTE_DIAS)
+    ultimo = fin_datos(d) - pd.Timedelta(days=ABANDONO_SEGUIMIENTO_DIAS)
     return pd.date_range(primero, ultimo, freq=f"{ABANDONO_PASO_DIAS}D")
 
 
 def dataset(d: m.Datos, cortes=None) -> pd.DataFrame:
-    """Todas las fotos: una fila por (fecha de corte, materia, alumno que viene
-    entrando), con las VARIABLES y `abandona` (no entra en los 14 días siguientes)."""
+    """Todas las fotos: una fila por (fecha de corte, materia, alumno que ya entró
+    alguna vez), con las VARIABLES y `abandona` (no vuelve a entrar ni rinde nada
+    más, D67)."""
     filas = []
     for corte in cortes_entrenamiento(d) if cortes is None else pd.to_datetime(list(cortes)):
         v = variables(d, corte)
-        v = v[_cursando(v)].copy()
-        v["abandona"] = ~pd.MultiIndex.from_frame(v[CLAVES]).isin(_entran_despues(d, corte))
+        v = v[_con_actividad(v)].copy()
+        v["abandona"] = ~pd.MultiIndex.from_frame(v[CLAVES]).isin(_vuelven(d, corte))
         filas.append(v)
     if not filas:
         return pd.DataFrame(columns=["fecha_corte", *CLAVES, *VARIABLES, "abandona"])
@@ -342,10 +376,11 @@ def modelos() -> dict:
                                        n_estimators=400, min_samples_leaf=20, max_features="sqrt",
                                        n_jobs=-1, random_state=ABANDONO_SEMILLA))]),
         # D65: árboles de profundidad 2 (casi aditivo) y restricciones monótonas, para que el riesgo
-        # nunca baje por llevar más días sin entrar ni suba por entrar más.
+        # nunca baje por llevar más días sin entrar ni suba por entrar más. D70: learning_rate 0,02 y
+        # hojas de 200 (búsqueda aleatoria con validación por alumno; ver notebooks/02_predictor_abandono).
         "gradient_boosting": Pipeline([("sel", todas),
                                        ("modelo", HistGradientBoostingClassifier(
-                                           max_depth=2, learning_rate=0.05, max_iter=200, min_samples_leaf=50,
+                                           max_depth=2, learning_rate=0.02, max_iter=200, min_samples_leaf=200,
                                            l2_regularization=1.0, random_state=ABANDONO_SEMILLA,
                                            monotonic_cst=[MONOTONAS.get(c, 0) for c in columnas]))]),
     }
@@ -377,6 +412,31 @@ def elegir_umbral(y, prob, costo_fn: float = ABANDONO_COSTO_FN, costo_fp: float 
     """El umbral de menor costo total (si empatan, el más alto: menos alertas)."""
     t = tabla_umbral(y, prob, costo_fn, costo_fp)
     return float(t.loc[t["costo"] == t["costo"].min(), "umbral"].max())
+
+
+VALIDACION_TEMPORAL = "validación temporal"
+
+
+def _corte_temporal(fechas) -> pd.Timestamp:
+    """Separa las fotos en el primer 60 % de fechas (para entrenar) y el resto (para evaluar)."""
+    u = np.sort(pd.unique(fechas))
+    return u[max(int(len(u) * 0.6) - 1, 0)]
+
+
+def _validacion_temporal(est, X, y, grupos, fechas, cv) -> tuple[np.ndarray, np.ndarray]:
+    """Validación por alumno Y por tiempo (D67): en cada partición se entrena con las fotos
+    tempranas de unos alumnos y se predicen las fotos tardías de los otros. Es lo que pasa en
+    la app: se predice en fechas posteriores a las que el modelo vio."""
+    corte = _corte_temporal(fechas)
+    temprana = fechas <= corte
+    ys, ps = [], []
+    for i_ent, i_val in cv.split(X, y, grupos):
+        ent, val = i_ent[temprana[i_ent]], i_val[~temprana[i_val]]
+        if len(val) == 0 or len(np.unique(y[ent])) < 2:
+            continue
+        ys.append(y[val])
+        ps.append(clone(est).fit(X.iloc[ent], y[ent]).predict_proba(X.iloc[val])[:, 1])
+    return np.concatenate(ys), np.concatenate(ps)
 
 
 def _metricas(y, score, pred, nombre: str, conjunto: str) -> dict:
@@ -419,8 +479,8 @@ def firma(d: m.Datos) -> str:
     o la receta del modelo (variables, modelos y sus parámetros, costos): así un cambio
     en el código también obliga a reentrenar el modelo guardado."""
     i = d.interacciones
-    receta = repr((list(VARIABLES), modelos(), ABANDONO_COSTO_FN, ABANDONO_COSTO_FP, ABANDONO_HORIZONTE_DIAS,
-                   ABANDONO_PASO_DIAS))
+    receta = repr(("objetivo D67", list(VARIABLES), modelos(), ABANDONO_COSTO_FN, ABANDONO_COSTO_FP,
+                   ABANDONO_HORIZONTE_DIAS, ABANDONO_SEGUIMIENTO_DIAS, ABANDONO_PASO_DIAS))
     return (f"{len(i)}|{i['fecha_hora'].max()}|{len(m.base(d))}|sklearn {sklearn.__version__}"
             f"|receta {hashlib.md5(receta.encode()).hexdigest()[:10]}")
 
@@ -438,25 +498,32 @@ def entrenar(d: m.Datos, verbose: bool = False) -> ModeloAbandono:
     entren, prueba = next(GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=ABANDONO_SEMILLA)
                           .split(X, y, grupos))
     Xe, ye, ge, Xp, yp = X.iloc[entren], y[entren], grupos[entren], X.iloc[prueba], y[prueba]
+    fe = ds["fecha_corte"].to_numpy()[entren]
     cv = GroupKFold(n_splits=5)
     filas, ajustados, umbrales, prob_prueba = [], {}, {}, {}
     for clave, est in modelos().items():
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             oof = cross_val_predict(est, Xe, ye, groups=ge, cv=cv, method="predict_proba")[:, 1]
-        umbrales[clave] = elegir_umbral(ye, oof)
+            umbrales[clave] = elegir_umbral(ye, oof)
+            yt, pt = _validacion_temporal(est, Xe, ye, ge, fe, cv)
         filas.append(_metricas(ye, oof, oof >= umbrales[clave], NOMBRES_MODELOS[clave], "validación cruzada"))
+        filas.append(_metricas(yt, pt, pt >= umbrales[clave], NOMBRES_MODELOS[clave], VALIDACION_TEMPORAL))
         ajustados[clave] = clone(est).fit(Xe, ye)
         prob_prueba[clave] = ajustados[clave].predict_proba(Xp)[:, 1]
         filas.append(_metricas(yp, prob_prueba[clave], prob_prueba[clave] >= umbrales[clave],
                                NOMBRES_MODELOS[clave], "prueba"))
     # La regla no se entrena: "más de 7 días sin entrar". Para el AUC, el puntaje son los días.
-    for nombre_conj, Xc, yc in [("validación cruzada", Xe, ye), ("prueba", Xp, yp)]:
+    tarde = fe > _corte_temporal(fe)
+    for nombre_conj, Xc, yc in [("validación cruzada", Xe, ye), (VALIDACION_TEMPORAL, Xe[tarde], ye[tarde]),
+                                ("prueba", Xp, yp)]:
         dias = Xc["dias_sin_actividad"].to_numpy()
         filas.append(_metricas(yc, dias, dias > ABANDONO_REGLA_DIAS, REGLA, nombre_conj))
     comp = pd.DataFrame(filas)
-    # 2. Se elige el modelo de menor costo en validación cruzada (la prueba solo se informa).
-    cv_ = comp[comp["conjunto"].eq("validación cruzada") & comp["modelo"].ne(REGLA)]
+    # 2. Se elige el modelo de menor costo en la validación temporal (D67): la app predice en fechas
+    #    posteriores a las fotos con desenlace, y ahí un modelo que extrapola mal (la logística)
+    #    se equivoca mucho aunque gane en la validación cruzada común. La prueba solo se informa.
+    cv_ = comp[comp["conjunto"].eq(VALIDACION_TEMPORAL) & comp["modelo"].ne(REGLA)]
     clave = {v: k for k, v in NOMBRES_MODELOS.items()}[cv_.sort_values(["costo", "auc_pr"],
                                                                       ascending=[True, False]).iloc[0]["modelo"]]
     comp["elegido"] = comp["modelo"].eq(NOMBRES_MODELOS[clave])
@@ -480,6 +547,7 @@ def entrenar(d: m.Datos, verbose: bool = False) -> ModeloAbandono:
                "primera_foto": ds["fecha_corte"].min(), "ultima_foto": ds["fecha_corte"].max(),
                "datos_hasta": fin_datos(d), "costo_fn": ABANDONO_COSTO_FN, "costo_fp": ABANDONO_COSTO_FP,
                "regla_dias": ABANDONO_REGLA_DIAS, "horizonte_dias": ABANDONO_HORIZONTE_DIAS,
+               "seguimiento_dias": ABANDONO_SEGUIMIENTO_DIAS,
                "segundos": round(time.perf_counter() - t0, 1), "entrenado": pd.Timestamp.now().floor("s")}
     if verbose:
         print(f"Predictor de abandono: {resumen['filas']} filas, {resumen['alumnos']} alumnos, "
@@ -543,34 +611,34 @@ def _motivos(v: pd.DataFrame) -> pd.Series:
 def riesgo_abandono(d: m.Datos, fecha_corte=None, asignatura=None, umbral: int = UMBRAL_INACTIVIDAD_DIAS,
                     modelo: ModeloAbandono | None = None) -> pd.DataFrame:
     """Una fila por alumno de la base, a la fecha de corte:
-      estado_abandono   Cursando (entró en los últimos 14 días) / Ya abandonó
-                        (14 días o más sin entrar) / Sin actividad (nunca entró)
-      probabilidad      de no entrar en los próximos 14 días (solo Cursando), en %
+      estado_abandono   Cursando (entró en los últimos 14 días) / Alejado (entró, pero
+                        hace 14 días o más que no) / Sin actividad (nunca entró)
+      probabilidad      de abandonar la materia: no volver a entrar ni rendir nada más
+                        (Cursando y Alejado), en %
       nivel_riesgo      Alto (>= umbral del modelo) / Medio (>= la mitad del umbral) /
-                        Bajo; para el resto, su estado
+                        Bajo; Sin actividad para quien nunca entró
       regla_simple      más de `umbral` días sin entrar (la regla contra la que se compara)
       motivos           las señales de los datos, en palabras
-      abandono_real     si ya se sabe (fecha de corte + 14 días <= último dato):
-                        si de verdad no entró en los 14 días siguientes"""
+      abandono_real     si ya se sabe (fecha de corte + 28 días <= último dato): si de
+                        verdad no volvió a entrar ni rindió nada más"""
     mod = modelo or cargar_modelo(d)
     corte = m.fecha_de_corte(fecha_corte)
     v = variables(d, corte)
-    cursando = _cursando(v)
-    v["estado_abandono"] = np.select([cursando, v["eventos_total"].eq(0)], [CURSANDO, SIN_ACTIVIDAD],
-                                     default=YA_ABANDONO)
+    activos = _con_actividad(v)
+    v["estado_abandono"] = _estado(v)
     v["probabilidad"] = np.nan
-    if cursando.any():
-        v.loc[cursando, "probabilidad"] = (100 * mod.probabilidad(v[cursando])).round(1)
+    if activos.any():
+        v.loc[activos, "probabilidad"] = (100 * mod.probabilidad(v[activos])).round(1)
     u = 100 * mod.umbral
-    v["nivel_riesgo"] = np.select([~cursando, v["probabilidad"] >= u, v["probabilidad"] >= u / 2],
-                                  [v["estado_abandono"], ALTO, MEDIO], default=BAJO)
-    v["regla_simple"] = v["dias_sin_actividad"].gt(umbral).fillna(False).astype(bool) & cursando
+    v["nivel_riesgo"] = np.select([~activos, v["probabilidad"] >= u, v["probabilidad"] >= u / 2],
+                                  [SIN_ACTIVIDAD, ALTO, MEDIO], default=BAJO)
+    v["regla_simple"] = v["dias_sin_actividad"].gt(umbral).fillna(False).astype(bool) & activos
     v["motivos"] = ""
-    v.loc[cursando, "motivos"] = _motivos(v[cursando])
+    v.loc[activos, "motivos"] = _motivos(v[activos])
     v["abandono_real"] = pd.Series(pd.NA, index=v.index, dtype="boolean")
-    if corte + pd.Timedelta(days=ABANDONO_HORIZONTE_DIAS) <= fin_datos(d):
-        despues = pd.MultiIndex.from_frame(v[CLAVES]).isin(_entran_despues(d, corte))
-        v.loc[cursando, "abandono_real"] = ~despues[cursando.to_numpy()]
+    if desenlace_conocido(d, corte):
+        vuelve = pd.MultiIndex.from_frame(v[CLAVES]).isin(_vuelven(d, corte))
+        v.loc[activos, "abandono_real"] = ~vuelve[activos.to_numpy()]
     nombres = d.alumnos[["id_alumno", "nombre_completo"]]
     ins = m.base(d)[[*CLAVES, "inscripto"]]
     v = v.merge(nombres, on="id_alumno", how="left").merge(ins, on=CLAVES, how="left")
@@ -585,7 +653,7 @@ def riesgo_abandono(d: m.Datos, fecha_corte=None, asignatura=None, umbral: int =
     real = (real.sort_values("rindio_el").groupby(CLAVES).tail(1)
                 .merge(d.instrumentos[["id_instrumento", "instrumento"]], on="id_instrumento"))
     v = v.merge(real[[*CLAVES, "rindio_el", "instrumento"]], on=CLAVES, how="left")
-    pausa = v["estado_abandono"].eq(CURSANDO) & (v["ultima"].dt.normalize() <= v["rindio_el"].dt.normalize()
+    pausa = v["estado_abandono"].ne(SIN_ACTIVIDAD) & (v["ultima"].dt.normalize() <= v["rindio_el"].dt.normalize()
                                                  + pd.Timedelta(days=1))
     v["advertencia"] = ""
     v.loc[pausa, "advertencia"] = [
@@ -619,11 +687,13 @@ def resumen_riesgo(d: m.Datos, fecha_corte=None, asignatura=None, umbral: int = 
     después, cuántos de los marcados en riesgo alto abandonaron de verdad."""
     r = riesgo_abandono(d, fecha_corte, asignatura, umbral, modelo)
     g = r.groupby("asignatura")
-    res = pd.DataFrame({"base": g.size(), "cursando": g["estado_abandono"].apply(lambda s: s.eq(CURSANDO).sum())})
+    res = pd.DataFrame({"base": g.size(), "cursando": g["estado_abandono"].apply(lambda s: s.eq(CURSANDO).sum()),
+                        "alejados": g["estado_abandono"].apply(lambda s: s.eq(ALEJADO).sum())})
+    res["con_actividad"] = res["cursando"] + res["alejados"]
     for nivel, col in [(ALTO, "riesgo_alto"), (MEDIO, "riesgo_medio"), (BAJO, "riesgo_bajo"),
-                       (YA_ABANDONO, "ya_abandonaron"), (SIN_ACTIVIDAD, "sin_actividad")]:
+                       (SIN_ACTIVIDAD, "sin_actividad")]:
         res[col] = g["nivel_riesgo"].apply(lambda s, n=nivel: s.eq(n).sum())
-    res["pct_riesgo_alto"] = (100 * res["riesgo_alto"] / res["cursando"].replace(0, np.nan)).round(1)
+    res["pct_riesgo_alto"] = (100 * res["riesgo_alto"] / res["con_actividad"].replace(0, np.nan)).round(1)
     res["regla_simple"] = g["regla_simple"].sum()
     res["probabilidad_promedio"] = g["probabilidad"].mean().round(1)
     conocido = r[r["abandono_real"].notna()]
@@ -643,8 +713,8 @@ def riesgo_alumno(d: m.Datos, id_alumno: str, fecha_corte=None, umbral: int = UM
 
 def evolucion_riesgo(d: m.Datos, id_alumno: str, fecha_corte=None,
                      modelo: ModeloAbandono | None = None) -> pd.DataFrame:
-    """La probabilidad del alumno en cada materia, semana a semana, desde el día
-    14 de la cursada hasta la fecha de corte (cada punto usa solo lo que se sabía ese día)."""
+    """La probabilidad de abandonar de cada materia del alumno, semana a semana, desde
+    el día 14 de la cursada hasta la fecha de corte (cada punto usa solo lo que se sabía ese día)."""
     mod = modelo or cargar_modelo(d)
     corte = m.fecha_de_corte(fecha_corte)
     fechas = d.interacciones.loc[d.interacciones["en_base"], "fecha"]
@@ -656,12 +726,11 @@ def evolucion_riesgo(d: m.Datos, id_alumno: str, fecha_corte=None,
     for c in sorted(set(puntos)):
         v = variables(d, c)
         v = v[v["id_alumno"] == id_alumno].copy()
-        cursando = _cursando(v)
-        v["estado_abandono"] = np.select([cursando, v["eventos_total"].eq(0)], [CURSANDO, SIN_ACTIVIDAD],
-                                         default=YA_ABANDONO)
+        activos = _con_actividad(v)
+        v["estado_abandono"] = _estado(v)
         v["probabilidad"] = np.nan
-        if cursando.any():
-            v.loc[cursando, "probabilidad"] = (100 * mod.probabilidad(v[cursando])).round(1)
+        if activos.any():
+            v.loc[activos, "probabilidad"] = (100 * mod.probabilidad(v[activos])).round(1)
         filas.append(v[["fecha_corte", "asignatura", "estado_abandono", "probabilidad", "dias_sin_actividad"]])
     return pd.concat(filas, ignore_index=True)
 

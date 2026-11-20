@@ -88,12 +88,16 @@ GRUPOS_LOG = ["sesiones", "minutos"]
 GRUPOS_K = range(3, 7)       # k candidatos; se elige el de mayor silhouette
 GRUPOS_SEMILLA = 42          # misma semilla -> mismos grupos en cada corrida
 
-# --- ML: predictor de abandono (Etapa 7, D58) --------------------------------
-# Abandono = un alumno que venía entrando (al menos una interacción en los
-# últimos ABANDONO_HORIZONTE_DIAS) y NO entra en los próximos
-# ABANDONO_HORIZONTE_DIAS. Se entrena con "fotos" de la cursada tomadas cada
-# ABANDONO_PASO_DIAS días (desde el día ABANDONO_HORIZONTE_DIAS de la cursada).
+# --- ML: predictor de abandono (Etapa 7, D58; objetivo D67) -------------------
+# Abandono de la materia (D67) = un alumno que ya entró alguna vez NO vuelve a
+# entrar ni rinde nada más en lo que queda de los datos. Para saberlo, cada foto
+# necesita al menos ABANDONO_SEGUIMIENTO_DIAS días de datos posteriores (aun
+# después de 4 semanas sin entrar vuelve el 44 %: una ventana fija no alcanza).
+# Se entrena con "fotos" de la cursada tomadas cada ABANDONO_PASO_DIAS días
+# (desde el día ABANDONO_HORIZONTE_DIAS de la cursada). ABANDONO_HORIZONTE_DIAS
+# es también la ventana de "viene entrando" (Cursando) y de las variables 14d.
 ABANDONO_HORIZONTE_DIAS = 14
+ABANDONO_SEGUIMIENTO_DIAS = 28
 ABANDONO_PASO_DIAS = 3       # no múltiplo de 7: las fotos caen en distintos días de la semana
 ABANDONO_REGLA_DIAS = 7      # regla simple de referencia: "más de 7 días sin entrar"
 # Costo de equivocarse (como en la clase 10): no detectar a quien abandona

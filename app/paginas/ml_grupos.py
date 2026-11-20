@@ -13,7 +13,7 @@ import streamlit as st
 
 import componentes as comp
 from src.config import GRUPOS_K
-from src.ml_grupos import SIN_GRUPO
+from src.ml_grupos import SIN_GRUPO, TIPO_GRUPO
 
 T = comp.TONOS
 f = comp.cabecera(
@@ -40,8 +40,9 @@ ACCION = {
 
 
 def tipo(nombre: str) -> str:
-    """'Intermitentes (2)' -> 'Intermitentes' (si dos grupos caen en el mismo tipo)."""
-    return re.sub(r" \(\d+\)$", "", nombre)
+    """'Ausentes' -> 'Desconectados', 'Intermitentes (2)' -> 'Intermitentes' (grupos del mismo tipo)."""
+    base = re.sub(r" \(\d+\)$", "", nombre)
+    return TIPO_GRUPO.get(base, base)
 
 
 def tono(nombre: str) -> str:
@@ -257,6 +258,47 @@ with comp.tarjeta("variables"):
     st.plotly_chart(fig, width="stretch", theme=None, config={"displayModeBar": False})
     st.html(leyenda_grupos + ('<p class="tfi tfi-pie">Eje horizontal en escala logarítmica; los alumnos con 0 no se '
                               "ven.</p>" if log else ""))
+
+# --- Buscar un alumno ------------------------------------------------------------
+# Mismo buscador que la Ficha y el predictor: alumnos de la materia de la barra, por apellido.
+with comp.tarjeta("buscar"):
+    st.html('<div class="tfi">' + comp.titulo_tarjeta(
+        "Buscar un alumno", "A qué grupo pertenece en cada materia y cómo se compara con la mediana de su "
+        "grupo.") + "</div>")
+    nombres = (alumnos.sort_values("nombre_completo").drop_duplicates("id_alumno")
+                      .set_index("id_alumno")["nombre_completo"].to_dict())
+    id_alumno = st.selectbox(
+        f"Alumno ({comp.num(len(nombres))})", list(nombres), key="ml_grupos_alumno",
+        format_func=lambda i: f"{nombres[i]} · {i}",
+        help="Escribí parte del apellido, nombre o ID (ej.: ALU_1263) para filtrar.")
+    todos = comp.metrica("grupos_alumnos", k=k, asignatura=None)
+    suyo = todos[todos["id_alumno"].eq(id_alumno)].sort_values("asignatura")
+    medianas = perfil_materia.set_index(["asignatura", "grupo"])
+    VARS = [("nota_pct", "Nota", 1), ("sesiones", "Sesiones", 0), ("minutos", "Minutos", 0),
+            ("semanas_activas", "Semanas", 0), ("avance", "Avance (%)", 0)]
+    filas = []
+    for _, r in suyo.iterrows():
+        nombre = r["nombre_grupo"]
+        tg = T[tono(nombre)] if r["grupo"] > 0 else T["neutro"]
+        icono = comp.icono(tono(nombre)) if r["grupo"] > 0 else ""
+        clave = (r["asignatura"], r["grupo"])
+        celdas = []
+        for col, _, dec in VARS:
+            med = medianas.loc[clave, f"mediana_{col}"] if clave in medianas.index else None
+            celdas.append(f'<strong style="font-weight:600">{comp.num(r[col], dec)}</strong>'
+                          + (f'<br><span class="sec num">grupo {comp.num(med, dec)}</span>' if med is not None
+                             else ""))
+        filas.append([
+            comp.insignia_materia(r["asignatura"]),
+            f'<span style="display:inline-flex;align-items:center;gap:6px;font-weight:600;color:{tg["texto"]}">'
+            f'<span style="color:{tg["fuerte"]};display:flex">{icono}</span>{comp.esc(nombre)}</span>'
+            f'<br><span class="sec">{comp.esc(str(r["descripcion_grupo"]).split(". ")[0].rstrip("."))}.</span>',
+            comp.esc(r["condicion"]), *celdas,
+        ])
+    st.html(comp.tabla_html(["Materia", "Grupo", "Condición", *[v[1] for v in VARS]], filas,
+                            ["", "wrap", "", "num", "num", "num", "num", "num"]))
+    st.html('<p class="tfi tfi-pie">Debajo de cada valor, la mediana de su grupo en esa materia. Muestra todas '
+            "las materias del alumno, aunque la barra filtre una.</p>")
 
 # --- Lista de alumnos ------------------------------------------------------------
 with comp.tarjeta("lista"):

@@ -21,7 +21,8 @@ Pasos:
      le pone K-Means, que es arbitrario. Grupo 1 = el de mejor perfil.
 
 Funciones (mismos parámetros que src/metricas.py):
-  evaluar_k(d, fecha_corte)          silhouette, inercia y tamaños para cada k
+  evaluar_k(d, fecha_corte)          silhouette, Davies-Bouldin, Calinski-Harabasz, inercia y tamaños para cada k
+  estabilidad(d, fecha_corte, k)     ARI de los grupos con remuestreos bootstrap (D71)
   grupos_alumnos(d, fecha_corte, asignatura, umbral, k=None)
                                      tabla_alumnos + grupo, nombre y descripción
   perfil_grupos(d, fecha_corte, asignatura, umbral, k=None, por_materia=False)
@@ -45,7 +46,7 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-from sklearn.metrics import silhouette_score
+from sklearn.metrics import adjusted_rand_score, calinski_harabasz_score, davies_bouldin_score, silhouette_score
 
 from src import metricas as m
 from src.config import (GRUPOS_K, GRUPOS_LOG, GRUPOS_SEMILLA, GRUPOS_VARIABLES, SIN_EVALUACIONES,
@@ -64,6 +65,24 @@ GRUPOS = {
                      "rinden poco. Todavía se pueden recuperar.",
     "Desconectados": "Casi no entran al aula y no rinden: riesgo alto de abandono, conviene contactarlos.",
 }
+# Si dos grupos caen en el mismo tipo (pasa al forzar k grande), cada uno lleva un nombre
+# propio: el de mejor perfil (actividad + nota) el primero y el otro el segundo.
+DESDOBLES = {
+    "Comprometidos": ("Muy comprometidos", "Comprometidos"),
+    "Eficientes": ("Muy eficientes", "Eficientes"),
+    "Esforzados con nota baja": ("Esforzados con nota baja", "Esforzados con nota muy baja"),
+    "Intermitentes": ("Intermitentes", "Muy intermitentes"),
+    "Desconectados": ("Desconectados", "Ausentes"),
+}
+GRUPOS.update({
+    "Muy comprometidos": "Los que más entran y mejor nota tienen en su materia. No necesitan intervención.",
+    "Muy eficientes": "Entran poco y tienen muy buena nota.",
+    "Esforzados con nota muy baja": "Entran, pero la nota está muy por debajo del curso: apoyo académico urgente.",
+    "Muy intermitentes": "Entran todavía menos y rinden menos que los intermitentes.",
+    "Ausentes": "Prácticamente no entraron al aula ni rindieron: contacto individual o confirmar si siguen cursando.",
+})
+# Nombre -> tipo (para colores y acciones en la app): "Ausentes" -> "Desconectados".
+TIPO_GRUPO = {n: t for t, par in DESDOBLES.items() for n in par} | {t: t for t in DESDOBLES}
 UMBRAL_DESCONECTADOS = -1.0   # actividad del centroide (en desvíos) por debajo de la cual
 SIN_GRUPO = "Sin grupo"
 DESCRIPCION_SIN_GRUPO = ("Su materia todavía no tiene evaluaciones a la fecha de corte: sin nota, "
@@ -107,20 +126,50 @@ def _evaluar(z: pd.DataFrame) -> pd.DataFrame:
             continue
         km = _kmeans(z, k)
         filas.append({"k": k, "silhouette": round(float(silhouette_score(z, km.labels_)), 3),
+                      "davies_bouldin": round(float(davies_bouldin_score(z, km.labels_)), 3),
+                      "calinski_harabasz": round(float(calinski_harabasz_score(z, km.labels_)), 1),
                       "inercia": round(float(km.inertia_), 1), "candidato": k in GRUPOS_K,
                       "tamanos": sorted(np.bincount(km.labels_).tolist(), reverse=True)})
-    r = pd.DataFrame(filas, columns=["k", "silhouette", "inercia", "candidato", "tamanos"])
+    r = pd.DataFrame(filas, columns=["k", "silhouette", "davies_bouldin", "calinski_harabasz", "inercia",
+                                     "candidato", "tamanos"])
     cand = r[r["candidato"]]
     r["elegido"] = r["k"].eq(cand.loc[cand["silhouette"].idxmax(), "k"]) if len(cand) else False
     return r
 
 
 def evaluar_k(d: m.Datos, fecha_corte=None) -> pd.DataFrame:
-    """Para cada k: silhouette (más alto = grupos más separados), inercia (para
-    el gráfico del codo) y tamaño de los grupos. `elegido` = mayor silhouette
-    entre los candidatos (GRUPOS_K)."""
+    """Para cada k: silhouette (más alto = grupos más separados), Davies-Bouldin
+    (más bajo = mejor), Calinski-Harabasz (más alto = mejor), inercia (para el
+    gráfico del codo) y tamaño de los grupos. `elegido` = mayor silhouette
+    entre los candidatos (GRUPOS_K); los otros dos índices se informan para
+    ver si coinciden (D71)."""
     t = m.tabla_alumnos(d, fecha_corte)
     return _evaluar(matriz(t[_con_evaluaciones(t)]))
+
+
+def estabilidad(d: m.Datos, fecha_corte=None, k: int | None = None, repeticiones: int = 30) -> pd.DataFrame:
+    """¿Los grupos son reales o un accidente de la muestra? (D71) Remuestrea a los
+    alumnos con reposición (bootstrap), vuelve a ajustar el K-Means y compara, sobre
+    los alumnos del remuestreo, sus grupos con los del modelo original usando el
+    índice de Rand ajustado (ARI: 1 = mismos grupos, 0 = como al azar).
+    Devuelve una fila por repetición: k, ari y tamaño de la muestra."""
+    t = m.tabla_alumnos(d, fecha_corte)
+    z = matriz(t[_con_evaluaciones(t)])
+    r = _evaluar(z)
+    if k is None and r["elegido"].any():
+        k = int(r.loc[r["elegido"], "k"].iloc[0])
+    if k is None or len(z) <= k:
+        return pd.DataFrame(columns=["repeticion", "k", "ari", "alumnos"])
+    base = _kmeans(z, k)
+    rng = np.random.default_rng(GRUPOS_SEMILLA)
+    filas = []
+    for i in range(repeticiones):
+        idx = np.unique(rng.integers(0, len(z), len(z)))     # sin repetidos: el ARI compara alumnos
+        muestra = z.iloc[idx]
+        km = KMeans(n_clusters=k, n_init=10, random_state=i).fit(muestra)
+        filas.append({"repeticion": i + 1, "k": k, "alumnos": len(idx),
+                      "ari": round(float(adjusted_rand_score(base.predict(muestra), km.labels_)), 3)})
+    return pd.DataFrame(filas)
 
 
 # ---------------------------------------------------------------------------
@@ -134,12 +183,18 @@ def _nombrar(centros: pd.DataFrame) -> pd.DataFrame:
         [c["actividad"] < UMBRAL_DESCONECTADOS,
          (c["actividad"] >= 0) & (c["nota"] >= 0), c["nota"] >= 0, c["actividad"] >= 0],
         ["Desconectados", "Comprometidos", "Eficientes", "Esforzados con nota baja"], default="Intermitentes")
-    c["descripcion_grupo"] = c["nombre_grupo"].map(GRUPOS)
     c = c.assign(puntaje=c["actividad"] + c["nota"]).sort_values("puntaje", ascending=False)
     c["grupo"] = range(1, len(c) + 1)   # 1 = mejor perfil
-    # Si dos grupos caen en la misma categoría, se numeran: "Intermitentes (1)", "(2)".
-    rep = c["nombre_grupo"].duplicated(keep=False)
-    c.loc[rep, "nombre_grupo"] += " (" + (c[rep].groupby("nombre_grupo").cumcount() + 1).astype(str) + ")"
+    c["tipo_grupo"] = c["nombre_grupo"]
+    # Si dos grupos caen en el mismo tipo, cada uno lleva su nombre (DESDOBLES): "Muy comprometidos"
+    # y "Comprometidos". Si fueran tres o más, además se numeran.
+    orden = c.groupby("tipo_grupo").cumcount()
+    cuantos = c.groupby("tipo_grupo")["tipo_grupo"].transform("size")
+    dos = cuantos.eq(2)
+    c.loc[dos, "nombre_grupo"] = [DESDOBLES[t][i] for t, i in zip(c.loc[dos, "tipo_grupo"], orden[dos])]
+    mas = cuantos.gt(2)
+    c.loc[mas, "nombre_grupo"] += " (" + (orden[mas] + 1).astype(str) + ")"
+    c["descripcion_grupo"] = c["nombre_grupo"].map(GRUPOS).fillna(c["tipo_grupo"].map(GRUPOS))
     return c.drop(columns="puntaje")
 
 
