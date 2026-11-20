@@ -15,12 +15,11 @@ import componentes as comp  # noqa: E402  (después de set_page_config)
 
 comp.asegurar_gold()
 
+# Sin portada: el General es la pantalla de entrada (D90). Ya tiene el contexto, las novedades
+# de la semana, los pendientes y los atajos a los otros dashboards.
 PAGINAS = {
-    "": [
-        st.Page("paginas/inicio.py", title="Inicio", icon=":material/home:", default=True),
-    ],
     "Dashboards": [
-        st.Page("paginas/1_general.py", title="General", icon=":material/dashboard:"),
+        st.Page("paginas/1_general.py", title="General", icon=":material/dashboard:", default=True),
         st.Page("paginas/2_participacion.py", title="Participación", icon=":material/groups:"),
         st.Page("paginas/3_trazabilidad.py", title="Trazabilidad", icon=":material/timeline:"),
         st.Page("paginas/4_rendimiento.py", title="Rendimiento académico", icon=":material/grading:"),

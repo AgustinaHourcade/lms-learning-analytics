@@ -304,8 +304,3 @@ with st.container(key="tarjeta-cargados"):
                     st.warning(a)
 for a in avisos:
     st.caption(f"ℹ️ {a}")
-
-comp.html(comp.aviso(
-    "Para que quede, hay que subir el Excel a <span class='mono' style='font-size:11px'>data/raw/</span> en "
-    "GitHub. Es una limitación del alojamiento, no del pipeline.", "info",
-    "En la versión publicada, lo que subas acá se pierde cuando la app se reinicia.", icono="nube"))

@@ -106,6 +106,10 @@ CSS = f"""
   .st-key-fila_kpis [class*="st-key-kpi_"] > div:has([data-testid="stPageLink"]) {{margin-top: auto;}}
   .st-key-fila_kpis [data-testid="stPageLink"] a {{padding-left: 0;}}
   .st-key-fila_kpis [data-testid="stPageLink"] p {{font-size: 13px; font-weight: 600; color: {ACCION};}}
+  /* Atajos a otra página (botones terciarios "Ver ... →"): se ven como los links de arriba. */
+  .st-key-fila_kpis [class*="st-key-kpi_"] > div:has([class*="st-key-ir_"]) {{margin-top: auto;}}
+  [class*="st-key-ir_"] button {{padding: 0; min-height: 0; justify-content: flex-start;}}
+  [class*="st-key-ir_"] button p {{font-size: 13px; font-weight: 600; color: {ACCION};}}
   .st-key-kpi_alerta {{box-shadow: inset 0 3px 0 {CRITICO};}}
   /* La etiqueta reserva dos líneas: si una se parte (pantallas angostas), los números siguen alineados. */
   .gr-kpi-etq {{display: block; min-height: 34px; margin-bottom: 4px !important; line-height: 17px !important;

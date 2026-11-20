@@ -325,3 +325,21 @@ Formato: número, decisión, por qué, estado.
   (`ml_abandono.alertas_priorizadas`, columna "Riesgo") → días sin entrar. Quien nunca entró no tiene probabilidad y
   va primero dentro de su grupo. Sin el modelo, `metricas.alertas_por_alumno` ordena por días sin entrar.
 - **Estado:** vigente.
+
+## D90 · Sin portada: el Dashboard General es la pantalla de entrada
+- **Contexto:** la app abría en una página "Inicio" que repetía los KPIs por materia del General (base, activos,
+  nota promedio, promociona, libres) con el diseño viejo. La consigna no pide portada: pide el General como
+  "Resumen consolidado de indicadores por asignatura" y lo pone primero.
+- **Decisión:** se saca la página Inicio; el General es la página por defecto (`default=True` en `app/Inicio.py`,
+  que sigue siendo el archivo de arranque). Lo que hacía la portada se reparte así: la barra lateral aclara que los
+  filtros valen para todas las páginas; la cabecera del General suma cuándo se recalcularon los datos; cada pendiente
+  del General lleva a la página donde se resuelve (Alumnos en riesgo → pestaña Alertas; Inscriptos que no rindieron
+  nada e inscriptos que nunca entraron → Inscriptos sin notas; con nota sin inscripción → Cursan sin inscripción;
+  evaluaciones de la semana → Rendimiento académico). Las pestañas de Matrícula y alertas llevan `key="ma_pestana"`
+  para poder abrirlas desde otra página.
+- **Por qué:** un solo tipo de usuario (quien sigue la cursada), que entra a monitorear; el General ya trae contexto,
+  novedades de la semana y pendientes, y la portada solo sumaba un clic y una página más para mantener (D78: lo que
+  pide la consigna tiene que verse sin clicks).
+- **Reconsiderar si:** aparecen roles con vistas distintas (por ejemplo, un docente por materia) o la carga de
+  archivos pasa a ser el uso principal.
+- **Estado:** vigente.

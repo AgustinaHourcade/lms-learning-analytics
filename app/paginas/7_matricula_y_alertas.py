@@ -99,8 +99,9 @@ comp.tarjetas([
               f"más. Son {comp.pct(k['alta'] / max(k['base'], 1) * 100, 0)} de la base."),
 ])
 
+# Con key: el General abre una pestaña dada poniendo su nombre en st.session_state["ma_pestana"].
 tab_mat, tab_alertas, tab_no_insc, tab_sin_notas = st.tabs(
-    ["Matrícula", "Alertas", "Cursan sin inscripción", "Inscriptos sin notas"])
+    ["Matrícula", "Alertas", "Cursan sin inscripción", "Inscriptos sin notas"], key="ma_pestana", on_change="rerun")
 
 # ---------------------------------------------------------------------------
 # Matrícula: matriz, condición por grupo, tabla y evolución

@@ -553,7 +553,9 @@ def barra_lateral(sin_filtros: str | None = None, sin_umbral: bool = False) -> F
 
     with st.sidebar, st.container(key="filtros_card"):
         st.html(f'<p class="tfi" style="margin:0;font:600 11px {FUENTE};letter-spacing:.06em;'
-                f'text-transform:uppercase;color:{TOKENS["texto_3"]}">Filtros</p>')
+                f'text-transform:uppercase;color:{TOKENS["texto_3"]}">Filtros</p>'
+                f'<p class="tfi" style="margin:2px 0 0;font:400 12px/1.45 {FUENTE};color:{TOKENS["texto_3"]}">'
+                f'Valen para todas las páginas.</p>')
         fecha = st.date_input("Fecha de corte", min_value=inicio, max_value=fin, key="fecha_corte",
                               format="DD/MM/YYYY",
                               help="Todo se calcula con lo que se sabía ese día (inclusive): notas de los "

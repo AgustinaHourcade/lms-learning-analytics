@@ -51,6 +51,28 @@ def vacio(x) -> bool:
     return x is None or pd.isna(x)
 
 
+# ---------------------------------------------------------------------------
+# Atajos: el General es la pantalla de entrada (D90), así que cada pendiente lleva a la
+# página (y, en Matrícula, a la pestaña) donde se resuelve. El botón guarda el destino y
+# el cambio de página se hace acá arriba, antes de calcular nada.
+# ---------------------------------------------------------------------------
+MATRICULA = "paginas/7_matricula_y_alertas.py"
+RENDIMIENTO = "paginas/4_rendimiento.py"
+
+if destino := st.session_state.pop("gr_ir_a", None):
+    st.switch_page(destino)
+
+
+def atajo(texto: str, pagina: str, clave: str, pestana: str | None = None) -> None:
+    """Botón 'texto →' que abre `pagina`; `pestana` = pestaña de Matrícula y alertas a abrir."""
+    def ir() -> None:
+        if pestana:
+            st.session_state["ma_pestana"] = pestana
+        st.session_state["gr_ir_a"] = pagina
+
+    st.button(f"{texto} →", key=f"ir_{clave}", type="tertiary", on_click=ir)
+
+
 def por_sigla(serie: pd.Series) -> str:
     """'ALG 54 · AED 39 · PYE 52' (la sigla sola va solo en estos desgloses)."""
     return " · ".join(f"{comp.SIGLAS[m]} {comp.num(serie.get(m, 0))}" for m in materias)
@@ -108,7 +130,7 @@ comp.encabezado(
     f"Datos al **{comp.fmt_fecha(corte)}** · {NOMBRE[materias[0]] if una_materia else f.materia} · "
     f"Inactivo después de {f.umbral} días sin entrar · {comp.num(base_total)} "
     f"{'alumnos' if una_materia else 'alumnos × materia'}: {comp.num(inscriptos)} inscriptos + "
-    f"{comp.num(no_inscriptos)} con nota sin inscripción",
+    f"{comp.num(no_inscriptos)} con nota sin inscripción · Recalculado {comp.ultimo_recalculo()}",
 )
 
 
@@ -173,6 +195,8 @@ def aviso_semana() -> str:
 
 
 comp.html(aviso_semana())
+if not comp.metrica("evaluaciones_en_periodo").empty:
+    atajo("Ver las notas por instrumento", RENDIMIENTO, "rendimiento")
 st.space("small")
 
 # ---------------------------------------------------------------------------
@@ -221,7 +245,7 @@ with st.container(key="fila_kpis"):
             detalle=(f"<b>{comp.pct(sobre(hoy['riesgo'], hoy['base']), 0)}</b> de {comp.num(hoy['base'])} "
                      f"{unidad_base} · libres y sin entrar" if not vacio(hoy["riesgo"]) else
                      "Todavía no hay evaluaciones")))
-        st.page_link("paginas/7_matricula_y_alertas.py", label="Ver alertas", icon=":material/arrow_forward:")
+        atajo("Ver alertas", MATRICULA, "riesgo", pestana="Alertas")
     with c4, st.container(border=True, key="kpi_alerta"):
         comp.html(comp.kpi(
             "Inscriptos que no rindieron nada", comp.num(hoy["sin_rendir"]),
@@ -230,7 +254,7 @@ with st.container(key="fila_kpis"):
             detalle=(f"de {comp.num(hoy['inscriptos'])} inscriptos · <b>{comp.num(hoy['nunca'])}</b> nunca "
                      f"entraron, <b>{comp.num(hoy['entran'])}</b> entran y no rinden"
                      if not vacio(hoy["sin_rendir"]) else "Todavía no hay evaluaciones")))
-        st.page_link("paginas/7_matricula_y_alertas.py", label="Ver a quiénes", icon=":material/arrow_forward:")
+        atajo("Ver a quiénes", MATRICULA, "sin_rendir", pestana="Inscriptos sin notas")
 
 st.space("medium")
 
@@ -537,3 +561,8 @@ comp.html(
          f"{por_sigla(n_sin_rendir)}. Cuentan como 0 en los promedios."),
     "</div></div>",
 )
+with st.container(horizontal=True, gap="large", key="atajos_integridad"):
+    if no_inscriptos:
+        atajo("Ver quiénes cursan sin inscripción", MATRICULA, "no_insc", pestana="Cursan sin inscripción")
+    if sin_act:
+        atajo("Ver los inscriptos sin notas", MATRICULA, "sin_act", pestana="Inscriptos sin notas")

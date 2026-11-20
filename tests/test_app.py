@@ -38,25 +38,43 @@ def _kpis_participacion(at) -> str:
     return cuerpos[0]
 
 
-def test_inicio_muestra_las_tres_materias(app):
-    assert len(app.metric) == 3 * 5
+def _contexto_general(at) -> str:
+    """La línea de contexto debajo del título del General (fecha, materia, umbral, base)."""
+    return next(c.value for c in at.caption if c.value.startswith("Datos al"))
+
+
+def _kpis_general(at) -> str:
+    return " ".join(h.proto.body for h in at.get("html") if "gr-kpi-num" in h.proto.body)
+
+
+def test_entra_al_general(app):
+    """Sin portada: la app abre en el Dashboard General con los filtros por defecto (D90)."""
+    assert app.title[0].value == "Dashboard general"
+    assert "Todas las materias" in _contexto_general(app) or "alumnos × materia" in _contexto_general(app)
     assert app.selectbox(key="materia").value == "Todas las materias"
     assert app.slider(key="umbral").value == 7
+    assert any("Valen para todas las páginas" in h.proto.body for h in app.sidebar.get("html"))
 
 
 def test_filtro_de_materia(app):
     app.selectbox(key="materia").set_value("Probabilidad y Estadística").run()
     assert not app.exception
-    assert len(app.metric) == 5
-    assert "Probabilidad y Estadística" in app.caption[0].value
+    assert "Probabilidad y Estadística" in _contexto_general(app)
 
 
 def test_fecha_de_corte_cambia_los_numeros(app):
-    antes = _valores_metricas(app)
+    antes = _kpis_general(app)
     app.date_input(key="fecha_corte").set_value("2025-09-15").run()
     assert not app.exception
-    assert "15/09/2025" in app.caption[0].value
-    assert _valores_metricas(app) != antes
+    assert "15/09/2025" in _contexto_general(app)
+    assert _kpis_general(app) != antes
+
+
+def test_atajo_del_general_abre_la_pestana_de_matricula(app):
+    app.button(key="ir_sin_rendir").click().run()
+    assert not app.exception, app.exception
+    assert app.session_state["ma_pestana"] == "Inscriptos sin notas"
+    assert [m.label for m in app.metric][:1] == ["Inscriptos"]      # ya está en Matrícula y alertas
 
 
 SIN_FILTROS = {"paginas/cargar_archivo.py", "paginas/explorar_datos.py"}
@@ -94,7 +112,7 @@ def _textos_visibles(at) -> list[str]:
     return textos
 
 
-@pytest.mark.parametrize("pagina", PAGINAS + ["paginas/inicio.py"])
+@pytest.mark.parametrize("pagina", PAGINAS)
 def test_sin_codigos_de_decision_visibles(app, pagina):
     """Los códigos de decisión (D7, D62...) van solo en comentarios y docstrings, nunca en pantalla."""
     import re
