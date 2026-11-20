@@ -36,7 +36,8 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from src.config import (APROBADO_PCT, CONDICIONES, DIAS_CIERRE, DIAS_DESCONECTADO, DIAS_REGRESO, ESQUEMA,
+from src.config import (APROBADO_PCT, CONDICIONES, DIAS_CIERRE, DIAS_DESCONECTADO, DIAS_PRIORIDAD_ALTA,
+                        DIAS_REGRESO, ESQUEMA,
                         FECHA_CORTE_DEFECTO, GOLD, MARGEN_RECUPERABLE, SIN_EVALUACIONES, ULTIMOS_CERRADOS,
                         UMBRAL_INACTIVIDAD_DIAS)
 
@@ -1125,30 +1126,103 @@ def activos_libres(d: Datos, fecha_corte=None, asignatura=None, umbral: int = UM
 # ---------------------------------------------------------------------------
 def resumen_matricula(d: Datos, fecha_corte=None, asignatura=None,
                       umbral: int = UMBRAL_INACTIVIDAD_DIAS) -> pd.DataFrame:
-    """Por materia: inscriptos vs. activos vs. con nota, y las dos alertas de
-    matrícula (activos no inscriptos e inscriptos sin actividad)."""
+    """Por materia (casos = alumno × materia): inscriptos vs. activos vs. con nota,
+    y las dos alertas de matrícula (activos no inscriptos e inscriptos sin actividad).
+    `activos` cuenta sobre toda la base (no está anidado en `con_nota`).
+    D88: `inscriptos_activos` = inscripto y activo; `pct_inscriptos_activos` y
+    `pct_insc_sin_notas` son sobre los inscriptos; `inscriptos_sin_notas` cuenta
+    solo materias con algún instrumento ya tomado."""
     t = tabla_alumnos(d, fecha_corte, asignatura, umbral)
     t["con_nota"] = t["rendidos"] > 0
     t["con_actividad"] = t["eventos"] > 0
+    t["inscripto_activo"] = t["inscripto"] & t["activo"]
     m = _filtrar(d.matricula, asignatura)
     g = t.groupby("asignatura")
     df = pd.DataFrame({
         "base": g.size(), "inscriptos": g["inscripto"].sum(),
         "bajas": m[m["estado"].eq("Baja")].groupby("asignatura").size(),
-        "con_actividad": g["con_actividad"].sum(), "activos": g["activo"].sum(), "con_nota": g["con_nota"].sum(),
+        "con_actividad": g["con_actividad"].sum(), "activos": g["activo"].sum(),
+        "inscriptos_activos": g["inscripto_activo"].sum(), "con_nota": g["con_nota"].sum(),
         "no_inscriptos_cursando": g.apply(lambda x: (~x["inscripto"]).sum(), include_groups=False),
         "inscriptos_sin_actividad": g.apply(lambda x: (x["inscripto"] & ~x["con_actividad"] & ~x["con_nota"]).sum(),
                                             include_groups=False),
-        "inscriptos_sin_notas": g.apply(lambda x: (x["inscripto"] & ~x["con_nota"]).sum(), include_groups=False),
+        # D88: solo si ya se tomó algún instrumento (antes no es una alerta: nadie pudo rendir)
+        "inscriptos_sin_notas": g.apply(lambda x: (x["inscripto"] & ~x["con_nota"] & x["instrumentos"].gt(0)).sum(),
+                                        include_groups=False),
     }).reindex(_materias(asignatura)).fillna(0).astype(int)
+    inscriptos = df["inscriptos"].replace(0, np.nan)
+    df["pct_inscriptos_activos"] = (df["inscriptos_activos"] / inscriptos * 100).round(2)
+    df["pct_insc_sin_notas"] = (df["inscriptos_sin_notas"] / inscriptos * 100).round(2)
     return df.reset_index(names="asignatura")
 
 
-def situacion_academica(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
-    """Condición académica separada por inscriptos y no inscriptos."""
+TOTAL = "Total"
+GRUPOS_INSCRIPCION = ["Inscriptos", "No inscriptos"]
+
+
+def situacion_academica(d: Datos, fecha_corte=None, asignatura=None, solo_rindieron: bool = True) -> pd.DataFrame:
+    """Condición académica (proyectada a la fecha de corte) de inscriptos y no
+    inscriptos, por materia y en total (asignatura = "Total"). D88: por defecto
+    solo los casos que rindieron algo (`rendidos > 0`), para comparar grupos
+    parecidos: si no, los inscriptos que no rindieron nada (todo 0, Libres)
+    hunden a los inscriptos contra los no inscriptos, que entran a la base por
+    tener nota. `pct` es sobre el grupo (materia × inscripción)."""
     n = nota_final(d, fecha_corte, asignatura)
-    n["grupo"] = np.where(n["inscripto"], "Inscriptos", "No inscriptos")
-    return n.groupby(["asignatura", "grupo", "condicion"]).size().rename("alumnos").reset_index()
+    if solo_rindieron:
+        n = n[n["rendidos"] > 0]
+    n = n.assign(grupo=np.where(n["inscripto"], *GRUPOS_INSCRIPCION))
+    claves = ["asignatura", "grupo", "condicion"]
+    por_materia = n.groupby(claves).size().rename("alumnos").reset_index()
+    total = n.groupby(claves[1:]).size().rename("alumnos").reset_index().assign(asignatura=TOTAL)
+    df = pd.concat([por_materia, total[claves + ["alumnos"]]], ignore_index=True)
+    df["pct"] = (df["alumnos"] / df.groupby(["asignatura", "grupo"])["alumnos"].transform("sum") * 100).round(2)
+    return df
+
+
+def diferencia_aprobacion(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:
+    """Por materia y en total (D88): % que aprobaría al ritmo actual (Regular o
+    Promociona) entre los inscriptos y entre los no inscriptos que rindieron algo,
+    y la diferencia en puntos porcentuales (inscriptos − no inscriptos). Vacío
+    (NaN) si a algún grupo le faltan casos."""
+    s = situacion_academica(d, fecha_corte, asignatura)
+    s = s.assign(aprueba=s["alumnos"].where(s["condicion"].isin(["Regular", "Promociona"]), 0))
+    g = s.groupby(["asignatura", "grupo"]).agg(casos=("alumnos", "sum"), aprueban=("aprueba", "sum"))
+    g["pct"] = g["aprueban"] / g["casos"] * 100
+    w = g.unstack("grupo") if not g.empty else pd.DataFrame()
+    w = w.reindex([*_materias(asignatura), TOTAL])
+    df = pd.DataFrame(index=w.index)
+    for grupo, sufijo in zip(GRUPOS_INSCRIPCION, ["insc", "no_insc"]):
+        for col in ["casos", "aprueban", "pct"]:
+            df[f"{col}_{sufijo}"] = w[(col, grupo)] if (col, grupo) in w.columns else np.nan
+    for col in ["casos_insc", "aprueban_insc", "casos_no_insc", "aprueban_no_insc"]:
+        df[col] = df[col].fillna(0).astype(int)
+    df[["pct_insc", "pct_no_insc"]] = df[["pct_insc", "pct_no_insc"]].astype(float).round(2)
+    df["diferencia_pp"] = (df["pct_insc"] - df["pct_no_insc"]).round(2)
+    return df.reset_index(names="asignatura")
+
+
+MATRICULA = ["Inscripto", "No inscripto"]
+NUNCA_ENTRO_AULA = "Nunca entró"
+ACTIVIDAD_MATRIZ = [ACTIVO, INACTIVO, NUNCA_ENTRO_AULA]
+
+
+def matriz_matricula(d: Datos, fecha_corte=None, asignatura=None,
+                     umbral: int = UMBRAL_INACTIVIDAD_DIAS) -> pd.DataFrame:
+    """Matriz inscripción × actividad por materia (D88): una fila por materia ×
+    (Inscripto / No inscripto) × (Activo / Inactivo / Nunca entró), con las
+    combinaciones vacías en 0 para que todas las matrices tengan la misma forma.
+    `casos` = alumnos de esa materia; `pct_base` es sobre la base de la materia.
+    Responde "matriculados vs. activos" y muestra a los inscriptos sin participación."""
+    t = tabla_alumnos(d, fecha_corte, asignatura, umbral)
+    t = t.assign(matricula=np.where(t["inscripto"], *MATRICULA),
+                 actividad=t["estado_actividad"].replace({SIN_ACTIVIDAD: NUNCA_ENTRO_AULA}))
+    completo = pd.MultiIndex.from_product([_materias(asignatura), MATRICULA, ACTIVIDAD_MATRIZ],
+                                          names=["asignatura", "matricula", "actividad"])
+    m = (t.groupby(["asignatura", "matricula", "actividad"]).size().reindex(completo, fill_value=0)
+          .rename("casos").reset_index())
+    base_materia = m.groupby("asignatura")["casos"].transform("sum")
+    m["pct_base"] = (m["casos"] / base_materia.replace(0, np.nan) * 100).round(2)
+    return m
 
 
 TIPOS_ALERTA = {
@@ -1158,6 +1232,9 @@ TIPOS_ALERTA = {
     "inactivo": "Inactivo",
     "libre": "Condición Libre",
 }
+# Etiquetas cortas para la columna "Por qué" de la lista (D88); el detalle va en el CSV.
+TIPOS_ALERTA_CORTO = {"no_inscripto": "Sin insc.", "sin_actividad": "Sin actividad", "sin_notas": "No rinde",
+                      "inactivo": "Inactivo", "libre": "Libre"}
 
 
 def alertas(d: Datos, fecha_corte=None, asignatura=None, umbral: int = UMBRAL_INACTIVIDAD_DIAS) -> pd.DataFrame:
@@ -1192,34 +1269,121 @@ ALERTAS_ACADEMICAS = {"inactivo", "libre", "sin_notas"}
 
 def alertas_por_alumno(d: Datos, fecha_corte=None, asignatura=None,
                        umbral: int = UMBRAL_INACTIVIDAD_DIAS) -> pd.DataFrame:
-    """Una fila por alumno y materia con al menos una alerta, con su prioridad (D52):
-      Alta            inscripto sin actividad, o dos o más alertas académicas
-                      (inactivo, Libre, entra pero no rinde) a la vez. "Entra pero
-                      no rinde" + Libre cuentan como una (el 0 ya lo deja Libre).
-      Media           una sola alerta académica
+    """Una fila por caso (alumno × materia) con al menos una alerta y su prioridad
+    (D52, regla de D89):
+      Alta            inscripto sin actividad, o inscripto, Libre e inactivo hace
+                      DIAS_PRIORIDAD_ALTA días o más (dos señales fuertes juntas)
+      Media           el resto con alguna alerta académica (inactivo, Libre, entra
+                      pero no rinde)
       Administrativa  solo cursa sin estar inscripto (lo resuelve la secretaría)
-    Ordenada de más a menos urgente, para que el tutor sepa a quién contactar primero."""
+    Orden (D89): prioridad -> cantidad de alertas -> días sin entrar (de más a
+    menos; quien nunca entró va primero). `motivos` son las etiquetas cortas."""
     al = alertas(d, fecha_corte, asignatura, umbral)
     t = tabla_alumnos(d, fecha_corte, asignatura, umbral)
     claves = ["asignatura", "id_alumno"]
     g = (al.groupby(claves)
            .agg(tipos=("tipo", lambda s: sorted(set(s), key=list(TIPOS_ALERTA).index)), cantidad=("tipo", "size"))
            .reset_index())
-    # Quien entra pero no rinde tiene 0 y por eso también es Libre: cuenta como una sola alerta.
-    academicas = g["tipos"].map(lambda ts: len(ALERTAS_ACADEMICAS.intersection(ts))
-                                - int({"sin_notas", "libre"} <= set(ts)))
-    g["prioridad"] = np.select(
-        [g["tipos"].map(lambda ts: "sin_actividad" in ts) | academicas.ge(2), academicas.eq(1)],
-        PRIORIDADES[:2], default=PRIORIDADES[2])
-    g["alertas"] = g["tipos"].map(lambda ts: " · ".join(TIPOS_ALERTA[x] for x in ts))
     cols = ["nombre_completo", "inscripto", "condicion", "nota_final", "escala", "rendidos", "instrumentos",
             "estado_actividad", "dias_sin_actividad", "ultima_interaccion", "eventos", "avance"]
     df = g.merge(t[claves + cols], on=claves, how="left")
-    df["prioridad"] = pd.Categorical(df["prioridad"], PRIORIDADES, ordered=True)
-    df = df.sort_values(["prioridad", "cantidad", "asignatura", "nombre_completo"],
-                        ascending=[True, False, True, True])
-    return df[claves + ["nombre_completo", "prioridad", "cantidad", "alertas", "tipos", *cols[1:]]] \
+    sin_actividad = df["tipos"].map(lambda ts: "sin_actividad" in ts).astype(bool)
+    lejos = df["dias_sin_actividad"].ge(DIAS_PRIORIDAD_ALTA).fillna(False).astype(bool)
+    alta = sin_actividad | (df["inscripto"].astype(bool) & df["condicion"].eq("Libre")
+                            & df["estado_actividad"].eq(INACTIVO) & lejos)
+    academica = df["tipos"].map(lambda ts: bool(ALERTAS_ACADEMICAS.intersection(ts))).astype(bool)
+    df["prioridad"] = pd.Categorical(np.select([alta, academica], PRIORIDADES[:2], default=PRIORIDADES[2]),
+                                     PRIORIDADES, ordered=True)
+    df["alertas"] = df["tipos"].map(lambda ts: " · ".join(TIPOS_ALERTA[x] for x in ts))
+    df["motivos"] = df["tipos"].map(lambda ts: " · ".join(TIPOS_ALERTA_CORTO[x] for x in ts))
+    df["_dias"] = df["dias_sin_actividad"].astype("float").fillna(np.inf)   # nunca entró = el más lejano
+    df = df.sort_values(["prioridad", "cantidad", "_dias", "nombre_completo"], ascending=[True, False, False, True])
+    return df[claves + ["nombre_completo", "prioridad", "cantidad", "alertas", "motivos", "tipos", *cols[1:]]] \
              .reset_index(drop=True)
+
+
+def alertas_por_materia(d: Datos, fecha_corte=None, asignatura=None,
+                        umbral: int = UMBRAL_INACTIVIDAD_DIAS) -> pd.DataFrame:
+    """Casos con alerta por materia y prioridad (D88), con una fila Total y la
+    columna `base` (casos de la base de la materia) para decir el denominador."""
+    p = alertas_por_alumno(d, fecha_corte, asignatura, umbral)
+    w = (p.groupby(["asignatura", "prioridad"], observed=False).size().unstack("prioridad")
+          .reindex(index=_materias(asignatura), columns=PRIORIDADES).fillna(0).astype(int))
+    w["base"] = base(d, asignatura).groupby("asignatura").size().reindex(w.index).fillna(0).astype(int)
+    w.loc[TOTAL] = w.sum()
+    w.columns.name = None
+    return w.reset_index(names="asignatura")
+
+
+DENOMINADOR_ALERTA = {"sin_actividad": "inscriptos", "sin_notas": "inscriptos"}   # el resto, sobre la base
+
+
+def alertas_por_tipo(d: Datos, fecha_corte=None, asignatura=None,
+                     umbral: int = UMBRAL_INACTIVIDAD_DIAS) -> pd.DataFrame:
+    """Casos por materia y tipo de alerta (D88). `pct` es sobre el denominador que
+    le corresponde al tipo (`sobre`): los inscriptos para "sin actividad" y "entra
+    pero no rinde" (solo les pasa a inscriptos), la base para el resto.
+    `parte_del_tipo` = qué parte del total de ese tipo cae en la materia."""
+    al = alertas(d, fecha_corte, asignatura, umbral)
+    columnas = ["asignatura", "tipo", "alerta", "casos", "sobre", "denominador", "pct", "parte_del_tipo"]
+    if al.empty:
+        return pd.DataFrame(columns=columnas)
+    r = resumen_matricula(d, fecha_corte, asignatura, umbral).set_index("asignatura")
+    c = al.groupby(["asignatura", "tipo", "alerta"]).size().rename("casos").reset_index()
+    c["sobre"] = c["tipo"].map(DENOMINADOR_ALERTA).fillna("base")
+    c["denominador"] = [int(r.loc[a, col]) for a, col in zip(c["asignatura"], c["sobre"])]
+    c["pct"] = (c["casos"] / c["denominador"].replace(0, np.nan) * 100).round(2)
+    c["parte_del_tipo"] = (c["casos"] / c.groupby("tipo")["casos"].transform("sum")).round(4)
+    return c[columnas]
+
+
+def tarjetas_matricula(d: Datos, fecha_corte=None, asignatura=None, umbral: int = UMBRAL_INACTIVIDAD_DIAS) -> dict:
+    """Los números de las tarjetas de Matrícula y alertas (D88), en casos
+    (alumno × materia) y, donde suma, en alumnos únicos. `*_antes` es lo mismo
+    7 días antes de la fecha de corte (para el delta semanal)."""
+    corte = fecha_de_corte(fecha_corte)
+    antes = corte - pd.Timedelta(days=7)
+    r = resumen_matricula(d, corte, asignatura, umbral)
+    r_antes = resumen_matricula(d, antes, asignatura, umbral)
+    t = tabla_alumnos(d, corte, asignatura, umbral)
+    p = alertas_por_alumno(d, corte, asignatura, umbral)
+    p_antes = alertas_por_alumno(d, antes, asignatura, umbral)
+    alta, alta_antes = p[p["prioridad"].eq("Alta")], p_antes[p_antes["prioridad"].eq("Alta")]
+    no_insc = t[~t["inscripto"]]
+    tot = r.drop(columns=["asignatura", "pct_inscriptos_activos", "pct_insc_sin_notas"]).sum()
+    salida = {c: int(v) for c, v in tot.items()}
+    salida.update(
+        base_unicos=int(t["id_alumno"].nunique()),
+        pct_entraron=round(float(tot["con_actividad"] / tot["base"] * 100), 2) if tot["base"] else np.nan,
+        pct_activos=round(float(tot["activos"] / tot["base"] * 100), 2) if tot["base"] else np.nan,
+        inscriptos_activos_antes=int(r_antes["inscriptos_activos"].sum()),
+        aprueban_sin_inscripcion=int(no_insc["condicion"].isin(["Regular", "Promociona"]).sum()),
+        alertas=len(p), alertas_unicos=int(p["id_alumno"].nunique()),
+        alta=len(alta), alta_unicos=int(alta["id_alumno"].nunique()), alta_antes=len(alta_antes),
+    )
+    return salida
+
+
+def hitos_matricula(d: Datos, fecha_corte=None, asignatura=None, pct_lleno: float = 90) -> dict:
+    """Para el título de "Inscripciones vs. primer ingreso" (D88), sumando las
+    materias: el día en que ya había entrado al aula el `pct_lleno` % de los que
+    entraron hasta la fecha de corte, la última inscripción aceptada y cuántas
+    inscripciones entraron después de ese día. Vacío si no hay datos."""
+    e = evolucion_matricula(d, fecha_corte, asignatura)
+    if e.empty:
+        return {}
+    tot = e.groupby(["serie", "fecha"])["alumnos"].sum()
+    series = set(tot.index.get_level_values("serie"))
+    if not {"Ya entraron al aula", "Inscriptos"} <= series:
+        return {}
+    aula, insc = tot["Ya entraron al aula"], tot["Inscriptos"]
+    if aula.iloc[-1] == 0 or insc.iloc[-1] == 0:
+        return {}
+    lleno = aula.index[aula >= aula.iloc[-1] * pct_lleno / 100][0]
+    nuevas = insc.diff().fillna(insc.iloc[0])
+    return {"aula_llena": lleno, "ultima_inscripcion": nuevas[nuevas > 0].index.max(),
+            "inscripciones_despues": int(insc.iloc[-1] - insc.loc[lleno]), "inscriptos": int(insc.iloc[-1]),
+            "pct_lleno": pct_lleno}
 
 
 def evolucion_matricula(d: Datos, fecha_corte=None, asignatura=None) -> pd.DataFrame:

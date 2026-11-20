@@ -225,3 +225,91 @@ def titulo_trazabilidad(filas: list[tuple[str, str, float, float]],
     signo = "+" if diferencia > 0 else "−"
     return (f"En {materia}, {tipo}: {numero(propio)} % de sus clics vs. {numero(curso)} % del curso "
             f"({signo}{numero(abs(diferencia), 1)} p.p.)")
+
+
+# ---------------------------------------------------------------------------
+# Matrícula y alertas (D88)
+# ---------------------------------------------------------------------------
+def de_los(p: float, sujeto: str) -> tuple[str, bool]:
+    """Proporción de un grupo en palabras y si el verbo va en plural:
+    (33, 'inscriptos') -> ('uno de cada tres inscriptos', False);
+    (66, ...) -> ('dos de cada tres inscriptos', True); (40, ...) -> ('el 40 % de los inscriptos', False)."""
+    frase = proporcion_en_palabras(p)
+    if frase == "La mitad":
+        return f"la mitad de los {sujeto}", False
+    if not frase or frase.endswith("%") or frase in ("Nadie", "Todos"):
+        return f"el {numero(p)} % de los {sujeto}", False
+    return f"{frase[0].lower()}{frase[1:]} {sujeto}", not frase.startswith("Uno")
+
+
+def titulo_matriz(entraron_pct: float, activos_pct: float) -> str:
+    """Título de la matriz inscripción × actividad, con el % de la base que entró
+    alguna vez y el % que está activo a la fecha de corte."""
+    if _vacio(entraron_pct):
+        return "Inscripción y actividad por materia"
+    if entraron_pct <= 0.5:
+        return "Nadie de la base entró todavía al aula"
+    if entraron_pct >= 90:
+        if not _vacio(activos_pct) and activos_pct <= entraron_pct - 15:
+            return (f"Casi todos entraron al aula ({numero(entraron_pct)} %): el problema es sostener, "
+                    f"hoy sigue activo el {numero(activos_pct)} %")
+        return f"Casi todos entraron al aula ({numero(entraron_pct)} %) y el {numero(activos_pct)} % sigue activo"
+    return f"Solo el {numero(entraron_pct)} % de la base entró alguna vez al aula"
+
+
+# Tipo de alerta -> (sujeto, predicado en singular, en plural) para el título de "Alertas por tipo".
+FRASES_ALERTA = {
+    "sin_notas": ("inscriptos", "entra pero no rinde nada", "entran pero no rinden nada"),
+    "sin_actividad": ("inscriptos", "nunca entró al aula", "nunca entraron al aula"),
+    "no_inscripto": ("alumnos de la base", "cursa sin estar inscripto", "cursan sin estar inscriptos"),
+    "inactivo": ("alumnos de la base", "está inactivo", "están inactivos"),
+    "libre": ("alumnos de la base", "está Libre", "están Libres"),
+}
+
+
+def titulo_alertas_tipo(filas: list[tuple[str, str, int, float, float]], minimo: int = 10,
+                        concentrada: float = 0.5) -> str:
+    """filas = [(materia, tipo, casos, % sobre su denominador, parte del total del tipo
+    que cae en esa materia)]. Si un tipo con `minimo` casos o más se concentra en una
+    materia (la mitad o más del total del tipo), el título habla de ese; si no, del
+    tipo con mayor %. 'En Algoritmos, uno de cada tres inscriptos entra pero no rinde nada'."""
+    validas = [f for f in filas if f[2] >= minimo and f[1] in FRASES_ALERTA and not _vacio(f[3])]
+    if not validas:
+        return "Alertas por tipo y materia"
+    varias = len({f[0] for f in filas}) > 1
+    conc = [f for f in validas if varias and f[4] >= concentrada]
+    materia, tipo, _, pct, _ = max(conc, key=lambda f: f[4]) if conc else max(validas, key=lambda f: f[3])
+    sujeto, singular, plural = FRASES_ALERTA[tipo]
+    frase, en_plural = de_los(pct, sujeto)
+    return f"En {materia}, {frase} {plural if en_plural else singular}"
+
+
+def titulo_evolucion(aula_llena: str | None, pct_lleno: float, despues: int, inscriptos: int,
+                     ultima: str | None) -> str:
+    """Título de "Inscripciones vs. primer ingreso": el día en que el aula ya estaba
+    llena y cuántas inscripciones llegaron después, hasta cuándo."""
+    if not aula_llena or not ultima or despues <= 0:
+        return "Inscripciones aceptadas vs. primer ingreso al aula"
+    return (f"El {numero(pct_lleno)} % ya había entrado al aula el {aula_llena}; {numero(despues)} de las "
+            f"{numero(inscriptos)} inscripciones llegaron después, hasta el {ultima}")
+
+
+def lectura_diferencia(filas: list[tuple[str, float]], sin_datos: list[str] | None = None) -> str:
+    """filas = [(materia, diferencia en p.p. inscriptos − no inscriptos)] -> la
+    diferencia real de cada materia y cuál es la mayor. Sin dato -> ''."""
+    validas = [(m, d) for m, d in filas if not _vacio(d)]
+    partes = []
+    if validas:
+        # La dirección general solo si se repite en todas (dos o más) y ninguna redondea a 0.
+        if len(validas) > 1 and all(numero(abs(d)) != "0" for _, d in validas):
+            if all(d > 0 for _, d in validas):
+                partes.append("Los inscriptos aprueban más en todas las materias.")
+            elif all(d < 0 for _, d in validas):
+                partes.append("Los no inscriptos aprueban más en todas las materias.")
+        detalle = [f"{m} {'+' if d >= 0 else '−'}{numero(abs(d))} p.p." for m, d in validas]
+        partes.append(f"Diferencia (inscriptos − no inscriptos): {enumerar(detalle)}")   # termina en "p.p."
+        if len(validas) > 1:
+            partes.append(f"La mayor, en {max(validas, key=lambda f: abs(f[1]))[0]}.")
+    if sin_datos:
+        partes.append(f"{enumerar(sin_datos)}: sin casos para comparar.")
+    return " ".join(partes)

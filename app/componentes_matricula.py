@@ -40,11 +40,18 @@ TEXTO, TEXTO_2, TEXTO_3, TEXTO_4 = "#1A1917", "#57544C", "#6B6861", "#8A867C"
 ACCION = "#1B4B8F"
 FUENTE_TITULOS = "'Space Grotesk', Inter, sans-serif"
 
-# Categórica, en orden fijo: las tres primeras son las materias (ALG, PYE, AED).
-CATEGORICA = ["#2563C9", "#0E8F62", "#D4661F", "#6B4FA8", "#C98A12", "#B8487A", "#4A8FA8", "#7A7468"]
-_POR_SIGLA = {"ALG": ("#2563C9", "#EAF0F8", "#164279"),   # (color, fondo de etiqueta, texto de etiqueta)
-              "PYE": ("#0E8F62", "#E6F2EB", "#0B6B49"),
-              "AED": ("#D4661F", "#FBEFE6", "#8A4415")}
+# Colores (D88): ningún color significa dos cosas en esta página.
+#   Materias   fuera del semáforo y del verde/naranja: azul, violeta y pizarra (los de la
+#              Ficha individual, D87, ya probados con deuteranopia y protanopia).
+#   Semáforo   bien / atención / crítico con la paleta de Okabe-Ito (verde azulado, ámbar,
+#              bermellón): se distinguen con daltonismo por tono y luminosidad, y además
+#              siempre van con forma (●▲⬣) y palabra.
+#   Neutro     sin dato / nunca entró. Administrativa (prioridad) usa un rosa propio.
+#   Secuencial gris cálido de un solo tono (la matriz): no se confunde con ninguna materia.
+CATEGORICA = ["#3B82F6", "#4C1D95", "#64748B", "#B4558B", "#C98A12", "#4A8FA8", "#7A7468", "#1A1917"]
+_POR_SIGLA = {"ALG": ("#3B82F6", "#EAF1FE", "#1D4ED8"),   # (color, fondo de etiqueta, texto de etiqueta)
+              "PYE": ("#4C1D95", "#EFEAF8", "#4C1D95"),
+              "AED": ("#64748B", "#EEF1F5", "#334155")}
 SIGLAS = {nombre: datos["sigla"] for nombre, datos in ASIGNATURAS.items()}
 COLORES_MATERIA = {nombre: _POR_SIGLA[s][0] for nombre, s in SIGLAS.items()}
 ORDEN_MATERIAS = sorted(ASIGNATURAS, key=lambda n: list(_POR_SIGLA).index(SIGLAS[n]))  # ALG, PYE, AED
@@ -52,13 +59,13 @@ NOMBRE_CORTO = {"Álgebra": "Álgebra", "Probabilidad y Estadística": "Probabil
                 "Algoritmos y Estructuras de Datos": "Algoritmos"}
 
 # Estados: forma + color fuerte + texto oscuro + fondo claro (+ símbolo para las tablas).
-BIEN, ATENCION, CRITICO, NEUTRO, INFO = "#16734A", "#C98A12", "#B02A20", "#3C3A34", ACCION
+BIEN, ATENCION, CRITICO, NEUTRO, INFO = "#009E73", "#E69F00", "#D55E00", "#3C3A34", "#B4558B"
 _TONOS = {  # tono: (color fuerte, texto sobre fondo claro, fondo claro, borde del fondo)
-    "bien": (BIEN, "#116040", "#E6F2EB", "#CFE3D8"),
-    "atencion": (ATENCION, "#7A5000", "#FBF0DC", "#F0E2C4"),
-    "critico": (CRITICO, "#93241C", "#FBE9E6", "#F2CFC9"),
+    "bien": (BIEN, "#0B5E46", "#E3F4EE", "#C6E7DB"),
+    "atencion": (ATENCION, "#7A5000", "#FCF1DA", "#F2E0B8"),
+    "critico": (CRITICO, "#9A3B00", "#FBEAE0", "#F3D0BD"),
     "neutro": (NEUTRO, "#35332D", "#EBE9E4", "#D9D6CF"),
-    "info": (INFO, "#164279", "#EAF0F8", "#DCE5F1"),
+    "info": (INFO, "#7D2E5C", "#F8E9F1", "#EFD3E2"),
 }
 _FORMAS = {"bien": "circulo", "atencion": "triangulo", "critico": "octogono", "neutro": "cuadrado", "info": "info"}
 SIMBOLOS = {"circulo": "●", "triangulo": "▲", "octogono": "⬣", "cuadrado": "■", "info": "ⓘ"}
@@ -78,8 +85,19 @@ ICONOS_CONDICION = {c: SIMBOLOS[_FORMAS[ESTADOS[c]]] for c in COLORES_CONDICION}
 ICONOS_ACTIVIDAD = {c: SIMBOLOS[_FORMAS[ESTADOS[c]]] for c in COLORES_ACTIVIDAD}
 ICONOS_PRIORIDAD = {c: SIMBOLOS[_FORMAS[ESTADOS[c]]] for c in COLORES_PRIORIDAD}
 
-# Secuencial (mapas de calor): un solo tono (el azul de acción), de claro a oscuro.
-SECUENCIAL = ["#E3EBF6", "#BFD1EA", "#93B2DB", "#6690CA", "#3F6FB2", "#1B4B8F", "#123663"]
+# Secuencial (matriz de matrícula): un solo tono, gris cálido de claro a oscuro.
+SECUENCIAL = ["#F6F5F2", "#E4E1DA", "#CBC6BC", "#A9A396", "#857F72", "#5F5A50", "#3C3A34"]
+# Líneas de la evolución (inscriptos vs. ya entraron): tinta, fuera del semáforo y de las materias.
+LINEA_INSCRIPTOS, LINEA_INGRESOS = "#A9A396", "#1A1917"
+
+
+def texto_sobre(color: str) -> str:
+    """Color de texto legible sobre un fondo (blanco sobre oscuros, tinta sobre claros)."""
+    r, g, b = (int(color.lstrip("#")[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    lum = [(c / 12.92) if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in (r, g, b)]
+    l = 0.2126 * lum[0] + 0.7152 * lum[1] + 0.0722 * lum[2]
+    return TEXTO if (l + 0.05) / 0.05 > 1.05 / (l + 0.05) else "#FFFFFF"
+
 
 # Plantilla de plotly: fondo blanco (el gráfico va dentro de una tarjeta blanca),
 # grilla tenue, textos en gris cálido y la paleta categórica.
@@ -107,8 +125,8 @@ CSS = f"""
   .ma-desc {{margin: -.2rem 0 .35rem; max-width: 72ch; font-size: .87rem; line-height: 1.55; color: {TEXTO_2};}}
   .st-key-ma_pill_filtros {{width: fit-content;}}
   .st-key-ma_pill_filtros [data-testid="stCaptionContainer"] {{display: inline-flex; align-items: center;
-      height: 30px; padding: 0 12px; border-radius: 999px; background: #F1EFEA; color: {TEXTO_2};
-      font-size: .8rem;}}
+      min-height: 30px; padding: 4px 12px; border-radius: 15px; background: #F1EFEA; color: {TEXTO_2};
+      font-size: .8rem; line-height: 1.4;}}
   .st-key-ma_pill_filtros [data-testid="stCaptionContainer"] p {{margin: 0;}}
 
   /* Tarjetas (st.container con key "tarjeta_...") */
@@ -130,7 +148,8 @@ CSS = f"""
   [data-testid="stMetricDelta"] {{background: none !important; padding: 0 !important; color: {TEXTO_3} !important;
       font-size: .8rem;}}
   [data-testid="stMetricDelta"] svg {{display: none;}}
-  [data-testid="stMetricDelta"] div {{white-space: normal !important; overflow: visible !important;}}
+  [data-testid="stMetricDelta"] div, [data-testid="stMetricDelta"] p {{white-space: normal !important;
+      overflow: visible !important; text-overflow: clip !important; line-height: 1.4;}}
   {"".join(f'''
   div[class*="st-key-ma_kpi_{t}"] [data-testid="stMetric"] {{background: {c[2]}; border-color: {c[3]};}}
   div[class*="st-key-ma_kpi_{t}"] [data-testid="stMetricLabel"] p,
@@ -173,13 +192,29 @@ CSS = f"""
   .ma-fila .e {{flex: 0 0 var(--ancho-etiqueta, 120px); font-size: .8rem; color: {TEXTO_2};}}
   .ma-fila .b {{flex: 1 1 auto; display: flex; height: var(--alto, 22px); border-radius: 4px;
       background: #EDEBE6; overflow: hidden;}}
+  .ma-fila .b {{container-type: inline-size;}}
   .ma-fila .b > span {{display: flex; align-items: center; justify-content: center; height: 100%;
-      font-size: .67rem; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums;}}
+      font-size: .67rem; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums;
+      overflow: hidden; white-space: nowrap;}}
+  /* En pantallas angostas, los % de los segmentos chicos pasan al hover (title) */
+  @container (max-width: 420px) {{ .ma-fila .b > span.chico {{font-size: 0;}} }}
+  @container (max-width: 220px) {{ .ma-fila .b > span.medio {{font-size: 0;}} }}
   .ma-fila .n {{flex: 0 0 38px; text-align: right; font-size: .87rem; font-weight: 600;
       font-variant-numeric: tabular-nums;}}
   .ma-leyenda {{display: flex; flex-wrap: wrap; gap: 16px; margin: 4px 0 10px;}}
   .ma-leyenda span {{display: inline-flex; align-items: center; gap: 7px; font-size: .8rem; font-weight: 500;
       color: #2C2A25;}}
+
+  /* Misma altura para lo que comparte fila (KPIs, tarjetas, avisos) */
+  [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {{height: 100%;}}
+  [data-testid="stColumn"] > [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:only-child,
+  [data-testid="stColumn"] > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"]:only-child,
+  [data-testid="stColumn"] > [data-testid="stVerticalBlock"] > div[class*="st-key-ma_"]:only-child,
+  [data-testid="stColumn"] div[class*="st-key-ma_kpi"] [data-testid="stElementContainer"],
+  [data-testid="stColumn"] div[class*="st-key-ma_kpi"] [data-testid="stMetric"] {{height: 100%;}}
+  [data-testid="stColumn"] [data-testid="stElementContainer"]:has(> [data-testid="stMetric"]) {{height: 100%;}}
+  [data-testid="stColumn"] [data-testid="stElementContainer"]:has(.ma-aviso) {{height: 100%;}}
+  [data-testid="stColumn"] [data-testid="stElementContainer"]:has(.ma-aviso) > div {{height: 100%;}}
 
   /* Tablas y botones */
   [data-testid="stDataFrame"] {{border: 1px solid {BORDE_SUAVE}; border-radius: 10px; overflow: hidden;}}
@@ -246,6 +281,12 @@ def tarjeta(clave: str):
     """Contenedor blanco con borde y esquinas redondeadas (las secciones de cada página).
     Uso:  with comp.tarjeta("embudo"): ...   (la clave tiene que ser única en la página)."""
     return st.container(key=f"ma_tarjeta_{clave}")
+
+
+def a_la_derecha(columna=None):
+    """Contenedor horizontal pegado al borde derecho (botones de descarga y controles de una
+    tarjeta). Uso: with comp.a_la_derecha(col): comp.boton_csv(...)."""
+    return (columna or st).container(horizontal=True, horizontal_alignment="right", vertical_alignment="center")
 
 
 def seccion(titulo: str, descripcion: str = "") -> None:
@@ -359,11 +400,13 @@ def barra(etiqueta: str, valor: float, maximo: float, color: str, texto: str | N
 
 
 def barra_apilada(etiqueta: str, partes: list[tuple[float, str, str]], ancho_etiqueta: int = 90,
-                  minimo_texto: float = 12) -> str:
+                  minimo_texto: float = 7) -> str:
     """Barra 100 % apilada: partes = [(porcentaje, color, ayuda), ...]. El porcentaje
-    se escribe adentro solo si el segmento es lo bastante ancho para leerse."""
+    se escribe adentro (en un color legible sobre el segmento) si entra; si no, queda
+    en el hover (title), junto con la ayuda."""
     segs = "".join(
-        f'<span title="{esc(ayuda)}" style="width:{p:.1f}%;background:{c}">'
+        f'<span title="{esc(ayuda)}" class="{"chico" if p < 15 else "medio" if p < 25 else ""}" '
+        f'style="width:{p:.1f}%;background:{c};color:{texto_sobre(c)}">'
         f'{pct(p, 0) if p >= minimo_texto else ""}</span>' for p, c, ayuda in partes if p > 0)
     return (f'<div class="ma-fila" style="--ancho-etiqueta:{ancho_etiqueta}px;--alto:20px;margin-bottom:5px">'
             f'<span class="e" style="font-size:.74rem">{etiqueta}</span><span class="b">{segs}</span></div>')

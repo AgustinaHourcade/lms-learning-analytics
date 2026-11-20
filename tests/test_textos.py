@@ -1,8 +1,9 @@
 """Tests de src/textos.py: textos dinámicos de los dashboards (D77)."""
 import pytest
 
-from src.textos import (comparacion_veces, de_cada_diez, enumerar, lectura_quintiles, nota_en_escala, numero,
-                        proporcion_en_palabras, rangos_quintiles, redondear)
+from src.textos import (comparacion_veces, de_cada_diez, de_los, enumerar, lectura_diferencia, lectura_quintiles,
+                        nota_en_escala, numero, proporcion_en_palabras, rangos_quintiles, redondear,
+                        titulo_alertas_tipo, titulo_evolucion, titulo_matriz)
 
 
 @pytest.mark.parametrize("p, esperado", [
@@ -95,3 +96,51 @@ def test_titulo_trazabilidad():
     assert (titulo_trazabilidad([("PYE", "Evaluación", 17.0, 10.8), ("ALG", "Contenido", 32.0, 36.5)])
             == "En PYE, Evaluación: 17 % de sus clics vs. 11 % del curso (+6,2 p.p.)")
     assert titulo_trazabilidad([("ALG", "Contenido", 36.0, 36.5)]).startswith("Reparte sus clics como el curso")
+
+
+# --- Matrícula y alertas (D88) ---------------------------------------------
+@pytest.mark.parametrize("p, esperado", [
+    (34, ("uno de cada tres inscriptos", False)), (66, ("dos de cada tres inscriptos", True)),
+    (50, ("la mitad de los inscriptos", False)), (40, ("dos de cada cinco inscriptos", True)), (71, ("el 71 % de los inscriptos", False)),
+    (100, ("el 100 % de los inscriptos", False)),
+])
+def test_de_los(p, esperado):
+    assert de_los(p, "inscriptos") == esperado
+
+
+def test_titulo_matriz():
+    assert titulo_matriz(99, 52).startswith("Casi todos entraron al aula (99 %): el problema es sostener")
+    assert titulo_matriz(95, 90) == "Casi todos entraron al aula (95 %) y el 90 % sigue activo"
+    assert titulo_matriz(70, 50) == "Solo el 70 % de la base entró alguna vez al aula"
+    assert titulo_matriz(0, 0) == "Nadie de la base entró todavía al aula"
+    assert titulo_matriz(float("nan"), float("nan")) == "Inscripción y actividad por materia"
+
+
+def test_titulo_alertas_tipo():
+    filas = [("Álgebra", "sin_notas", 19, 11.7, 0.2), ("Algoritmos", "sin_notas", 56, 33.9, 0.6),
+             ("Álgebra", "inactivo", 102, 47.0, 0.35)]
+    assert titulo_alertas_tipo(filas) == "En Algoritmos, uno de cada tres inscriptos entra pero no rinde nada"
+    # sin concentración: el tipo con mayor %
+    assert titulo_alertas_tipo([("Álgebra", "inactivo", 102, 47.0, 0.35), ("Probabilidad", "libre", 20, 9, 0.3)]) \
+        == "En Álgebra, la mitad de los alumnos de la base está inactivo"
+    assert titulo_alertas_tipo([("Álgebra", "libre", 3, 2, 1.0)]) == "Alertas por tipo y materia"   # pocos casos
+    assert titulo_alertas_tipo([]) == "Alertas por tipo y materia"
+
+
+def test_titulo_evolucion():
+    assert titulo_evolucion("11/08", 90, 294, 492, "30/09") == \
+        "El 90 % ya había entrado al aula el 11/08; 294 de las 492 inscripciones llegaron después, hasta el 30/09"
+    assert titulo_evolucion("11/08", 90, 0, 492, "05/08") == "Inscripciones aceptadas vs. primer ingreso al aula"
+    assert titulo_evolucion(None, 90, 0, 0, None) == "Inscripciones aceptadas vs. primer ingreso al aula"
+
+
+def test_lectura_diferencia():
+    t = lectura_diferencia([("Álgebra", 22.0), ("Probabilidad", 24.2), ("Algoritmos", 18.8)])
+    assert t.startswith("Los inscriptos aprueban más en todas las materias.")
+    assert "Álgebra +22 p.p., Probabilidad +24 p.p. y Algoritmos +19 p.p." in t and t.endswith("en Probabilidad.")
+    mixta = lectura_diferencia([("Álgebra", -3.0), ("Algoritmos", 5.0)])
+    assert "aprueban más" not in mixta and "Álgebra −3 p.p." in mixta and mixta.endswith("La mayor, en Algoritmos.")
+    assert lectura_diferencia([("Algoritmos", -0.9), ("Álgebra", float("nan"))], ["Álgebra"]) == \
+        ("Diferencia (inscriptos − no inscriptos): Algoritmos −1 p.p. "
+         "Álgebra: sin casos para comparar.")
+    assert lectura_diferencia([("Álgebra", float("nan"))]) == ""

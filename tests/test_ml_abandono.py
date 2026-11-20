@@ -228,3 +228,17 @@ def test_ficha_un_alumno(d, modelo):
     ev = ab.evolucion_riesgo(d, alumno, "2025-09-30", modelo=modelo)
     assert ev["fecha_corte"].max() == pd.Timestamp("2025-09-30")
     assert set(ev["asignatura"]) == set(r["asignatura"])
+
+
+def test_alertas_priorizadas(d, modelo):
+    """D89: la lista de Matrícula y alertas suma el riesgo de abandono y lo usa como tercer criterio."""
+    base = m.alertas_por_alumno(d)
+    p = ab.alertas_priorizadas(d, modelo=modelo)
+    assert len(p) == len(base) and set(zip(p["asignatura"], p["id_alumno"])) == \
+        set(zip(base["asignatura"], base["id_alumno"]))
+    assert p["prioridad"].cat.codes.is_monotonic_increasing
+    prob = p["probabilidad"].astype(float).fillna(np.inf)
+    for _, g in p.assign(_p=prob).groupby(["prioridad", "cantidad"], observed=True):
+        assert g["_p"].is_monotonic_decreasing
+    # sin probabilidad solo quien nunca entró
+    assert p.loc[p["probabilidad"].isna(), "estado_actividad"].eq(m.SIN_ACTIVIDAD).all()

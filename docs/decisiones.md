@@ -268,3 +268,60 @@ Formato: número, decisión, por qué, estado.
   ≥ 3:1). Mismo orden de materias en todas las secciones (el del ESQUEMA). La ficha responde a la materia de la barra
   (antes solo acotaba el buscador).
 - **Estado:** vigente.
+
+## D88 · Rediseño del dashboard Matrícula y alertas
+- **Contexto:** la página mezclaba unidades (decía "alumnos" para pares alumno × materia), comparaba "Activos" contra
+  toda la base, el gráfico "¿Rinden distinto los no inscriptos?" comparaba inscriptos con 0 notas (todos Libres)
+  contra no inscriptos que entran a la base justamente por tener nota, y no cubría de forma explícita "matriculados
+  vs. activos" ni el "mapa de inscriptos sin participación" que pide la consigna.
+- **Unidad:** todas las cifras son **casos** (alumno × materia). Donde suma se agrega cuántos alumnos distintos hay
+  detrás (al 24/10/2025: 637 casos de la base = 230 alumnos; 450 casos con alerta = 194 alumnos).
+- **Base (sin cambios, se unifica el texto):** inscriptos (último estado Aceptada) ∪ quienes tienen alguna nota
+  cargada (`modelo.fact_matricula`: `en_base = inscripto | tiene_nota`). La actividad sola no alcanza. `tiene_nota`
+  mira todas las notas cargadas, no las de la fecha de corte: con un corte temprano puede haber no inscriptos en la
+  base que todavía no rindieron.
+- **Inscriptos activos** = inscripto y activo (entró en los últimos `umbral` días) / inscriptos
+  (`resumen_matricula.inscriptos_activos`, `pct_inscriptos_activos`). Reemplaza a "Activos / base". Al 24/10: 263
+  de 492 (53 %). La tarjeta muestra el cambio contra 7 días antes (`tarjetas_matricula`).
+- **Inscriptos sin notas** cuenta solo materias que ya tomaron algún instrumento (antes, con un corte temprano,
+  contaba a todos los inscriptos de una materia sin evaluaciones). Al 24/10 no cambia (21 / 22 / 58).
+- **Matriz inscripción × actividad** (`matriz_matricula`) en lugar del embudo: por materia, Inscripto / No inscripto
+  × Activo / Inactivo / Nunca entró, con las celdas vacías en 0 y % sobre la base de la materia. Responde
+  "matriculados vs. activos" y es el mapa de inscriptos sin participación.
+- **¿Rinden distinto?** (`situacion_academica(solo_rindieron=True)`, `diferencia_aprobacion`): solo casos con
+  `rendidos > 0` en los dos grupos, con fila Total y la diferencia en p.p. por materia. Se quitó el umbral fijo de
+  ±10 p.p.: la lectura dice la diferencia real de cada materia y cuál es la mayor. Al 24/10, los inscriptos aprueban
+  más en las tres: +22 p.p. en Álgebra, +24 en PyE y +19 en AED (antes, con los 0 adentro, el promedio ponderado era
+  otro número y sesgado).
+- **Nota proyectada:** en la página la nota se llama "Nota proyectada" y "van a aprobar" pasa a "aprobarían al ritmo
+  actual": `nota_final` = puntos / puntos posibles de lo ya tomado × escala (D17), o sea supone que el alumno sigue
+  rindiendo igual.
+- **Alertas:** tabla materia × prioridad (`alertas_por_materia`), alertas por tipo con su denominador
+  (`alertas_por_tipo`: inscriptos para "sin actividad" y "entra pero no rinde", la base para el resto), "Por qué"
+  con etiquetas cortas (`TIPOS_ALERTA_CORTO`; el detalle queda en el CSV) y paso a la Ficha individual con el alumno
+  y la materia elegidos.
+- **Títulos:** se calculan con los datos (`textos.titulo_matriz`, `titulo_alertas_tipo`, `titulo_evolucion`,
+  `lectura_diferencia`), con un título descriptivo de respaldo cuando la condición no se cumple.
+- **Colores:** en esta página ningún color significa dos cosas. Materias: ALG #3B82F6, PYE #4C1D95, AED #64748B (los
+  de la Ficha, D87). Semáforo Okabe-Ito: bien #009E73, atención #E69F00, crítico #D55E00 (se distinguen con
+  deuteranopia y protanopia por tono y luminosidad; además siempre van con forma y palabra). Administrativa #B4558B.
+  Matriz en gris cálido de un solo tono; líneas de la evolución en tinta (la de ingresos, oscura).
+- **Estado:** vigente.
+
+## D89 · Prioridad de las alertas más estricta y orden de la lista
+- **Contexto:** con la regla de D52 (Alta = inscripto sin actividad o dos o más alertas académicas) quedaban en
+  Alta 228 casos (36 % de la base, 124 alumnos): no sirve para decidir a quién llamar primero. La regla propuesta
+  como punto de partida (sin actividad, o inactivo ≥ 14 días y Libre) dejaba 176 (28 %); con 21 días, 145 (23 %).
+- **Decisión:** Alta = inscripto sin actividad, **o** inscripto, Libre e Inactivo hace `DIAS_PRIORIDAD_ALTA` = 28
+  días o más (en `config.py`). Media = el resto con alguna alerta académica (inactivo, Libre, entra pero no rinde).
+  Administrativa = solo cursa sin inscripción. Al 24/10: Alta 77 casos (12 % de la base, 40 alumnos), Media 327,
+  Administrativa 46.
+- **Por qué 28 días e inscripto:** 28 días es la ventana de seguimiento del predictor de abandono
+  (`ABANDONO_SEGUIMIENTO_DIAS`) y, según el análisis del predictor (D67), aun después de 4 semanas sin entrar vuelve
+  el 44 %: vale el llamado. Se exige estar inscripto porque quien no figura en el acta y dejó de entrar es
+  primero un tema de secretaría; sigue en Media por sus alertas académicas. Exigir "Inactivo" evita que, con un
+  umbral de inactividad mayor a 28, un alumno Activo quede en Alta.
+- **Orden:** prioridad → cantidad de alertas → probabilidad de abandono del predictor (D58) a la fecha de corte
+  (`ml_abandono.alertas_priorizadas`, columna "Riesgo") → días sin entrar. Quien nunca entró no tiene probabilidad y
+  va primero dentro de su grupo. Sin el modelo, `metricas.alertas_por_alumno` ordena por días sin entrar.
+- **Estado:** vigente.

@@ -11,11 +11,12 @@ Hay dos tipos de test:
 """
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from src import metricas as m
-from src.config import DIAS_DESCONECTADO, DIAS_REGRESO, FECHA_CORTE_DEFECTO, SIN_EVALUACIONES
+from src.config import DIAS_DESCONECTADO, DIAS_PRIORIDAD_ALTA, DIAS_REGRESO, FECHA_CORTE_DEFECTO, SIN_EVALUACIONES
 
 ALG, PYE, AED = "Álgebra", "Probabilidad y Estadística", "Algoritmos y Estructuras de Datos"
 FECHAS = ["2025-08-10", "2025-09-15", "2025-09-23", "2025-09-24", "2025-10-11", FECHA_CORTE_DEFECTO]
@@ -157,9 +158,36 @@ def test_alertas_por_alumno_y_prioridad(chicos):
     p = m.alertas_por_alumno(chicos, "2025-10-10", umbral=7).set_index("id_alumno")
     assert p.loc["A2", "prioridad"] == "Administrativa"    # solo cursa sin inscripción
     assert p.loc["P1", "prioridad"] == "Media"             # una sola alerta académica (Libre)
-    assert p.loc["A1", "prioridad"] == "Alta"              # inactivo + Libre
-    assert p.loc["A1", "cantidad"] == 2 and p.index[0] == "A1"  # la más urgente primero
+    # D89: inactivo + Libre, pero hace 20 días que no entra (< DIAS_PRIORIDAD_ALTA = 28) -> Media
+    assert p.loc["A1", "prioridad"] == "Media"
+    assert p.loc["A1", "cantidad"] == 2 and p.index[0] == "A1"  # dentro de Media, más alertas primero
+    assert p.loc["A1", "motivos"] == "Inactivo · Libre" and p.loc["A2", "motivos"] == "Sin insc."
+    # el 20/10 ya lleva 30 días sin entrar, sigue Libre e inscripto -> Alta
+    alta = m.alertas_por_alumno(chicos, "2025-10-20", ALG, umbral=7).set_index("id_alumno")
+    assert alta.loc["A1", "prioridad"] == "Alta"
+    # con el umbral por encima de los días sin entrar está Activo: no puede ser Alta
+    activo = m.alertas_por_alumno(chicos, "2025-10-20", ALG, umbral=30).set_index("id_alumno")
+    assert activo.loc["A1", "prioridad"] == "Media"
     assert m.alertas_por_alumno(chicos, "2025-09-05", PYE)["prioridad"].tolist() == ["Alta"]  # sin actividad
+
+
+def test_matriz_y_situacion_chicos(chicos):
+    mz = m.matriz_matricula(chicos, "2025-10-10", umbral=7)
+    assert len(mz) == 3 * 2 * 3                                    # misma forma para todas las materias
+    alg = mz[mz["asignatura"] == ALG].set_index(["matricula", "actividad"])["casos"]
+    assert alg[("Inscripto", "Inactivo")] == 1 and alg[("No inscripto", "Activo")] == 1 and alg.sum() == 2
+    pye = mz[mz["asignatura"] == PYE].set_index(["matricula", "actividad"])["casos"]
+    assert pye[("Inscripto", "Nunca entró")] == 1
+    assert mz[mz["asignatura"] == AED]["casos"].sum() == 0 and mz[mz["asignatura"] == AED]["pct_base"].isna().all()
+    s = m.situacion_academica(chicos, "2025-10-10")
+    assert set(s["asignatura"]) == {ALG, PYE, m.TOTAL}
+    tot = s[s["asignatura"] == m.TOTAL].groupby("grupo")["alumnos"].sum()
+    assert tot.to_dict() == {"Inscriptos": 2, "No inscriptos": 1}
+    dif = m.diferencia_aprobacion(chicos, "2025-10-10").set_index("asignatura")
+    # ALG: A1 (inscripto) Libre, A2 (no inscripto) Promociona -> 0 % - 100 % = -100 p.p.
+    assert dif.loc[ALG, "diferencia_pp"] == -100
+    assert pd.isna(dif.loc[PYE, "diferencia_pp"]) and dif.loc[PYE, "casos_insc"] == 1   # sin no inscriptos
+    assert pd.isna(dif.loc[AED, "pct_insc"])
 
 
 def test_buscar_sin_tildes(chicos):
@@ -318,6 +346,72 @@ def test_matricula_y_alertas(d):
     # quien entra pero no rinde (y por eso es Libre) no pasa a Alta solo por eso
     solo = p[p["tipos"].map(lambda ts: set(ts) == {"sin_notas", "libre"})]
     assert (solo["prioridad"] == "Media").all()
+
+
+def test_matricula_rediseno(d):
+    """D88-D89: inscriptos activos, matriz, situación sin sesgo, prioridad más estricta y tarjetas."""
+    r = m.resumen_matricula(d).set_index("asignatura")
+    assert r["inscriptos_activos"].sum() == 263
+    assert (r["inscriptos_activos"] <= r[["inscriptos", "activos"]].min(axis=1)).all()
+    assert r["pct_insc_sin_notas"].round().to_dict() == {ALG: 13, PYE: 13, AED: 35}
+    # matriz: cada materia suma su base y los inscriptos de la matriz son los del resumen
+    mz = m.matriz_matricula(d)
+    assert len(mz) == 18
+    assert mz.groupby("asignatura")["casos"].sum().to_dict() == r["base"].to_dict()
+    insc = mz[mz["matricula"] == "Inscripto"].groupby("asignatura")["casos"].sum()
+    assert insc.to_dict() == r["inscriptos"].to_dict()
+    act = mz[(mz["matricula"] == "Inscripto") & (mz["actividad"] == "Activo")].set_index("asignatura")["casos"]
+    assert act.to_dict() == r["inscriptos_activos"].to_dict()
+    assert mz.groupby("asignatura")["pct_base"].sum().round().eq(100).all()
+    # situación académica: solo quienes rindieron algo, y el total suma las materias
+    s = m.situacion_academica(d)
+    assert not s["condicion"].eq(m.SIN_EVALUACIONES).any()
+    por_materia = s[s["asignatura"] != m.TOTAL].groupby(["grupo", "condicion"])["alumnos"].sum()
+    total = s[s["asignatura"] == m.TOTAL].set_index(["grupo", "condicion"])["alumnos"]
+    assert por_materia.sort_index().equals(total.sort_index())
+    assert s[s["asignatura"] == m.TOTAL]["alumnos"].sum() == r["con_nota"].sum()
+    dif = m.diferencia_aprobacion(d).set_index("asignatura")
+    assert (dif["diferencia_pp"] - (dif["pct_insc"] - dif["pct_no_insc"])).abs().max() < 0.02
+    assert dif.loc[m.TOTAL, "casos_insc"] + dif.loc[m.TOTAL, "casos_no_insc"] == r["con_nota"].sum()
+    # prioridad (D89): Alta por debajo del 15 % de la base, siempre inscriptos
+    p = m.alertas_por_alumno(d)
+    alta = p[p["prioridad"] == "Alta"]
+    assert len(alta) < 0.15 * r["base"].sum() and alta["inscripto"].all()
+    lejos = alta["dias_sin_actividad"].isna() | alta["dias_sin_actividad"].ge(DIAS_PRIORIDAD_ALTA)
+    assert lejos.all()
+    # orden: prioridad -> cantidad -> días sin entrar (de más a menos; nunca entró primero)
+    dias = p["dias_sin_actividad"].astype(float).fillna(np.inf)
+    for _, g in p.assign(_d=dias).groupby(["prioridad", "cantidad"], observed=True):
+        assert g["_d"].is_monotonic_decreasing
+    assert p["prioridad"].cat.codes.is_monotonic_increasing
+    # tabla materia × prioridad y tarjetas: cierran con la lista y con el resumen
+    pm = m.alertas_por_materia(d).set_index("asignatura")
+    assert pm.loc[m.TOTAL, ["Alta", "Media", "Administrativa"]].sum() == len(p)
+    assert pm.loc[m.TOTAL, "Alta"] == len(alta) and pm.loc[m.TOTAL, "base"] == r["base"].sum()
+    k = m.tarjetas_matricula(d)
+    for col in ["base", "inscriptos", "no_inscriptos_cursando", "inscriptos_sin_notas", "inscriptos_activos"]:
+        assert k[col] == r[col].sum()
+    assert k["alta"] == len(alta) and k["alta_unicos"] == alta["id_alumno"].nunique() <= k["alta"]
+    assert k["alertas"] == len(p) and k["base_unicos"] == 230
+    t = m.alertas_por_tipo(d)
+    assert t["casos"].sum() == len(m.alertas(d))
+    aed = t[(t["asignatura"] == AED) & (t["tipo"] == "sin_notas")].iloc[0]
+    assert aed["sobre"] == "inscriptos" and aed["denominador"] == r.loc[AED, "inscriptos"]
+
+
+@pytest.mark.parametrize("fecha", ["2025-08-15", FECHA_CORTE_DEFECTO])
+def test_matricula_otras_fechas(d, fecha):
+    """Con fecha temprana (Álgebra y PyE todavía sin evaluaciones) nada se rompe ni miente."""
+    r = m.resumen_matricula(d, fecha).set_index("asignatura")
+    sin_inst = m.nota_final(d, fecha).groupby("asignatura")["instrumentos"].max().eq(0)
+    assert (r.loc[sin_inst[sin_inst].index, "inscriptos_sin_notas"] == 0).all()   # nadie pudo rendir
+    dif = m.diferencia_aprobacion(d, fecha).set_index("asignatura")
+    assert dif.loc[sin_inst[sin_inst].index, "diferencia_pp"].isna().all()
+    h = m.hitos_matricula(d, fecha)
+    assert h["aula_llena"] <= pd.Timestamp(fecha) and h["ultima_inscripcion"] <= pd.Timestamp(fecha)
+    assert 0 <= h["inscripciones_despues"] <= h["inscriptos"]
+    k = m.tarjetas_matricula(d, fecha, umbral=14)
+    assert 0 <= k["pct_activos"] <= k["pct_entraron"] <= 100
 
 
 @pytest.mark.parametrize("fecha", ["2025-08-10", FECHA_CORTE_DEFECTO])

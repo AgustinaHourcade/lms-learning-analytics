@@ -704,6 +704,23 @@ def resumen_riesgo(d: m.Datos, fecha_corte=None, asignatura=None, umbral: int = 
     return res.reset_index()
 
 
+def alertas_priorizadas(d: m.Datos, fecha_corte=None, asignatura=None, umbral: int = UMBRAL_INACTIVIDAD_DIAS,
+                        modelo: ModeloAbandono | None = None) -> pd.DataFrame:
+    """La lista "A quién contactar primero" de Matrícula y alertas (D89):
+    `metricas.alertas_por_alumno` más la probabilidad de abandono de cada caso a la
+    fecha de corte (`probabilidad`, `nivel_riesgo`; vacía para quien nunca entró).
+    Orden: prioridad -> cantidad de alertas -> probabilidad (de mayor a menor; quien
+    nunca entró va primero) -> días sin entrar."""
+    al = m.alertas_por_alumno(d, fecha_corte, asignatura, umbral)
+    r = riesgo_abandono(d, fecha_corte, asignatura, umbral, modelo)[[*CLAVES, "probabilidad", "nivel_riesgo"]]
+    df = al.merge(r, on=CLAVES, how="left")
+    df["_prob"] = df["probabilidad"].astype(float).fillna(np.inf)
+    df["_dias"] = df["dias_sin_actividad"].astype(float).fillna(np.inf)
+    df = df.sort_values(["prioridad", "cantidad", "_prob", "_dias", "nombre_completo"],
+                        ascending=[True, False, False, False, True])
+    return df.drop(columns=["_prob", "_dias"]).reset_index(drop=True)
+
+
 def riesgo_alumno(d: m.Datos, id_alumno: str, fecha_corte=None, umbral: int = UMBRAL_INACTIVIDAD_DIAS,
                   modelo: ModeloAbandono | None = None) -> pd.DataFrame:
     """El riesgo de un alumno en cada materia de su base (para la Ficha individual)."""

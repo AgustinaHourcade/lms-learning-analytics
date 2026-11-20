@@ -82,6 +82,10 @@ DIAS_CIERRE = 7              # D82: un instrumento está cerrado si su fecha es 
 ULTIMOS_CERRADOS = 2         # D82: "dejaron de entregar" = no rindieron ninguno de los 2 últimos instrumentos cerrados
 MARGEN_RECUPERABLE = 10      # D83: libres a menos de 10 puntos (escala de la materia) del corte de Regular
 SIN_EVALUACIONES = "Sin evaluaciones"  # todavía no hay instrumentos a la fecha de corte
+# D89: prioridad Alta de las alertas = inscripto sin actividad, o inscripto, Libre e
+# inactivo hace DIAS_PRIORIDAD_ALTA días o más (4 semanas, la ventana de seguimiento
+# del predictor). El resto con alertas académicas es Media.
+DIAS_PRIORIDAD_ALTA = 28
 
 # --- ML: grupos de alumnos con K-Means (Etapa 7, D57) -----------------------
 # Variables de `tabla_alumnos` que usa el K-Means. Las de GRUPOS_LOG pasan por

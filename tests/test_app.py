@@ -252,8 +252,12 @@ def test_matricula_y_alertas(app):
     app.switch_page("paginas/7_matricula_y_alertas.py").run()
     assert not app.exception, app.exception
     assert len(app.tabs) == 4
-    assert [m.label for m in app.metric][:5] == ["Inscriptos", "Activos", "Cursan sin inscripción",
+    assert [m.label for m in app.metric][:5] == ["Inscriptos", "Inscriptos activos", "Cursan sin inscripción",
                                                   "Inscriptos sin notas", "Prioridad alta"]
+    cuerpo = " ".join(h.proto.body for h in app.get("html"))
+    assert "Casi todos entraron al aula" in cuerpo and "¿Rinden distinto los no inscriptos?" in cuerpo
+    assert "uno de cada tres inscriptos entra pero no rinde nada" in cuerpo
+    assert app.button(key="alertas_ver_ficha").disabled          # sin fila elegida no hay ficha a la que ir
     app.pills(key="alertas_prioridad").set_value(["Administrativa"]).run()
     assert not app.exception, app.exception
     app.selectbox(key="no_insc_orden").set_value("Solo con baja").run()
@@ -264,6 +268,14 @@ def test_matricula_y_alertas(app):
     assert not app.exception, app.exception
     app.selectbox(key="materia").set_value("Algoritmos y Estructuras de Datos").run()
     assert not app.exception, app.exception
+    app.slider(key="umbral").set_value(14).run()
+    assert not app.exception, app.exception
+    app.date_input(key="fecha_corte").set_value("2025-08-15").run()
+    assert not app.exception, app.exception
+    app.selectbox(key="materia").set_value("Todas las materias").run()
+    assert not app.exception, app.exception
+    cuerpo = " ".join(h.proto.body for h in app.get("html"))
+    assert "Álgebra y Probabilidad: sin casos para comparar." in cuerpo
     app.date_input(key="fecha_corte").set_value("2025-08-10").run()
     assert not app.exception, app.exception
 
